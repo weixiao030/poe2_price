@@ -6,8 +6,8 @@
 
 > 重要提醒：本工具会修改游戏文件，存在封号风险。使用前请确认自己能接受风险，并关闭游戏后再运行。
 效果图:
-<img width="1602" height="932" alt="f5ee90e72b57c57e41479e6dfa85c222" src="https://github.com/user-attachments/assets/fa84867b-a49e-43a9-8247-884cd320649c" />
-<img width="834" height="755" alt="bf27e347f661be4ac3c4ba045612a0e2" src="https://github.com/user-attachments/assets/3b31063d-1289-4fbf-94da-0e6f5345ec23" />
+<img width="600" height="600" alt="f5ee90e72b57c57e41479e6dfa85c222" src="https://github.com/user-attachments/assets/fa84867b-a49e-43a9-8247-884cd320649c" />
+<img width="600" height="600" alt="bf27e347f661be4ac3c4ba045612a0e2" src="https://github.com/user-attachments/assets/3b31063d-1289-4fbf-94da-0e6f5345ec23" />
 
 
 ## 使用方法
