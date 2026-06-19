@@ -29,6 +29,8 @@
 - 进行了大量重构，现在支持官服 / Steam 服 / 国服，能自动识别服务器。
 - 国际服目前兼容全部语言。
 - 适配当天最新版，重构了还原逻辑。
+- 优化价格显示：低于 `1E` 的物品不再标注；低于 `0.1D` 的价格改用 `E` 显示，避免出现 `0.0xD` 这种不直观的显示。
+- 更新发布构建流程，发布包现在可通过 GitHub Actions 自动打包；手动运行 workflow 或推送 `v*` tag 时会同步发布到 GitHub Releases。
 - 国服目前使用的是国际服物价，所以会有较大误差，只能参考使用；国际服不受影响。因为暂时没找到国服的数据源，如果有请联系我，我会尽快更新。
 
 ---
@@ -156,17 +158,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build\make_release.ps1 -Sk
 ```
 
 输出目录：`三服合一物价补丁代码\发布版\物价补丁`
-
-### GitHub Actions 打包
-
-如果本地没有 Windows 构建环境，可以在 GitHub 上打包：
-
-1. 打开仓库的 **Actions** 页面
-2. 选择 **Build Windows Release**
-3. 点击 **Run workflow**
-4. 构建完成后，在本次 run 的 **Artifacts** 下载 `poe2-economy-display-mod`
-
-该 workflow 使用 Windows runner 调用 `build/make_release.ps1 -SkipDoc`，并上传 `poe2-economy-display-mod.zip`。
 
 ### 调试参数
 

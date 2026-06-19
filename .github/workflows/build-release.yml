@@ -2,14 +2,24 @@ name: Build Windows Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag. Leave empty to use build-<run-number>."
+        required: false
+        default: ""
   push:
     branches:
       - main
+    tags:
+      - "v*"
     paths:
       - ".github/workflows/build-release.yml"
       - "build/**"
       - "物价补丁/**"
       - "restore-seeds/**"
+
+permissions:
+  contents: write
 
 jobs:
   build-release:
@@ -45,3 +55,31 @@ jobs:
           name: poe2-economy-display-mod
           path: poe2-economy-display-mod.zip
           if-no-files-found: error
+
+      - name: Resolve release tag
+        id: release
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ inputs.tag_name }}"
+            if ([string]::IsNullOrWhiteSpace($tag)) {
+              $tag = "build-${{ github.run_number }}"
+            }
+          } else {
+            $tag = "${{ github.ref_name }}"
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub release
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.release.outputs.tag }}"
+          gh release create $tag ".\poe2-economy-display-mod.zip" `
+            --repo "${{ github.repository }}" `
+            --title "poe2-economy-display-mod $tag" `
+            --notes "Automated build from ${{ github.sha }}." `
+            --latest
