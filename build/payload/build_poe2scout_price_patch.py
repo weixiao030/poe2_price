@@ -21,6 +21,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -46,8 +47,30 @@ DEFAULT_TC_BASEITEMS = (
     / "data"
     / "data_balance_simplified chinese_baseitemtypes.datc64"
 )
+DEFAULT_EN_WORDS = (
+    PATCH_ROOT / "output" / "dat_files_latest" / "data" / "data_balance_words.datc64"
+)
+DEFAULT_TC_WORDS = (
+    PATCH_ROOT
+    / "output"
+    / "dat_files_latest"
+    / "data"
+    / "data_balance_simplified chinese_words.datc64"
+)
+DEFAULT_UNIQUE_GOLD_PRICES = (
+    PATCH_ROOT
+    / "output"
+    / "dat_files_latest"
+    / "data"
+    / "data_balance_uniquegoldprices.datc64"
+)
 DEFAULT_PATCH_SCRIPT = Path(__file__).with_name("poe2_name_price_patch.py")
 DISPLAY_NAME_FIELD_INDEX = 8
+DEFAULT_UNIQUE_CATEGORIES = ("accessory", "armour", "weapon")
+WORDS_ROW_SIZE = 64
+WORDS_EN_NAME_OFFSET = 4
+WORDS_DISPLAY_NAME_OFFSET = 48
+UNIQUE_GOLD_PRICES_ROW_SIZE = 20
 
 
 @dataclass(frozen=True)
@@ -73,6 +96,22 @@ class DatLayout:
     row_count: int
     row_size: int
     string_base: int
+
+
+@dataclass(frozen=True)
+class WordEntry:
+    row_index: int
+    en_name: str
+    display_name: str
+    display_offset: int
+    display_pointer_pos: int
+
+
+@dataclass(frozen=True)
+class UniqueName:
+    row_index: int
+    en_name: str
+    display_name: str
 
 
 class RetryingRequests:
@@ -187,6 +226,163 @@ def read_string_offset(data: bytes, layout: DatLayout, offset: int) -> str:
     return text
 
 
+def detect_words_layout(data: bytes) -> DatLayout:
+    if len(data) < 4 + WORDS_ROW_SIZE:
+        raise ValueError("Words.datc64 is too small")
+    row_count = struct.unpack_from("<I", data, 0)[0]
+    string_base = 4 + row_count * WORDS_ROW_SIZE
+    if row_count <= 0 or string_base >= len(data):
+        raise ValueError("cannot detect Words.datc64 row layout")
+    return DatLayout(
+        row_count=row_count, row_size=WORDS_ROW_SIZE, string_base=string_base
+    )
+
+
+def read_words_row(data: bytes, layout: DatLayout, row_index: int) -> WordEntry | None:
+    if row_index < 0 or row_index >= layout.row_count:
+        return None
+    row_start = 4 + row_index * layout.row_size
+    try:
+        en_offset = struct.unpack_from("<I", data, row_start + WORDS_EN_NAME_OFFSET)[0]
+        display_pointer_pos = row_start + WORDS_DISPLAY_NAME_OFFSET
+        display_offset = struct.unpack_from("<I", data, display_pointer_pos)[0]
+        en_name = read_string_offset(data, layout, en_offset)
+        display_name = read_string_offset(data, layout, display_offset)
+    except (struct.error, ValueError):
+        return None
+    if not en_name or len(en_name) > 160 or len(display_name) > 160:
+        return None
+    return WordEntry(
+        row_index=row_index,
+        en_name=en_name,
+        display_name=display_name,
+        display_offset=display_offset,
+        display_pointer_pos=display_pointer_pos,
+    )
+
+
+def load_unique_names(
+    unique_gold_prices_path: Path, en_words_path: Path, tc_words_path: Path
+) -> dict[str, UniqueName]:
+    unique_data = unique_gold_prices_path.read_bytes()
+    en_words_data = en_words_path.read_bytes()
+    tc_words_data = tc_words_path.read_bytes()
+    en_layout = detect_words_layout(en_words_data)
+    tc_layout = detect_words_layout(tc_words_data)
+    row_count = struct.unpack_from("<I", unique_data, 0)[0]
+
+    by_en_name: dict[str, UniqueName] = {}
+    for row_index in range(row_count):
+        row_start = 4 + row_index * UNIQUE_GOLD_PRICES_ROW_SIZE
+        if row_start + 4 > len(unique_data):
+            break
+        words_row_index = struct.unpack_from("<I", unique_data, row_start)[0]
+        en_entry = read_words_row(en_words_data, en_layout, words_row_index)
+        tc_entry = read_words_row(tc_words_data, tc_layout, words_row_index)
+        if not en_entry or not tc_entry:
+            continue
+        by_en_name[normalize_name(en_entry.en_name)] = UniqueName(
+            row_index=words_row_index,
+            en_name=en_entry.en_name,
+            display_name=tc_entry.display_name,
+        )
+    return by_en_name
+
+
+def append_utf16le_string(output: bytearray, layout: DatLayout, text: str) -> int:
+    if len(output) % 2:
+        output.append(0)
+    offset = len(output) - layout.string_base
+    if offset < 0 or offset > 0xFFFFFFFF:
+        raise ValueError("appended string offset is out of uint32 range")
+    output.extend(text.encode("utf-16-le"))
+    output.extend(b"\x00\x00\x00\x00")
+    return offset
+
+
+def strip_existing_price(name: str) -> str:
+    return re.sub(r"=[0-9]+(?:\.[0-9]+)?[DE]$", "", name).strip()
+
+
+def patch_unique_word_prices(
+    tc_words_path: Path,
+    unique_names: dict[str, UniqueName],
+    prices: dict[str, PriceObservation],
+    patched_words: Path,
+    separator: str = "=",
+) -> tuple[int, list[dict[str, str]], list[dict[str, str]]]:
+    data = tc_words_path.read_bytes()
+    layout = detect_words_layout(data)
+    output = bytearray(data)
+    patched_rows: set[int] = set()
+    patched: list[dict[str, str]] = []
+    missing: list[dict[str, str]] = []
+
+    for obs in prices.values():
+        if not obs.api_id.startswith("unique:"):
+            continue
+        if obs.price_exalted < Decimal("1") or not obs.display_price:
+            continue
+        unique = unique_names.get(normalize_name(obs.en_name))
+        if not unique:
+            missing.append(
+                {
+                    "api_id": obs.api_id,
+                    "en_name": obs.en_name,
+                    "reason": "not found in UniqueGoldPrices/Words",
+                }
+            )
+            continue
+        if unique.row_index in patched_rows:
+            continue
+        entry = read_words_row(data, layout, unique.row_index)
+        if not entry:
+            missing.append(
+                {
+                    "api_id": obs.api_id,
+                    "en_name": obs.en_name,
+                    "reason": "invalid target Words row",
+                }
+            )
+            continue
+        base_name = strip_existing_price(entry.display_name)
+        new_name = f"{base_name}{separator}{obs.display_price}"
+        new_offset = append_utf16le_string(output, layout, new_name)
+        struct.pack_into("<I", output, entry.display_pointer_pos, new_offset)
+        patched_rows.add(unique.row_index)
+        patched.append(
+            {
+                "words_row_index": str(unique.row_index),
+                "en_name": obs.en_name,
+                "old_name": entry.display_name,
+                "new_name": new_name,
+                "price": obs.display_price,
+                "api_id": obs.api_id,
+                "price_exalted": str(obs.price_exalted),
+                "source_pair": obs.source_pair,
+            }
+        )
+
+    if patched:
+        patched_words.parent.mkdir(parents=True, exist_ok=True)
+        patched_words.write_bytes(bytes(output))
+    return len(patched), patched, missing
+
+
+def upsert_zip_entry(zip_path: Path, entry_name: str, data: bytes) -> None:
+    entry_name = entry_name.replace("\\", "/")
+    existing: list[tuple[zipfile.ZipInfo, bytes]] = []
+    if zip_path.exists():
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            for info in zf.infolist():
+                if info.filename != entry_name:
+                    existing.append((info, zf.read(info.filename)))
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for info, content in existing:
+            zf.writestr(info, content)
+        zf.writestr(entry_name, data)
+
+
 def scan_base_items(path: Path) -> dict[str, str]:
     data = path.read_bytes()
     layout = detect_base_item_layout(data)
@@ -296,6 +492,65 @@ def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> di
     return results
 
 
+def fetch_unique_categories(
+    client: RetryingRequests, api_base: str, league: str
+) -> list[dict[str, Any]]:
+    data = client.get_json(f"{api_base}/poe2/Leagues/{league}/Items/Categories")
+    return data.get("UniqueCategories") or []
+
+
+def fetch_unique_category_items(
+    client: RetryingRequests,
+    api_base: str,
+    league: str,
+    category: str,
+    per_page: int = 100,
+) -> list[dict[str, Any]]:
+    query = urllib.parse.urlencode(
+        {
+            "Category": category,
+            "ReferenceCurrency": "exalted",
+            "Page": 1,
+            "PerPage": per_page,
+            "DataPoints": 7,
+            "FrequencyHours": 24,
+        }
+    )
+    data = client.get_json(
+        f"{api_base}/poe2/Leagues/{league}/Uniques/ByCategory?{query}"
+    )
+    return data.get("Items") or []
+
+
+def fetch_unique_items(
+    client: RetryingRequests,
+    api_base: str,
+    league: str,
+    max_workers: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    categories = [
+        category
+        for category in fetch_unique_categories(client, api_base, league)
+        if category.get("ApiId") in DEFAULT_UNIQUE_CATEGORIES
+    ]
+    all_items: list[dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
+        future_to_category = {
+            pool.submit(
+                fetch_unique_category_items,
+                client,
+                api_base,
+                league,
+                category["ApiId"],
+            ): category
+            for category in categories
+            if category.get("ApiId")
+        }
+        for future in as_completed(future_to_category):
+            all_items.extend(future.result())
+    return categories, all_items
+
+
 def to_decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
     try:
         return Decimal(str(value))
@@ -365,6 +620,28 @@ def choose_best_prices(
     return best
 
 
+def add_unique_observations(
+    best: dict[str, PriceObservation], unique_items: list[dict[str, Any]]
+) -> None:
+    for item in unique_items:
+        price = to_decimal(item.get("CurrentPrice"))
+        if price <= 0:
+            continue
+        unique_id = item.get("UniqueItemId") or item.get("ItemId")
+        name = (item.get("Name") or item.get("Text") or "").strip()
+        if not unique_id or not name:
+            continue
+        api_id = f"unique:{unique_id}"
+        best[api_id] = PriceObservation(
+            api_id=api_id,
+            en_name=name,
+            category=f"unique:{item.get('CategoryApiId') or ''}",
+            price_exalted=price,
+            value_traded=to_decimal(item.get("CurrentQuantity")),
+            source_pair=f"Unique/{item.get('CategoryApiId') or ''}",
+        )
+
+
 def divine_price_exalted(best: dict[str, PriceObservation]) -> Decimal:
     obs = best.get("divine")
     if obs and obs.price_exalted > 0:
@@ -420,6 +697,8 @@ def match_prices_to_base_items(
     pending_poe2db: list[PriceObservation] = []
 
     for obs in prices.values():
+        if obs.api_id.startswith("unique:"):
+            continue
         if obs.price_exalted < Decimal("1") or not obs.display_price:
             continue
         pair = by_en.get(obs.en_name) or by_en_norm.get(normalize_name(obs.en_name))
@@ -544,17 +823,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--league", default=DEFAULT_LEAGUE)
     parser.add_argument("--en-baseitems", type=Path, default=DEFAULT_EN_BASEITEMS)
     parser.add_argument("--tc-baseitems", type=Path, default=DEFAULT_TC_BASEITEMS)
+    parser.add_argument("--en-words", type=Path, default=DEFAULT_EN_WORDS)
+    parser.add_argument("--tc-words", type=Path, default=DEFAULT_TC_WORDS)
+    parser.add_argument("--unique-gold-prices", type=Path, default=DEFAULT_UNIQUE_GOLD_PRICES)
     parser.add_argument("--out-dir", type=Path, default=Path("output/poe2_price_patch_latest"))
     parser.add_argument("--max-workers", type=int, default=12)
     parser.add_argument("--retries", type=int, default=4)
     parser.add_argument("--backoff", type=float, default=0.8)
     parser.add_argument("--poe2db-fallback", action="store_true")
+    parser.add_argument("--no-uniques", action="store_true")
     parser.add_argument("--no-build-patch", action="store_true")
     parser.add_argument("--patch-script", type=Path, default=DEFAULT_PATCH_SCRIPT)
     parser.add_argument("--output-zip", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--patched-dat", type=Path)
+    parser.add_argument("--patched-words", type=Path)
     parser.add_argument("--game-path")
+    parser.add_argument("--words-game-path")
     parser.add_argument(
         "--mode",
         choices=["append", "fixed"],
@@ -577,6 +862,16 @@ def main(argv: list[str]) -> int:
     base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems)
     observations = collect_price_observations(scout["snapshot_pairs"])
     best = choose_best_prices(observations, scout["reference_currencies"])
+    unique_categories: list[dict[str, Any]] = []
+    unique_items: list[dict[str, Any]] = []
+    if not args.no_uniques:
+        unique_categories, unique_items = fetch_unique_items(
+            client,
+            args.api_base.rstrip("/"),
+            args.league,
+            max_workers=max(1, args.max_workers),
+        )
+        add_unique_observations(best, unique_items)
     divine_exalted = divine_price_exalted(best)
     apply_display_prices(best, divine_exalted)
     rows, missing = match_prices_to_base_items(
@@ -587,9 +882,26 @@ def main(argv: list[str]) -> int:
         max_workers=max(1, args.max_workers),
     )
 
+    unique_names: dict[str, UniqueName] = {}
+    unique_word_rows: list[dict[str, str]] = []
+    unique_word_missing: list[dict[str, str]] = []
+    unique_words_patched = 0
+    can_patch_unique_words = (
+        not args.no_uniques
+        and args.en_words.exists()
+        and args.tc_words.exists()
+        and args.unique_gold_prices.exists()
+    )
+    if can_patch_unique_words:
+        unique_names = load_unique_names(
+            args.unique_gold_prices, args.en_words, args.tc_words
+        )
+
     prices_csv = args.out_dir / "prices.csv"
     matched_csv = args.out_dir / "matched_prices_detail.csv"
     missing_csv = args.out_dir / "missing_prices.csv"
+    unique_words_csv = args.out_dir / "unique_word_prices_detail.csv"
+    unique_words_missing_csv = args.out_dir / "missing_unique_word_prices.csv"
     write_csv(prices_csv, rows, ["metadata_path", "name", "price", "new_name"])
     write_csv(
         matched_csv,
@@ -611,37 +923,91 @@ def main(argv: list[str]) -> int:
         ["api_id", "en_name", "poe2db_tw", "reason"],
     )
 
+    output_zip = args.output_zip or (args.out_dir / "物价补丁.zip")
     summary = {
         "league": args.league,
         "snapshot_epoch": scout["exchange_snapshot"].get("Epoch"),
         "base_currency": scout["exchange_snapshot"].get("BaseCurrencyText"),
-        "unique_scout_items": len(best),
+        "price_items": len(best),
+        "unique_categories": len(unique_categories),
+        "unique_items": len(unique_items),
+        "unique_words_available": len(unique_names),
+        "unique_words_patched": unique_words_patched,
         "matched_items": len(rows),
         "missing_items": len(missing),
         "divine_price_exalted": str(divine_exalted),
         "divine_exalted_ratio": divine_exalted_ratio_summary(divine_exalted),
         "poe2db_fallback": bool(args.poe2db_fallback),
     }
-    (args.out_dir / "summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
 
     if not args.no_build_patch:
         run_patch_builder(
             patch_script=args.patch_script,
             tc_baseitems=args.tc_baseitems,
             prices_csv=prices_csv,
-            output_zip=args.output_zip or (args.out_dir / "物价补丁.zip"),
+            output_zip=output_zip,
             report=args.report or (args.out_dir / "price_patch.report.json"),
             mode=args.mode,
             patched_dat=args.patched_dat,
             game_path=args.game_path,
         )
+        if can_patch_unique_words:
+            words_game_path = args.words_game_path or (
+                (args.game_path or "").replace("baseitemtypes.datc64", "words.datc64")
+            )
+            if words_game_path:
+                patched_words = args.patched_words or (args.out_dir / "words.patched.datc64")
+                unique_words_patched, unique_word_rows, unique_word_missing = patch_unique_word_prices(
+                    tc_words_path=args.tc_words,
+                    unique_names=unique_names,
+                    prices=best,
+                    patched_words=patched_words,
+                )
+                if unique_words_patched:
+                    upsert_zip_entry(
+                        output_zip,
+                        words_game_path,
+                        patched_words.read_bytes(),
+                    )
+        elif not args.no_uniques:
+            unique_word_missing.append(
+                {
+                    "api_id": "",
+                    "en_name": "",
+                    "reason": "missing Words or UniqueGoldPrices datc64 files",
+                }
+            )
+
+    write_csv(
+        unique_words_csv,
+        unique_word_rows,
+        [
+            "words_row_index",
+            "en_name",
+            "old_name",
+            "new_name",
+            "price",
+            "api_id",
+            "price_exalted",
+            "source_pair",
+        ],
+    )
+    write_csv(
+        unique_words_missing_csv,
+        unique_word_missing,
+        ["api_id", "en_name", "reason"],
+    )
+    summary["unique_words_available"] = len(unique_names)
+    summary["unique_words_patched"] = unique_words_patched
+    summary["missing_unique_word_prices"] = len(unique_word_missing)
+    (args.out_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"prices: {prices_csv}")
     if not args.no_build_patch:
-        print(f"patch: {args.output_zip or (args.out_dir / '物价补丁.zip')}")
+        print(f"patch: {output_zip}")
     return 0
 
 
