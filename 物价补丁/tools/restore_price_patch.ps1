@@ -146,9 +146,56 @@ function Get-ZipBaseItemsEntryAsTempFile {
     return $TempDat
 }
 
+function Test-ZipEntryExists {
+    param(
+        [string]$ZipPath,
+        [string]$EntryName
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        return ($null -ne $Archive.GetEntry($EntryName))
+    }
+    finally {
+        $Archive.Dispose()
+    }
+}
+
+function Copy-ZipEntry {
+    param(
+        [Parameter(Mandatory = $true)]$SourceArchive,
+        [Parameter(Mandatory = $true)]$TargetArchive,
+        [Parameter(Mandatory = $true)][string]$EntryName,
+        [switch]$Required
+    )
+
+    $Entry = $SourceArchive.GetEntry($EntryName)
+    if ($null -eq $Entry) {
+        if ($Required) {
+            throw "Restore zip does not contain $EntryName"
+        }
+        return $false
+    }
+
+    $NewEntry = $TargetArchive.CreateEntry($EntryName, [System.IO.Compression.CompressionLevel]::Optimal)
+    $Input = $Entry.Open()
+    $Output = $NewEntry.Open()
+    try {
+        $Input.CopyTo($Output)
+    }
+    finally {
+        $Output.Dispose()
+        $Input.Dispose()
+    }
+    return $true
+}
+
 function New-BaseItemRestoreZip {
     param(
         [string]$SourceDat,
+        [string]$SourceWords = "",
         [string]$OutputZip
     )
 
@@ -173,6 +220,14 @@ function New-BaseItemRestoreZip {
             $InstallInfo.TcBaseItemsPath,
             [System.IO.Compression.CompressionLevel]::Optimal
         ) | Out-Null
+        if (-not [string]::IsNullOrWhiteSpace($SourceWords) -and (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $Archive,
+                $SourceWords,
+                $TcWordsPath,
+                [System.IO.Compression.CompressionLevel]::Optimal
+            ) | Out-Null
+        }
     }
     finally {
         $Archive.Dispose()
@@ -193,6 +248,9 @@ function Assert-RestoreZip {
         }
         if ($Entry.Length -le 1048576) {
             throw "Restore zip entry is too small to be a valid BaseItemTypes.datc64"
+        }
+        if ($SupportsUniqueWords -and $null -eq $Archive.GetEntry($TcWordsPath)) {
+            throw "Restore zip does not contain $TcWordsPath. Run one-key update once from a clean game state to refresh the restore package."
         }
 
         $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_restore_assert_", [Guid]::NewGuid().ToString("N"), ".datc64"))
@@ -233,6 +291,9 @@ function Test-RestoreZipUsable {
         if ($null -eq $Entry -or $Entry.Length -le 1048576) {
             return $false
         }
+        if ($SupportsUniqueWords -and $null -eq $Archive.GetEntry($TcWordsPath)) {
+            return $false
+        }
 
         $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_restore_validate_", [Guid]::NewGuid().ToString("N"), ".datc64"))
         try {
@@ -265,11 +326,6 @@ function New-CurrentTargetRestoreZip {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $SourceArchive = [System.IO.Compression.ZipFile]::OpenRead($SourceZip)
     try {
-        $Entry = $SourceArchive.GetEntry($InstallInfo.TcBaseItemsPath)
-        if ($null -eq $Entry) {
-            throw "Restore zip does not contain $($InstallInfo.TcBaseItemsPath)"
-        }
-
         $OutputDir = Split-Path -Parent $OutputZip
         New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
         if (Test-Path -LiteralPath $OutputZip -PathType Leaf) {
@@ -278,15 +334,9 @@ function New-CurrentTargetRestoreZip {
 
         $TargetArchive = [System.IO.Compression.ZipFile]::Open($OutputZip, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
-            $NewEntry = $TargetArchive.CreateEntry($InstallInfo.TcBaseItemsPath, [System.IO.Compression.CompressionLevel]::Optimal)
-            $Input = $Entry.Open()
-            $Output = $NewEntry.Open()
-            try {
-                $Input.CopyTo($Output)
-            }
-            finally {
-                $Output.Dispose()
-                $Input.Dispose()
+            Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $InstallInfo.TcBaseItemsPath -Required | Out-Null
+            if ($SupportsUniqueWords) {
+                Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $TcWordsPath -Required | Out-Null
             }
         }
         finally {
@@ -480,6 +530,8 @@ $PhysicalRestoreOutZip = Join-Path $RestoreOutDir $PhysicalRestoreZipName
 $PatchFolderRestoreZip = Join-Path $RepoRoot $RestoreZipName
 $PatchFolderPhysicalRestoreZip = Join-Path $RepoRoot $PhysicalRestoreZipName
 $CleanDat = Join-Path $RepoRoot ("output\dat_files_latest\data\" + $InstallInfo.LanguageFileSlug)
+$TcWordsPath = $InstallInfo.TcBaseItemsPath -replace 'baseitemtypes\.datc64$', 'words.datc64'
+$SupportsUniqueWords = $TcWordsPath -in @("data/balance/words.datc64", "data/balance/traditional chinese/words.datc64")
 
 Write-Host "POE2 price patch restore" -ForegroundColor Green
 Write-Host "Game dir : $Poe2Dir"

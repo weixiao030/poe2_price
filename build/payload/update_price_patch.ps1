@@ -348,6 +348,7 @@ function Extract-RestoreBaseItems {
 function New-BaseItemZip {
     param(
         [string]$SourceDat,
+        [string]$SourceWords = "",
         [string]$OutputZip
     )
 
@@ -365,24 +366,49 @@ function New-BaseItemZip {
             $InstallInfo.TcBaseItemsPath,
             [System.IO.Compression.CompressionLevel]::Optimal
         ) | Out-Null
+        if (-not [string]::IsNullOrWhiteSpace($SourceWords) -and (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $Archive,
+                $SourceWords,
+                $TcWordsPath,
+                [System.IO.Compression.CompressionLevel]::Optimal
+            ) | Out-Null
+        }
     }
     finally {
         $Archive.Dispose()
     }
 }
 
-function Update-RestoreZipEntry {
+function Test-ZipEntryExists {
+    param(
+        [string]$ZipPath,
+        [string]$EntryName
+    )
+
+    if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
+        return $false
+    }
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        return ($null -ne $Archive.GetEntry($EntryName.Replace("\", "/")))
+    }
+    finally {
+        $Archive.Dispose()
+    }
+}
+
+function Update-ZipEntryFromFile {
     param(
         [string]$ZipPath,
         [string]$SourceDat,
         [string]$EntryName
     )
 
-    Assert-File $SourceDat "clean BaseItemTypes.datc64"
-    if (Test-BaseItemsLookPatched $SourceDat) {
-        throw "Refusing to refresh restore zip from a patched BaseItemTypes file."
-    }
-
+    Assert-File $SourceDat $EntryName
     $EntryName = $EntryName.Replace("\", "/")
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ZipPath) | Out-Null
 
@@ -411,6 +437,21 @@ function Update-RestoreZipEntry {
     finally {
         $Archive.Dispose()
     }
+}
+
+function Update-RestoreZipEntry {
+    param(
+        [string]$ZipPath,
+        [string]$SourceDat,
+        [string]$EntryName
+    )
+
+    Assert-File $SourceDat "clean BaseItemTypes.datc64"
+    if (Test-BaseItemsLookPatched $SourceDat) {
+        throw "Refusing to refresh restore zip from a patched BaseItemTypes file."
+    }
+
+    Update-ZipEntryFromFile -ZipPath $ZipPath -SourceDat $SourceDat -EntryName $EntryName
 }
 
 function Get-ExtractedBaseItemsPathForEntry {
@@ -630,6 +671,13 @@ function Ensure-RestoreZip {
             if ($ResolvedCandidate -ne $RestoreOutZip) {
                 Copy-Item -LiteralPath $ResolvedCandidate -Destination $RestoreOutZip -Force
             }
+            if (
+                $SupportsUniqueWords -and
+                (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
+                -not (Test-ZipEntryExists -ZipPath $RestoreOutZip -EntryName $TcWordsPath)
+            ) {
+                Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $TcWords -EntryName $TcWordsPath
+            }
             return (Resolve-Path -LiteralPath $RestoreOutZip).Path
         }
     }
@@ -637,7 +685,7 @@ function Ensure-RestoreZip {
     if (-not $SourceLooksPatched) {
         Write-Host "Refreshing fixed restore zip from current clean BaseItemTypes..." -ForegroundColor Yellow
         if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
-            New-BaseItemZip -SourceDat $SourceDat -OutputZip $RestoreOutZip
+            New-BaseItemZip -SourceDat $SourceDat -SourceWords $TcWords -OutputZip $RestoreOutZip
         }
         else {
             $SeedZip = ""
@@ -651,6 +699,9 @@ function Ensure-RestoreZip {
                 Copy-Item -LiteralPath $SeedZip -Destination $RestoreOutZip -Force
             }
             Update-RestoreZipEntry -ZipPath $RestoreOutZip -SourceDat $SourceDat -EntryName $InstallInfo.TcBaseItemsPath
+            if (Test-Path -LiteralPath $TcWords -PathType Leaf) {
+                Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $TcWords -EntryName $TcWordsPath
+            }
         }
         if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") -and $RestoreOutZip -ne $RestorePatchFolderZip) {
             Copy-Item -LiteralPath $RestoreOutZip -Destination $RestorePatchFolderZip -Force
@@ -723,6 +774,11 @@ $LatestDir = Join-Path $RepoRoot "output\dat_files_latest"
 $ExtractLog = Join-Path $RepoRoot "output\dat_files_latest_extract.log"
 $EnBaseItems = Join-Path $LatestDir "data\data_balance_baseitemtypes.datc64"
 $TcBaseItems = Join-Path $LatestDir ("data\" + $InstallInfo.LanguageFileSlug)
+$EnWords = Join-Path $LatestDir "data\data_balance_words.datc64"
+$TcWordsPath = $InstallInfo.TcBaseItemsPath -replace 'baseitemtypes\.datc64$', 'words.datc64'
+$TcWords = Join-Path $LatestDir ("data\" + ($TcWordsPath -replace '/', '_'))
+$UniqueGoldPrices = Join-Path $LatestDir "data\data_balance_uniquegoldprices.datc64"
+$SupportsUniqueWords = $TcWordsPath -in @("data/balance/words.datc64", "data/balance/traditional chinese/words.datc64")
 $OutDir = Join-Path $RepoRoot "output\poe2_price_patch_latest"
 $RestoreOutDir = Join-Path $RepoRoot "output\restore"
 $RestoreZipName = Get-Poe2FixedRestorePatchZipName -InstallInfo $InstallInfo
@@ -734,6 +790,7 @@ $PhysicalRestorePatchFolderZip = Join-Path $RepoRoot $PhysicalRestoreZipName
 $PricePatchZipName = Get-Poe2PatchName "PricePatchZip"
 $PatchZip = Join-Path $OutDir $PricePatchZipName
 $PatchedDat = Join-Path $OutDir "baseitemtypes.patched.datc64"
+$PatchedWords = Join-Path $OutDir "words.patched.datc64"
 $ReportJson = Join-Path $OutDir "price_patch.report.json"
 $SummaryJson = Join-Path $OutDir "summary.json"
 
@@ -811,6 +868,32 @@ if (-not $SkipExtract) {
             throw "Failed to extract $($InstallInfo.LanguageName) BaseItemTypes. Exit code: $LASTEXITCODE"
         }
         Write-Host "Extracted to: $TcBaseItems"
+
+        if ($SupportsUniqueWords) {
+            Write-Host "Extracting English Words..."
+            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/words.datc64" $EnWords
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to extract English Words. Exit code: $LASTEXITCODE"
+            }
+            Write-Host "Extracted to: $EnWords"
+
+            Write-Host "Extracting $($InstallInfo.LanguageName) Words..."
+            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $TcWordsPath $TcWords
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to extract $($InstallInfo.LanguageName) Words. Exit code: $LASTEXITCODE"
+            }
+            Write-Host "Extracted to: $TcWords"
+
+            Write-Host "Extracting UniqueGoldPrices..."
+            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/uniquegoldprices.datc64" $UniqueGoldPrices
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to extract UniqueGoldPrices. Exit code: $LASTEXITCODE"
+            }
+            Write-Host "Extracted to: $UniqueGoldPrices"
+        }
+        else {
+            Write-Host "Skip unique item Words extraction for $($InstallInfo.LanguageName)." -ForegroundColor Yellow
+        }
     }
 }
 else {
@@ -819,6 +902,18 @@ else {
 
 Assert-File $EnBaseItems "English BaseItemTypes"
 Assert-File $TcBaseItems "$($InstallInfo.LanguageName) BaseItemTypes"
+$CanPatchUniqueWords = (
+    $SupportsUniqueWords -and
+    (Test-Path -LiteralPath $EnWords -PathType Leaf) -and
+    (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
+    (Test-Path -LiteralPath $UniqueGoldPrices -PathType Leaf)
+)
+if ($SupportsUniqueWords -and -not $CanPatchUniqueWords) {
+    Write-Warning "Unique item price labels disabled: Words or UniqueGoldPrices datc64 files were not extracted."
+}
+elseif (-not $SupportsUniqueWords) {
+    Write-Warning "Unique item price labels disabled: only English and Traditional Chinese are supported for Words patching."
+}
 $RestoreZip = Ensure-RestoreZip $TcBaseItems
 if ($GameMode -eq "GGPK" -and -not (Test-BaseItemsLookPatched $TcBaseItems)) {
     $RestoreZip = Update-IntlRestoreZipFromExtractedBaseItems -ZipPath $RestoreZip
@@ -828,7 +923,7 @@ if ($SourceBaseItemsLooksPatched) {
     Write-Host "Current BaseItemTypes looks patched. Rebuilding from fixed restore zip..." -ForegroundColor Yellow
     Extract-RestoreBaseItems -RestoreZip $RestoreZip -OutputDat $TcBaseItems
 }
-Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems)
+Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $UniqueGoldPrices)
 if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
     Copy-Item -LiteralPath $RestoreZip -Destination $RestorePatchFolderZip -Force
 }
@@ -860,6 +955,18 @@ $BuildArgs = @(
     "--report", $ReportJson,
     "--game-path", $InstallInfo.TcBaseItemsPath
 )
+if ($CanPatchUniqueWords) {
+    $BuildArgs += @(
+        "--en-words", $EnWords,
+        "--tc-words", $TcWords,
+        "--unique-gold-prices", $UniqueGoldPrices,
+        "--patched-words", $PatchedWords,
+        "--words-game-path", $TcWordsPath
+    )
+}
+else {
+    $BuildArgs += "--no-uniques"
+}
 if (-not $NoPoe2dbFallback) {
     $BuildArgs += "--poe2db-fallback"
 }
@@ -921,8 +1028,7 @@ if (-not $NoInstall) {
             throw "Missing PatchBundle3.dll or PatchBundle3.exe: $BundledBundlePatchDll"
         }
 
-        $TempPatchZip = Join-Path $env:TEMP ([Guid]::NewGuid().ToString("N") + ".zip")
-        New-BaseItemZip -SourceDat $PatchedDat -OutputZip $TempPatchZip
+        $TempPatchZip = $PatchZip
 
         if ($UsePatchBundleDll) {
             Write-Host "Bundle3: $($BundledBundlePatchDll)"
