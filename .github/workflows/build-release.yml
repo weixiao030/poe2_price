@@ -58,7 +58,7 @@ jobs:
 
       - name: Resolve release tag
         id: release
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
@@ -66,20 +66,28 @@ jobs:
             if ([string]::IsNullOrWhiteSpace($tag)) {
               $tag = "build-${{ github.run_number }}"
             }
+          } elseif ("${{ github.ref }}" -eq "refs/heads/main") {
+            $tag = "build-${{ github.run_number }}"
           } else {
             $tag = "${{ github.ref_name }}"
           }
           "tag=$tag" >> $env:GITHUB_OUTPUT
 
       - name: Publish GitHub release
-        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ steps.release.outputs.tag }}"
-          gh release create $tag ".\poe2-economy-display-mod.zip" `
-            --repo "${{ github.repository }}" `
-            --title "poe2-economy-display-mod $tag" `
-            --notes "Automated build from ${{ github.sha }}." `
-            --latest
+          $repo = "${{ github.repository }}"
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag ".\poe2-economy-display-mod.zip" --repo $repo --clobber
+          } else {
+            gh release create $tag ".\poe2-economy-display-mod.zip" `
+              --repo $repo `
+              --title "poe2-economy-display-mod $tag" `
+              --notes "Automated build from ${{ github.sha }}." `
+              --latest
+          }
