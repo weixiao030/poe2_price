@@ -154,6 +154,24 @@ function Test-BaseItemsLookPatched {
     }
 }
 
+function Test-WordsLookPatched {
+    param([string]$SourceWords)
+
+    if (-not (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $Bytes = [System.IO.File]::ReadAllBytes($SourceWords)
+        $Text = [System.Text.Encoding]::Unicode.GetString($Bytes)
+        return [bool]($Text -match '(?:\r?\n\[[0-9]+(?:\.[0-9]+)?[DE]\]|<<\[[0-9]+(?:\.[0-9]+)?[DE]\]>>|\[[^\]\r\n|]*[0-9]+(?:\.[0-9]+)?[DE][^\]\r\n|]*\|[^\]\r\n]+\])')
+    }
+    catch {
+        Write-Warning "Words.datc64 patch check failed: $($_.Exception.Message)"
+        return $true
+    }
+}
+
 function Get-BaseItemsMetadataSignature {
     param([string]$SourceDat)
 
@@ -344,6 +362,33 @@ function Extract-RestoreBaseItems {
     }
 }
 
+function Extract-RestoreWords {
+    param(
+        [Parameter(Mandatory = $true)][string]$RestoreZip,
+        [Parameter(Mandatory = $true)][string]$OutputWords
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($RestoreZip)
+    try {
+        $Entry = $Archive.GetEntry($TcWordsPath)
+        if ($null -eq $Entry) {
+            throw "Restore zip does not contain $($TcWordsPath): $RestoreZip"
+        }
+
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputWords) | Out-Null
+        [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $OutputWords, $true)
+    }
+    finally {
+        $Archive.Dispose()
+    }
+
+    if (Test-WordsLookPatched $OutputWords) {
+        throw "Restore zip Words.datc64 looks patched: $RestoreZip"
+    }
+}
+
 function New-BaseItemZip {
     param(
         [string]$SourceDat,
@@ -366,6 +411,9 @@ function New-BaseItemZip {
             [System.IO.Compression.CompressionLevel]::Optimal
         ) | Out-Null
         if (-not [string]::IsNullOrWhiteSpace($SourceWords) -and (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
+            if (Test-WordsLookPatched $SourceWords) {
+                throw "Refusing to create restore zip from a patched Words.datc64 file."
+            }
             [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
                 $Archive,
                 $SourceWords,
@@ -484,6 +532,10 @@ function Update-IntlRestoreZipFromExtractedBaseItems {
         $WordsEntryName = Get-Poe2WordsPathFromBaseItemsPath -BaseItemsPath $EntryName
         $ExtractedWords = Get-ExtractedBaseItemsPathForEntry $WordsEntryName
         if (Test-Path -LiteralPath $ExtractedWords -PathType Leaf) {
+            if (Test-WordsLookPatched $ExtractedWords) {
+                Write-Warning "Skip refreshing restore Words entry from patched file: $WordsEntryName"
+                continue
+            }
             Update-ZipEntryFromFile -ZipPath $ZipPath -SourceDat $ExtractedWords -EntryName $WordsEntryName
             $Updated += 1
         }
@@ -534,6 +586,10 @@ function New-BaseItemZipFromPhysicalRestore {
                 & $BundledBundleExtractorExe $TempIndex $TcWordsPath $TempWords
                 if ($LASTEXITCODE -ne 0) {
                     Write-Warning "Ignore physical restore zip, Words extraction failed: $Candidate"
+                    continue
+                }
+                if (Test-WordsLookPatched $TempWords) {
+                    Write-Warning "Ignore physical restore zip, extracted Words looks patched: $Candidate"
                     continue
                 }
             }
@@ -677,6 +733,7 @@ function Ensure-RestoreZip {
             if (
                 $SupportsUniqueWords -and
                 (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
+                -not (Test-WordsLookPatched $TcWords) -and
                 -not (Test-ZipEntryExists -ZipPath $RestoreOutZip -EntryName $TcWordsPath)
             ) {
                 Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $TcWords -EntryName $TcWordsPath
@@ -687,8 +744,12 @@ function Ensure-RestoreZip {
 
     if (-not $SourceLooksPatched) {
         Write-Host "Refreshing fixed restore zip from current clean BaseItemTypes..." -ForegroundColor Yellow
+        $CleanTcWords = ""
+        if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf) -and -not (Test-WordsLookPatched $TcWords)) {
+            $CleanTcWords = $TcWords
+        }
         if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
-            New-BaseItemZip -SourceDat $SourceDat -SourceWords $TcWords -OutputZip $RestoreOutZip
+            New-BaseItemZip -SourceDat $SourceDat -SourceWords $CleanTcWords -OutputZip $RestoreOutZip
         }
         else {
             $SeedZip = ""
@@ -702,8 +763,8 @@ function Ensure-RestoreZip {
                 Copy-Item -LiteralPath $SeedZip -Destination $RestoreOutZip -Force
             }
             Update-RestoreZipEntry -ZipPath $RestoreOutZip -SourceDat $SourceDat -EntryName $InstallInfo.TcBaseItemsPath
-            if (Test-Path -LiteralPath $TcWords -PathType Leaf) {
-                Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $TcWords -EntryName $TcWordsPath
+            if (-not [string]::IsNullOrWhiteSpace($CleanTcWords)) {
+                Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $CleanTcWords -EntryName $TcWordsPath
             }
         }
         if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") -and $RestoreOutZip -ne $RestorePatchFolderZip) {
@@ -926,6 +987,17 @@ if ($SourceBaseItemsLooksPatched) {
     Write-Host "Current BaseItemTypes looks patched. Rebuilding from fixed restore zip..." -ForegroundColor Yellow
     Extract-RestoreBaseItems -RestoreZip $RestoreZip -OutputDat $TcBaseItems
 }
+if ($SupportsUniqueWords -and (Test-WordsLookPatched $TcWords)) {
+    Write-Host "Current Words.datc64 contains unique price labels. Rebuilding from fixed restore zip..." -ForegroundColor Yellow
+    Extract-RestoreWords -RestoreZip $RestoreZip -OutputWords $TcWords
+}
+$CanPatchUniqueWords = (
+    $SupportsUniqueWords -and
+    (Test-Path -LiteralPath $EnWords -PathType Leaf) -and
+    (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
+    -not (Test-WordsLookPatched $TcWords) -and
+    (Test-Path -LiteralPath $UniqueGoldPrices -PathType Leaf)
+)
 Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $UniqueGoldPrices)
 if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
     Copy-Item -LiteralPath $RestoreZip -Destination $RestorePatchFolderZip -Force
