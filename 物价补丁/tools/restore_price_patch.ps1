@@ -55,6 +55,7 @@ function Test-BaseItemsLookPatched {
                     return $false
                 }
                 return (
+                    $Name -match '^\[[0-9]+(?:\.[0-9]+)?[DE]\|[^\]\r\n]+\]$' -or
                     $Name -match '=[0-9]+(?:\.[0-9]+)?[DE]$' -or
                     $Name -match '^[0-9]+(?:\.[0-9]+)?[DE]$' -or
                     $Name -match '^<1[DE]$' -or

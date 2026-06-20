@@ -1,4 +1,4 @@
-# 传奇价格兼容 PoE Overlay II 和易刷
+# 价格标记兼容 PoE Overlay II 和易刷
 
 ## 背景
 
@@ -16,6 +16,7 @@
 
 - 默认 `--unique-price-label-mode` 改为 `markup`。
 - `markup` 生成格式为 `[价格|传奇名]`，复制文本进入 Overlay / 易刷后都会还原为干净的 `传奇名`，并避免游戏内重复显示传奇名。
+- 普通底材 `BaseItemTypes.datc64` 也生成 `[价格|底材名]`，避免稀有物品标题区出现单独价格行。
 - 保留 `overlay` 和 `newline` 作为显式调试模式，但 `overlay` 不再作为默认，因为它不兼容易刷。
 - `Test-WordsLookPatched` 和 Python 检测逻辑同步识别三类传奇价格标记：
   - `\n[1.00E]`
