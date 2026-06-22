@@ -33,6 +33,37 @@ function Write-Step {
     Write-Host "==> $Text" -ForegroundColor Cyan
 }
 
+function Test-ToolOutputFailure {
+    param(
+        [string]$Text,
+        [string[]]$ExtraNeedles = @()
+    )
+
+    if ([string]::IsNullOrEmpty($Text)) {
+        return $false
+    }
+
+    # Fix #11: avoid regex parsing of localized output under Windows PowerShell encoding fallback.
+    $Needles = @(
+        "Exception",
+        "Unhandled",
+        "Error:"
+    ) + @(
+        [string]::Concat([char]0x932F, [char]0x8AA4),
+        [string]::Concat([char]0x9519, [char]0x8BEF),
+        [string]::Concat([char]0x5931, [char]0x6557),
+        [string]::Concat([char]0x5931, [char]0x8D25)
+    ) + $ExtraNeedles
+
+    foreach ($Needle in $Needles) {
+        if ($Text.IndexOf($Needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Assert-File {
     param([string]$Path, [string]$Name)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
@@ -1083,7 +1114,7 @@ if (-not $NoInstall) {
             $InstallerOutput = "" | & $Dotnet $BundledPatchDll $ContentGgpk $PatchFolderZip 2>&1
             $InstallerOutput | ForEach-Object { Write-Host $_ }
             $InstallerText = ($InstallerOutput | Out-String)
-            if ($LASTEXITCODE -ne 0 -or $InstallerText -match 'Exception|Unhandled|錯誤|错误|失敗|失败') {
+            if ($LASTEXITCODE -ne 0 -or (Test-ToolOutputFailure -Text $InstallerText)) {
                 throw "Patch installer failed. Exit code: $LASTEXITCODE"
             }
         }
@@ -1129,7 +1160,7 @@ if (-not $NoInstall) {
 
         $BundlePatchOutput | ForEach-Object { Write-Host $_ }
         $BundlePatchText = ($BundlePatchOutput | Out-String)
-        if ($LASTEXITCODE -ne 0 -or $BundlePatchText -match 'Exception|Unhandled|FileNotFound|Could not load|Error:|錯誤|错误|失敗|失败') {
+        if ($LASTEXITCODE -ne 0 -or (Test-ToolOutputFailure -Text $BundlePatchText -ExtraNeedles @("FileNotFound", "Could not load"))) {
             Remove-Item -LiteralPath $TempPatchZip -Force -ErrorAction SilentlyContinue
             throw "PatchBundle3 failed. Exit code: $LASTEXITCODE"
         }

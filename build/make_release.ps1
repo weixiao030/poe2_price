@@ -458,6 +458,15 @@ function Build-Payload {
         Copy-Item -LiteralPath $Source -Destination (Join-Path $PayloadDir $FileName) -Force
     }
 
+    # Fix #10: include Bundles2 extractor in the launcher payload fallback.
+    $PayloadBundleExtractorDir = Join-Path $PayloadDir "BundleExtractor"
+    New-DirectorySafe -Path $PayloadBundleExtractorDir -RootPath $Root | Out-Null
+    foreach ($FileName in @("BundleExtractor.exe", "oo2core.dll")) {
+        $Source = Join-Path $SourceToolsDir (Join-Path "BundleExtractor" $FileName)
+        Assert-File -Path $Source -Name "BundleExtractor\$FileName"
+        Copy-Item -LiteralPath $Source -Destination (Join-Path $PayloadBundleExtractorDir $FileName) -Force
+    }
+
     if (Test-Path -LiteralPath $PayloadZip -PathType Leaf) {
         Remove-Item -LiteralPath $PayloadZip -Force
     }
