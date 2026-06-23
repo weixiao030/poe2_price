@@ -497,6 +497,31 @@ function Test-PhysicalRestoreZipUsable {
         return $false
     }
     try {
+        $ManifestEntry = $Archive.GetEntry("manifest.json")
+        if ($null -eq $ManifestEntry) {
+            return $false
+        }
+
+        $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
+        try {
+            $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json
+        }
+        catch {
+            return $false
+        }
+        finally {
+            $Reader.Dispose()
+        }
+        if ([string]$Manifest.kind -ne "poe2-price-patch-physical-restore") {
+            return $false
+        }
+        if ([string]$Manifest.install_kind -ne [string]$InstallInfo.InstallKind) {
+            return $false
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$Manifest.target_path) -and [string]$Manifest.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
+            return $false
+        }
+
         $Entry = $Archive.GetEntry("Bundles2/_.index.bin")
         return ($null -ne $Entry -and $Entry.Length -gt 1048576)
     }
@@ -508,9 +533,7 @@ function Test-PhysicalRestoreZipUsable {
 function Get-RestoreZipCandidates {
     $Paths = New-Object System.Collections.Generic.List[string]
     foreach ($Name in (Get-Poe2RestorePatchZipCandidateNames -InstallInfo $InstallInfo)) {
-        if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
-            $Paths.Add((Join-Path $RepoRoot $Name))
-        }
+        $Paths.Add((Join-Path $RepoRoot $Name))
         $Paths.Add((Join-Path $RestoreOutDir $Name))
     }
 
@@ -531,14 +554,26 @@ function Get-PhysicalRestoreZipCandidates {
         (Get-Poe2PatchName "PhysicalRestorePatchZip")
     )
 
-    $SeenNames = @{}
+    $SearchRoots = @(
+        $RepoRoot,
+        $RestoreOutDir,
+        (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)),
+        (Join-Path (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)) "output\restore")
+    )
+
+    $SeenPaths = @{}
     foreach ($Name in $Names) {
-        if ($SeenNames.ContainsKey($Name)) {
-            continue
+        foreach ($Root in $SearchRoots) {
+            if ([string]::IsNullOrWhiteSpace($Root)) {
+                continue
+            }
+            $Path = [System.IO.Path]::GetFullPath((Join-Path $Root $Name))
+            $Key = $Path.ToLowerInvariant()
+            if (-not $SeenPaths.ContainsKey($Key)) {
+                $SeenPaths[$Key] = $true
+                $Path
+            }
         }
-        $SeenNames[$Name] = $true
-        Join-Path $RepoRoot $Name
-        Join-Path $RestoreOutDir $Name
     }
 }
 

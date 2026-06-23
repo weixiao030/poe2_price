@@ -68,10 +68,6 @@ function Get-Poe2RestorePatchZipCandidateNames {
 function Get-Poe2FixedPhysicalRestorePatchZipName {
     param([Parameter(Mandatory = $true)]$InstallInfo)
 
-    if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
-        return Get-Poe2PatchName "ChinaRestorePatchZip"
-    }
-
     return Get-Poe2PatchName "PhysicalRestorePatchZip"
 }
 

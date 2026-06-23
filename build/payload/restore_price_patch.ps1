@@ -365,6 +365,9 @@ function Get-RestoreZipCandidates {
     foreach ($Name in (Get-Poe2RestorePatchZipCandidateNames -InstallInfo $InstallInfo)) {
         $Paths.Add((Join-Path $RepoRoot $Name))
         $Paths.Add((Join-Path $RestoreOutDir $Name))
+        $GamePatchRoot = Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)
+        $Paths.Add((Join-Path $GamePatchRoot $Name))
+        $Paths.Add((Join-Path $GamePatchRoot "output\restore\$Name"))
     }
 
     $Seen = @{}
@@ -384,14 +387,26 @@ function Get-PhysicalRestoreZipCandidates {
         (Get-Poe2PatchName "PhysicalRestorePatchZip")
     )
 
-    $SeenNames = @{}
+    $SearchRoots = @(
+        $RepoRoot,
+        $RestoreOutDir,
+        (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)),
+        (Join-Path (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)) "output\restore")
+    )
+
+    $SeenPaths = @{}
     foreach ($Name in $Names) {
-        if ($SeenNames.ContainsKey($Name)) {
-            continue
+        foreach ($Root in $SearchRoots) {
+            if ([string]::IsNullOrWhiteSpace($Root)) {
+                continue
+            }
+            $Path = [System.IO.Path]::GetFullPath((Join-Path $Root $Name))
+            $Key = $Path.ToLowerInvariant()
+            if (-not $SeenPaths.ContainsKey($Key)) {
+                $SeenPaths[$Key] = $true
+                $Path
+            }
         }
-        $SeenNames[$Name] = $true
-        Join-Path $RepoRoot $Name
-        Join-Path $RestoreOutDir $Name
     }
 }
 
@@ -403,6 +418,28 @@ function Assert-PhysicalRestoreZip {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
     try {
+        $ManifestEntry = $Archive.GetEntry("manifest.json")
+        if ($null -eq $ManifestEntry) {
+            throw "Physical restore zip is missing manifest.json"
+        }
+
+        $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
+        try {
+            $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json
+        }
+        finally {
+            $Reader.Dispose()
+        }
+        if ([string]$Manifest.kind -ne "poe2-price-patch-physical-restore") {
+            throw "Physical restore zip manifest kind is invalid"
+        }
+        if ([string]$Manifest.install_kind -ne [string]$InstallInfo.InstallKind) {
+            throw "Physical restore zip is for $($Manifest.install_kind), current install is $($InstallInfo.InstallKind)"
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$Manifest.target_path) -and [string]$Manifest.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
+            throw "Physical restore zip is for $($Manifest.target_path), current target is $($InstallInfo.TcBaseItemsPath)"
+        }
+
         $Entry = $Archive.GetEntry("Bundles2/_.index.bin")
         if ($null -eq $Entry -or $Entry.Length -le 1048576) {
             throw "Physical restore zip does not contain a valid Bundles2/_.index.bin"
@@ -575,17 +612,14 @@ if ($GameMode -eq "Bundles2") {
                 break
             }
             catch {
-                Write-Warning "Ignore invalid physical restore zip: $Candidate"
+                Write-Warning "Ignore invalid physical restore zip: $Candidate ($($_.Exception.Message))"
             }
         }
     }
 
     if ([string]::IsNullOrWhiteSpace($PhysicalRestoreZip)) {
-        if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
-            throw "Missing fixed physical restore zip. Put $PhysicalRestoreZipName in the patch folder, then re-run."
-        }
         Write-Warning "Missing physical restore zip: $PhysicalRestoreZipName"
-        Write-Warning "Steam/Epic restore will fall back to PatchBundle3. If it shows 'Failed to create mutex', verify game files once, then run one-key update to create the physical restore package."
+        Write-Warning "Bundles2 restore will fall back to PatchBundle3. If it shows 'Failed to create mutex', verify or repair game files once, then run one-key update to create the physical restore package."
     }
     else {
         Write-Step "Restore physical Bundles2 files"
@@ -620,13 +654,14 @@ function Ensure-CleanBaseItemForRestore {
     Write-Host "File: $($InstallInfo.TcBaseItemsPath)"
     Write-Host "Output: $CleanDat"
 
-    & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcBaseItemsPath $CleanDat
+    $ExtractLog = Join-Path $ExtractDir ([string]::Concat("restore_extract_", [Guid]::NewGuid().ToString("N"), ".log"))
+    & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcBaseItemsPath $CleanDat *> $ExtractLog
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to extract clean BaseItemTypes. Exit code: $LASTEXITCODE"
+        throw "Failed to extract clean BaseItemTypes. Exit code: $LASTEXITCODE. Log: $ExtractLog"
     }
 
     if (Test-BaseItemsLookPatched $CleanDat) {
-        throw "Extracted BaseItemTypes still looks patched. Restore zip is required."
+        Write-Warning "Extracted BaseItemTypes already contains price markers; restore zip compatibility cannot be checked against current patched data."
     }
 
     return $CleanDat
@@ -666,11 +701,16 @@ try {
         }
         Write-Host "Restore package matches current game data." -ForegroundColor Green
     }
-    elseif (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
+    elseif ($GameMode -eq "Bundles2") {
         $CleanDatForCheck = Ensure-CleanBaseItemForRestore
-        $RestoreEntryTemp = Get-ZipBaseItemsEntryAsTempFile -ZipPath $RestoreZip -EntryName $InstallInfo.TcBaseItemsPath
-        if (-not (Test-BaseItemsCompatible $RestoreEntryTemp $CleanDatForCheck)) {
-            throw "Restore zip is outdated for the current game files. Run the official launcher until the game is clean, then run one-key update to refresh restore packages."
+        if (-not (Test-BaseItemsLookPatched $CleanDatForCheck)) {
+            $RestoreEntryTemp = Get-ZipBaseItemsEntryAsTempFile -ZipPath $RestoreZip -EntryName $InstallInfo.TcBaseItemsPath
+            if (-not (Test-BaseItemsCompatible $RestoreEntryTemp $CleanDatForCheck)) {
+                throw "Restore zip is outdated for the current game files. Run the official launcher until the game is clean, then run one-key update to refresh restore packages."
+            }
+        }
+        else {
+            Write-Warning "Current BaseItemTypes already contains price markers; skipping compatibility check against patched game data and using the clean restore package."
         }
     }
 }
@@ -688,7 +728,7 @@ if ($RestoreZip -ne $PatchFolderRestoreZip -and -not ([bool]$InstallInfo.IsChina
 }
 
 $InstallRestoreZip = $RestoreZip
-if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
+if ($GameMode -eq "Bundles2" -or -not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
     $SingleTargetRestoreZip = Join-Path $RestoreOutDir ([string]::Concat("install_", $RestoreZipName))
     $InstallRestoreZip = New-CurrentTargetRestoreZip -SourceZip $RestoreZip -OutputZip $SingleTargetRestoreZip
 }
