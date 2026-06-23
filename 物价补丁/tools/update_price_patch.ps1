@@ -157,7 +157,7 @@ function Convert-ErrorMessage {
         return New-FailureMessage `
             -Reason "获取价格或生成补丁失败。" `
             -Suggestions @(
-                "请检查网络是否能访问 poe2scout。",
+                "请检查网络是否能访问当前价格源。",
                 "如果是临时网络问题，稍后重新运行一键更新即可。"
             ) `
             -Details @("脚本退出码：$($Matches[1])")
@@ -1067,6 +1067,8 @@ Write-Host "写入目标：$($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cya
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
+$IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*"
+$PriceSourceName = if ($IsChinaClient) { "国服 poecurrency.top" } else { "POE2 Scout" }
 
 if ($GameMode -eq "GGPK") {
     Assert-File $ContentGgpk "Content.ggpk"
@@ -1207,7 +1209,7 @@ if ($GameMode -eq "Bundles2") {
     Write-Host "  $PhysicalRestoreZip"
 }
 
-Write-Step "获取 POE2 Scout 价格并生成补丁包"
+Write-Step "获取 $PriceSourceName 价格并生成补丁包"
 $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
 $PatchBuildMode = "append"
 if (-not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_BUILD_MODE)) {
@@ -1241,8 +1243,14 @@ if ($CanPatchUniqueWords) {
 else {
     $BuildArgs += "--no-uniques"
 }
-if (-not $NoPoe2dbFallback) {
+if (-not $NoPoe2dbFallback -and -not $IsChinaClient) {
     $BuildArgs += "--poe2db-fallback"
+}
+if ($IsChinaClient) {
+    $BuildArgs += @(
+        "--price-source", "poecurrency-cn",
+        "--poecurrency-summary-url", "https://poecurrency.top/api/summary?version=2"
+    )
 }
 
 & $Python @BuildArgs

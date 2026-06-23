@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fetch POE2 Scout exchange prices and build a PoE2 CN item-name price patch.
+Fetch POE2 market prices and build a PoE2 item-name price patch.
 
 Network fetching uses requests + ThreadPoolExecutor + retry/backoff. Playwright
 is only useful for discovering the endpoints; this script performs the real
@@ -34,7 +34,9 @@ from urllib3.util.retry import Retry
 
 
 DEFAULT_SCOUT_API = "https://api.poe2scout.com"
+DEFAULT_POECURRENCY_SUMMARY_API = "https://poecurrency.top/api/summary?version=2"
 DEFAULT_LEAGUE = "runes"
+PRICE_SOURCES = ("poe2scout", "poecurrency-cn")
 SCRIPT_DIR = Path(__file__).resolve().parent
 PATCH_ROOT = SCRIPT_DIR.parent
 DEFAULT_EN_BASEITEMS = (
@@ -82,6 +84,9 @@ WORDS_ROW_SIZE = 64
 WORDS_EN_NAME_OFFSET = 4
 WORDS_DISPLAY_NAME_OFFSET = 48
 UNIQUE_GOLD_PRICES_ROW_SIZE = 20
+CN_DIVINE_NAMES = ("神圣石", "神圣宝珠", "Divine Orb")
+CN_EXALTED_NAMES = ("崇高石", "崇高宝珠", "Exalted Orb")
+CN_TRUSTED_BUY_SELL_RATIO = Decimal("5")
 
 
 @dataclass(frozen=True)
@@ -584,6 +589,15 @@ def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> di
     return results
 
 
+def fetch_poecurrency_summary(
+    client: RetryingRequests, summary_url: str
+) -> list[dict[str, Any]]:
+    data = client.get_json(summary_url)
+    if not isinstance(data, list):
+        raise ValueError("poecurrency summary response must be a list")
+    return data
+
+
 def fetch_unique_categories(
     client: RetryingRequests, api_base: str, league: str
 ) -> list[dict[str, Any]]:
@@ -648,6 +662,77 @@ def to_decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return default
+
+
+def normalize_market_name(value: str) -> str:
+    value = html.unescape(str(value)).strip().lower()
+    value = value.replace("（", "(").replace("）", ")")
+    return re.sub(r"[\s\u3000]+", "", value)
+
+
+CN_DIVINE_NORMALIZED = {normalize_market_name(name) for name in CN_DIVINE_NAMES}
+CN_EXALTED_NORMALIZED = {normalize_market_name(name) for name in CN_EXALTED_NAMES}
+
+
+def poecurrency_api_id(name: str) -> str:
+    normalized = normalize_market_name(name)
+    if normalized in CN_DIVINE_NORMALIZED:
+        return "divine"
+    if normalized in CN_EXALTED_NORMALIZED:
+        return "exalted"
+    return f"cn:{normalized}"
+
+
+def poecurrency_item_price(item: dict[str, Any]) -> tuple[Decimal, str]:
+    sell_avg = to_decimal(item.get("sell_avg"))
+    buy_avg = to_decimal(item.get("buy_avg"))
+    if buy_avg > 0 and sell_avg > 0:
+        high = max(buy_avg, sell_avg)
+        low = min(buy_avg, sell_avg)
+        ratio = high / low
+        if ratio <= CN_TRUSTED_BUY_SELL_RATIO:
+            return (buy_avg * sell_avg).sqrt(), "geo_buy_sell"
+        if buy_avg <= sell_avg:
+            return buy_avg, "buy_avg_conservative_spread_gt_5x"
+        return sell_avg, "sell_avg_conservative_spread_gt_5x"
+    if sell_avg > 0:
+        return sell_avg, "sell_avg_only"
+    if buy_avg > 0:
+        return buy_avg, "buy_avg_only"
+    return Decimal("0"), ""
+
+
+def collect_poecurrency_observations(
+    summary: list[dict[str, Any]],
+) -> dict[str, PriceObservation]:
+    best: dict[str, PriceObservation] = {}
+    for category in summary:
+        if not isinstance(category, dict):
+            continue
+        category_label = str(category.get("category_label") or "").strip()
+        items = category.get("items") or []
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("item_name") or "").strip()
+            price, price_field = poecurrency_item_price(item)
+            if not name or price <= 0:
+                continue
+            api_id = poecurrency_api_id(name)
+            obs = PriceObservation(
+                api_id=api_id,
+                en_name=name,
+                category=f"cn:{category_label}",
+                price_exalted=price,
+                value_traded=Decimal("0"),
+                source_pair=f"poecurrency.top/{category_label}/{price_field}",
+            )
+            old = best.get(api_id)
+            if old is None or obs.price_exalted > old.price_exalted:
+                best[api_id] = obs
+    return best
 
 
 def collect_price_observations(snapshot_pairs: list[dict[str, Any]]) -> dict[str, list[PriceObservation]]:
@@ -738,7 +823,7 @@ def divine_price_exalted(best: dict[str, PriceObservation]) -> Decimal:
     obs = best.get("divine")
     if obs and obs.price_exalted > 0:
         return obs.price_exalted
-    return Decimal("1")
+    raise ValueError("cannot determine real-time Divine/Exalted ratio from price source")
 
 
 def divine_exalted_ratio_summary(divine_exalted: Decimal) -> dict[str, str]:
@@ -865,6 +950,53 @@ def match_prices_to_base_items(
     return sorted(dedup.values(), key=lambda r: r["name"]), missing
 
 
+def match_cn_prices_to_base_items(
+    prices: dict[str, PriceObservation],
+    base_pairs: list[BaseItemPair],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    by_tc: dict[str, BaseItemPair] = {}
+    for pair in base_pairs:
+        for name in {pair.tc_name, strip_existing_price(pair.tc_name)}:
+            normalized = normalize_market_name(name)
+            if normalized and normalized not in by_tc:
+                by_tc[normalized] = pair
+
+    matched: list[dict[str, str]] = []
+    missing: list[dict[str, str]] = []
+    for obs in prices.values():
+        if obs.price_exalted < Decimal("1") or not obs.display_price:
+            continue
+        pair = by_tc.get(normalize_market_name(obs.en_name))
+        if pair:
+            matched.append(
+                {
+                    "metadata_path": pair.metadata_path,
+                    "name": pair.tc_name,
+                    "price": obs.display_price,
+                    "new_name": "",
+                    "en_name": "",
+                    "api_id": obs.api_id,
+                    "price_exalted": str(obs.price_exalted),
+                    "source_pair": obs.source_pair,
+                }
+            )
+        else:
+            missing.append(
+                {
+                    "api_id": obs.api_id,
+                    "en_name": obs.en_name,
+                    "reason": "not found in local Simplified Chinese BaseItemTypes",
+                }
+            )
+
+    dedup: dict[str, dict[str, str]] = {}
+    for row in matched:
+        old = dedup.get(row["metadata_path"])
+        if old is None or Decimal(row["price_exalted"]) > Decimal(old["price_exalted"]):
+            dedup[row["metadata_path"]] = row
+    return sorted(dedup.values(), key=lambda r: r["name"]), missing
+
+
 def write_csv(path: Path, rows: list[dict[str, str]], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
@@ -909,9 +1041,11 @@ def run_patch_builder(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fetch poe2scout prices and generate a PoE2 name-price patch."
+        description="Fetch market prices and generate a PoE2 name-price patch."
     )
+    parser.add_argument("--price-source", choices=PRICE_SOURCES, default="poe2scout")
     parser.add_argument("--api-base", default=DEFAULT_SCOUT_API)
+    parser.add_argument("--poecurrency-summary-url", default=DEFAULT_POECURRENCY_SUMMARY_API)
     parser.add_argument("--league", default=DEFAULT_LEAGUE)
     parser.add_argument("--en-baseitems", type=Path, default=DEFAULT_EN_BASEITEMS)
     parser.add_argument("--tc-baseitems", type=Path, default=DEFAULT_TC_BASEITEMS)
@@ -957,17 +1091,37 @@ def main(argv: list[str]) -> int:
     client = RetryingRequests(max_retries=args.retries, backoff=args.backoff)
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
-    scout = fetch_scout_data(client, args.api_base.rstrip("/"), args.league)
-    (args.out_dir / "poe2scout_raw.json").write_text(
-        json.dumps(scout, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
     base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems)
-    observations = collect_price_observations(scout["snapshot_pairs"])
-    best = choose_best_prices(observations, scout["reference_currencies"])
     unique_categories: list[dict[str, Any]] = []
     unique_items: list[dict[str, Any]] = []
-    if not args.no_uniques:
+    source_snapshot_epoch: Any = None
+    source_base_currency = "Exalted Orb"
+    source_item_count = 0
+
+    if args.price_source == "poecurrency-cn":
+        summary_data = fetch_poecurrency_summary(client, args.poecurrency_summary_url)
+        (args.out_dir / "poecurrency_cn_raw.json").write_text(
+            json.dumps(summary_data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        best = collect_poecurrency_observations(summary_data)
+        source_base_currency = "崇高石"
+        source_item_count = sum(
+            len(category.get("items") or [])
+            for category in summary_data
+            if isinstance(category, dict)
+        )
+    else:
+        scout = fetch_scout_data(client, args.api_base.rstrip("/"), args.league)
+        (args.out_dir / "poe2scout_raw.json").write_text(
+            json.dumps(scout, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        observations = collect_price_observations(scout["snapshot_pairs"])
+        best = choose_best_prices(observations, scout["reference_currencies"])
+        source_snapshot_epoch = scout["exchange_snapshot"].get("Epoch")
+        source_base_currency = scout["exchange_snapshot"].get("BaseCurrencyText")
+        source_item_count = len(best)
+
+    if args.price_source == "poe2scout" and not args.no_uniques:
         unique_categories, unique_items = fetch_unique_items(
             client,
             args.api_base.rstrip("/"),
@@ -977,20 +1131,24 @@ def main(argv: list[str]) -> int:
         add_unique_observations(best, unique_items)
     divine_exalted = divine_price_exalted(best)
     apply_display_prices(best, divine_exalted)
-    rows, missing = match_prices_to_base_items(
-        best,
-        base_pairs,
-        client=client,
-        use_poe2db=args.poe2db_fallback,
-        max_workers=max(1, args.max_workers),
-    )
+    if args.price_source == "poecurrency-cn":
+        rows, missing = match_cn_prices_to_base_items(best, base_pairs)
+    else:
+        rows, missing = match_prices_to_base_items(
+            best,
+            base_pairs,
+            client=client,
+            use_poe2db=args.poe2db_fallback,
+            max_workers=max(1, args.max_workers),
+        )
 
     unique_names: dict[str, UniqueName] = {}
     unique_word_rows: list[dict[str, str]] = []
     unique_word_missing: list[dict[str, str]] = []
     unique_words_patched = 0
     can_patch_unique_words = (
-        not args.no_uniques
+        args.price_source == "poe2scout"
+        and not args.no_uniques
         and args.en_words.exists()
         and args.tc_words.exists()
         and args.unique_gold_prices.exists()
@@ -1028,10 +1186,17 @@ def main(argv: list[str]) -> int:
 
     output_zip = args.output_zip or (args.out_dir / "物价补丁.zip")
     summary = {
+        "price_source": args.price_source,
+        "price_strategy": (
+            "poecurrency-cn geo buy/sell when spread <= 5x, lower side when spread > 5x"
+            if args.price_source == "poecurrency-cn"
+            else "poe2scout relative price"
+        ),
         "league": args.league,
-        "snapshot_epoch": scout["exchange_snapshot"].get("Epoch"),
-        "base_currency": scout["exchange_snapshot"].get("BaseCurrencyText"),
+        "snapshot_epoch": source_snapshot_epoch,
+        "base_currency": source_base_currency,
         "price_items": len(best),
+        "source_items": source_item_count,
         "unique_categories": len(unique_categories),
         "unique_items": len(unique_items),
         "unique_words_available": len(unique_names),
@@ -1042,7 +1207,7 @@ def main(argv: list[str]) -> int:
         "missing_items": len(missing),
         "divine_price_exalted": str(divine_exalted),
         "divine_exalted_ratio": divine_exalted_ratio_summary(divine_exalted),
-        "poe2db_fallback": bool(args.poe2db_fallback),
+        "poe2db_fallback": bool(args.poe2db_fallback and args.price_source == "poe2scout"),
     }
 
     if not args.no_build_patch:
