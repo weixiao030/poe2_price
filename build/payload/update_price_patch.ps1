@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Poe2Dir = "",
     [switch]$SkipExtract,
     [switch]$NoOpenTool,
@@ -31,6 +31,172 @@ function Write-Step {
     param([string]$Text)
     Write-Host ""
     Write-Host "==> $Text" -ForegroundColor Cyan
+}
+
+function Get-DisplayLanguageName {
+    param([string]$Name)
+
+    switch ($Name) {
+        "English" { return "英文" }
+        "Traditional Chinese" { return "繁体中文" }
+        "Simplified Chinese" { return "简体中文" }
+        "Japanese" { return "日文" }
+        "Korean" { return "韩文" }
+        "Russian" { return "俄文" }
+        "French" { return "法文" }
+        "German" { return "德文" }
+        "Spanish" { return "西班牙文" }
+        "Portuguese" { return "葡萄牙文" }
+        "Thai" { return "泰文" }
+        default {
+            if ([string]::IsNullOrWhiteSpace($Name)) {
+                return "未知语言"
+            }
+            return $Name
+        }
+    }
+}
+
+function Get-FriendlyFileName {
+    param([string]$Name)
+
+    switch -Regex ($Name) {
+        "^English BaseItemTypes$" { return "英文 BaseItemTypes.datc64" }
+        "^(.+) BaseItemTypes$" { return "$(Get-DisplayLanguageName $Matches[1]) BaseItemTypes.datc64" }
+        "^English Words$" { return "英文 Words.datc64" }
+        "^(.+) Words$" { return "$(Get-DisplayLanguageName $Matches[1]) Words.datc64" }
+        "^UniqueGoldPrices$" { return "UniqueGoldPrices.datc64" }
+        "BaseItemTypes" { return "$Name.datc64" }
+        "^Content\.ggpk$" { return "游戏数据文件 Content.ggpk" }
+        "^GGPKExtractor$" { return "GGPK 提取工具" }
+        "^PatchBundledGGPK3\.dll$" { return "GGPK 安装工具 PatchBundledGGPK3.dll" }
+        "^PatchBundledGGPK3\.runtimeconfig\.json$" { return "GGPK 安装工具运行配置" }
+        "^Bundles2 _\.index\.bin$" { return "Bundles2 索引文件 _.index.bin" }
+        "^BundleExtractor\.exe$" { return "BundleExtractor 提取工具" }
+        "^oo2core\.dll$" { return "oo2core.dll 解压库" }
+        "^PatchBundle3\.dll or PatchBundle3\.exe$" { return "Bundles2 安装工具 PatchBundle3" }
+        "^price fetch script$" { return "价格获取脚本" }
+        "^patch build script$" { return "补丁生成脚本" }
+        default { return $Name }
+    }
+}
+
+function New-FailureMessage {
+    param(
+        [Parameter(Mandatory = $true)][string]$Reason,
+        [string[]]$Suggestions = @(),
+        [string[]]$Details = @()
+    )
+
+    $Lines = @($Reason)
+    if ($Suggestions.Count -gt 0) {
+        $Lines += ""
+        $Lines += "建议处理："
+        foreach ($Suggestion in $Suggestions) {
+            $Lines += "  - $Suggestion"
+        }
+    }
+    if ($Details.Count -gt 0) {
+        $Lines += ""
+        $Lines += "技术信息："
+        foreach ($Detail in $Details) {
+            $Lines += "  - $Detail"
+        }
+    }
+    return ($Lines -join "`n")
+}
+
+function Get-BaseItemsFailureSuggestions {
+    return @(
+        "请完全关闭 POE2 客户端，以及官方启动器、Steam、Epic 或 WeGame 后再运行一键更新。",
+        "如果游戏刚更新过，请等官方更新完成；必要时先让平台验证或修复一次游戏文件。",
+        "如果仍然失败，把下方日志路径里的内容一起发给作者排查。"
+    )
+}
+
+function Convert-ErrorMessage {
+    param([string]$Message)
+
+    if ([string]::IsNullOrWhiteSpace($Message)) {
+        return "没有收到具体错误信息。请重新运行一次，并确认游戏客户端已经关闭。"
+    }
+
+    if ($Message -match '^Missing (.+?): (.+)$') {
+        $Name = Get-FriendlyFileName $Matches[1]
+        $Path = $Matches[2]
+        $Suggestions = @("请确认补丁文件夹完整，且游戏目录选择正确。")
+        if ($Matches[1] -match 'BaseItemTypes') {
+            $Suggestions = Get-BaseItemsFailureSuggestions
+        }
+        return New-FailureMessage -Reason "缺少必要文件：$Name" -Suggestions $Suggestions -Details @("路径：$Path")
+    }
+
+    if ($Message -match '^No usable BaseItemTypes files\. Log: (.+)$') {
+        return New-FailureMessage `
+            -Reason "没有提取到可用的 BaseItemTypes.datc64，无法继续生成物价补丁。" `
+            -Suggestions (Get-BaseItemsFailureSuggestions) `
+            -Details @("提取日志：$($Matches[1])")
+    }
+
+    if ($Message -match '^GGPKExtractor exit code: (.+)$') {
+        return New-FailureMessage `
+            -Reason "从 Content.ggpk 提取游戏数据失败。" `
+            -Suggestions (Get-BaseItemsFailureSuggestions) `
+            -Details @("GGPK 提取工具退出码：$($Matches[1])")
+    }
+
+    if ($Message -match '^Failed to extract (.+?)\. Exit code: (.+)$') {
+        $Name = Get-FriendlyFileName $Matches[1]
+        return New-FailureMessage `
+            -Reason "提取 $Name 失败。" `
+            -Suggestions (Get-BaseItemsFailureSuggestions) `
+            -Details @("提取工具退出码：$($Matches[2])")
+    }
+
+    if ($Message -match '^Price fetch or patch build failed\. Exit code: (.+)$') {
+        return New-FailureMessage `
+            -Reason "获取价格或生成补丁失败。" `
+            -Suggestions @(
+                "请检查网络是否能访问 poe2scout。",
+                "如果是临时网络问题，稍后重新运行一键更新即可。"
+            ) `
+            -Details @("脚本退出码：$($Matches[1])")
+    }
+
+    if ($Message -match '^Patch installer failed\. Exit code: (.+)$') {
+        return New-FailureMessage `
+            -Reason "写入 Content.ggpk 失败。" `
+            -Suggestions @(
+                "请完全关闭 POE2 客户端和官方启动器后重试。",
+                "如果杀毒软件拦截了写入，请把物价补丁文件夹加入信任列表。"
+            ) `
+            -Details @("安装工具退出码：$($Matches[1])")
+    }
+
+    if ($Message -match '^PatchBundle3 failed\. Exit code: (.+)$') {
+        return New-FailureMessage `
+            -Reason "写入 Bundles2 失败。" `
+            -Suggestions @(
+                "请完全关闭 POE2 客户端和 Steam、Epic 或 WeGame 后重试。",
+                "如果游戏正在更新，请等更新完成后再运行。"
+            ) `
+            -Details @("安装工具退出码：$($Matches[1])")
+    }
+
+    if ($Message -match '^Invalid POE2_PATCH_BUILD_MODE') {
+        return "环境变量 POE2_PATCH_BUILD_MODE 设置不正确，只能填写 append 或 fixed。"
+    }
+
+    return $Message
+}
+
+function Write-FriendlyFailure {
+    param([Parameter(Mandatory = $true)]$ErrorRecord)
+
+    $FriendlyMessage = Convert-ErrorMessage -Message ([string]$ErrorRecord.Exception.Message)
+    Write-Host ""
+    Write-Host "更新失败：" -ForegroundColor Red
+    Write-Host $FriendlyMessage
 }
 
 function Test-ToolOutputFailure {
@@ -198,7 +364,7 @@ function Test-WordsLookPatched {
         return [bool]($Text -match '(?:\r?\n\[[0-9]+(?:\.[0-9]+)?[DE]\]|<<\[[0-9]+(?:\.[0-9]+)?[DE]\]>>|\[[^\]\r\n|]*[0-9]+(?:\.[0-9]+)?[DE][^\]\r\n|]*\|[^\]\r\n]+\])')
     }
     catch {
-        Write-Warning "Words.datc64 patch check failed: $($_.Exception.Message)"
+        Write-Warning "检查 Words.datc64 是否已打补丁时失败：$($_.Exception.Message)"
         return $true
     }
 }
@@ -213,7 +379,7 @@ function Get-BaseItemsMetadataSignature {
         $ExportScript = Join-Path $CodeToolsRoot "poe2_name_price_patch.py"
         & $Python $ExportScript export --source $SourceDat --output $TempCsv *> $null
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to export BaseItemTypes metadata signature. Exit code: $LASTEXITCODE"
+            throw "导出 BaseItemTypes 元数据签名失败。退出码：$LASTEXITCODE"
         }
 
         $Rows = Import-Csv -LiteralPath $TempCsv -Encoding UTF8
@@ -252,7 +418,7 @@ function Test-BaseItemsCompatible {
         return ($Left.Count -eq $Right.Count -and $Left.Hash -eq $Right.Hash)
     }
     catch {
-        Write-Warning "BaseItemTypes compatibility check failed: $($_.Exception.Message)"
+        Write-Warning "BaseItemTypes 兼容性检查失败：$($_.Exception.Message)"
         return $false
     }
 }
@@ -378,7 +544,7 @@ function Extract-RestoreBaseItems {
     try {
         $Entry = $Archive.GetEntry($InstallInfo.TcBaseItemsPath)
         if ($null -eq $Entry) {
-            throw "Restore zip does not contain $($InstallInfo.TcBaseItemsPath): $RestoreZip"
+            throw "还原包缺少目标文件 $($InstallInfo.TcBaseItemsPath)：$RestoreZip"
         }
 
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputDat) | Out-Null
@@ -389,7 +555,7 @@ function Extract-RestoreBaseItems {
     }
 
     if (Test-BaseItemsLookPatched $OutputDat) {
-        throw "Restore zip BaseItemTypes looks patched: $RestoreZip"
+        throw "还原包里的 BaseItemTypes.datc64 已经带有物价补丁标记，拒绝继续使用：$RestoreZip"
     }
 }
 
@@ -405,7 +571,7 @@ function Extract-RestoreWords {
     try {
         $Entry = $Archive.GetEntry($TcWordsPath)
         if ($null -eq $Entry) {
-            throw "Restore zip does not contain $($TcWordsPath): $RestoreZip"
+            throw "还原包缺少目标文件 $($TcWordsPath)：$RestoreZip"
         }
 
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputWords) | Out-Null
@@ -416,7 +582,7 @@ function Extract-RestoreWords {
     }
 
     if (Test-WordsLookPatched $OutputWords) {
-        throw "Restore zip Words.datc64 looks patched: $RestoreZip"
+        throw "还原包里的 Words.datc64 已经带有物价补丁标记，拒绝继续使用：$RestoreZip"
     }
 }
 
@@ -443,7 +609,7 @@ function New-BaseItemZip {
         ) | Out-Null
         if (-not [string]::IsNullOrWhiteSpace($SourceWords) -and (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
             if (Test-WordsLookPatched $SourceWords) {
-                throw "Refusing to create restore zip from a patched Words.datc64 file."
+                throw "检测到 Words.datc64 已包含物价补丁标记，拒绝用它创建还原包。"
             }
             [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
                 $Archive,
@@ -526,7 +692,7 @@ function Update-RestoreZipEntry {
 
     Assert-File $SourceDat "clean BaseItemTypes.datc64"
     if (Test-BaseItemsLookPatched $SourceDat) {
-        throw "Refusing to refresh restore zip from a patched BaseItemTypes file."
+        throw "检测到 BaseItemTypes.datc64 已包含物价补丁标记，拒绝用它刷新还原包。"
     }
 
     Update-ZipEntryFromFile -ZipPath $ZipPath -SourceDat $SourceDat -EntryName $EntryName
@@ -554,7 +720,7 @@ function Update-IntlRestoreZipFromExtractedBaseItems {
             continue
         }
         if (Test-BaseItemsLookPatched $ExtractedDat) {
-            Write-Warning "Skip refreshing restore entry from patched file: $EntryName"
+            Write-Warning "跳过还原包条目刷新：该文件已包含补丁标记。条目：$EntryName"
             continue
         }
         Update-RestoreZipEntry -ZipPath $ZipPath -SourceDat $ExtractedDat -EntryName $EntryName
@@ -564,7 +730,7 @@ function Update-IntlRestoreZipFromExtractedBaseItems {
         $ExtractedWords = Get-ExtractedBaseItemsPathForEntry $WordsEntryName
         if (Test-Path -LiteralPath $ExtractedWords -PathType Leaf) {
             if (Test-WordsLookPatched $ExtractedWords) {
-                Write-Warning "Skip refreshing restore Words entry from patched file: $WordsEntryName"
+                Write-Warning "跳过 Words 还原条目刷新：该文件已包含补丁标记。条目：$WordsEntryName"
                 continue
             }
             Update-ZipEntryFromFile -ZipPath $ZipPath -SourceDat $ExtractedWords -EntryName $WordsEntryName
@@ -573,7 +739,7 @@ function Update-IntlRestoreZipFromExtractedBaseItems {
     }
 
     if ($Updated -gt 0) {
-        Write-Host "Refreshed $Updated restore entries from current clean game data." -ForegroundColor Green
+        Write-Host "已用当前干净游戏数据刷新 $Updated 个还原包条目。" -ForegroundColor Green
     }
     return (Resolve-Path -LiteralPath $ZipPath).Path
 }
@@ -604,23 +770,23 @@ function New-BaseItemZipFromPhysicalRestore {
 
             & $BundledBundleExtractorExe $TempIndex $InstallInfo.TcBaseItemsPath $TempDat
             if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Ignore physical restore zip, BaseItemTypes extraction failed: $Candidate"
+                Write-Warning "忽略真实还原包：提取 BaseItemTypes 失败。文件：$Candidate"
                 continue
             }
 
             if (Test-BaseItemsLookPatched $TempDat) {
-                Write-Warning "Ignore physical restore zip, extracted BaseItemTypes looks patched: $Candidate"
+                Write-Warning "忽略真实还原包：提取出的 BaseItemTypes 已包含补丁标记。文件：$Candidate"
                 continue
             }
 
             if ($SupportsUniqueWords) {
                 & $BundledBundleExtractorExe $TempIndex $TcWordsPath $TempWords
                 if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "Ignore physical restore zip, Words extraction failed: $Candidate"
+                    Write-Warning "忽略真实还原包：提取 Words 失败。文件：$Candidate"
                     continue
                 }
                 if (Test-WordsLookPatched $TempWords) {
-                    Write-Warning "Ignore physical restore zip, extracted Words looks patched: $Candidate"
+                    Write-Warning "忽略真实还原包：提取出的 Words 已包含补丁标记。文件：$Candidate"
                     continue
                 }
             }
@@ -730,13 +896,13 @@ function Ensure-PhysicalRestoreZip {
     }
 
     if ($SourceLooksPatched) {
-        throw "Missing physical restore package, and current Bundles2 already looks patched. Let Steam/Epic verify game files once, then run one-key update from the clean state."
+        throw "缺少真实还原包，而且当前 Bundles2 已经包含物价补丁标记。请先让 Steam/Epic/WeGame 验证或修复一次游戏文件，再从干净状态运行一键更新。"
     }
 
-    Write-Host "Creating physical Bundles2 restore package from current clean game files..." -ForegroundColor Yellow
+    Write-Host "正在从当前干净游戏文件创建真实 Bundles2 还原包..." -ForegroundColor Yellow
     $Created = New-PhysicalRestoreZip -OutputZip $PhysicalRestoreOutZip
     if ([string]::IsNullOrWhiteSpace($Created) -or -not (Test-PhysicalRestoreZipUsable $Created)) {
-        throw "Failed to create physical restore package: $PhysicalRestoreOutZip"
+        throw "创建真实还原包失败：$PhysicalRestoreOutZip"
     }
 
     if ($Created -ne $PhysicalRestorePatchFolderZip) {
@@ -754,7 +920,7 @@ function Ensure-RestoreZip {
     foreach ($Candidate in (Get-RestoreZipCandidates)) {
         if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
             if (-not (Test-RestoreZipUsable -Path $Candidate -ReferenceDat $SourceDat)) {
-                Write-Warning "Ignore unusable or outdated restore zip: $Candidate"
+                Write-Warning "忽略不可用或已过期的还原包：$Candidate"
                 continue
             }
             $ResolvedCandidate = (Resolve-Path -LiteralPath $Candidate).Path
@@ -774,7 +940,7 @@ function Ensure-RestoreZip {
     }
 
     if (-not $SourceLooksPatched) {
-        Write-Host "Refreshing fixed restore zip from current clean BaseItemTypes..." -ForegroundColor Yellow
+        Write-Host "正在用当前干净 BaseItemTypes 刷新固定还原包..." -ForegroundColor Yellow
         $CleanTcWords = ""
         if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf) -and -not (Test-WordsLookPatched $TcWords)) {
             $CleanTcWords = $TcWords
@@ -809,7 +975,7 @@ function Ensure-RestoreZip {
         return $PhysicalBaseItemZip
     }
 
-    throw "Current BaseItemTypes looks patched, and no compatible restore zip was found. Let the official launcher finish updating/repairing the game once, then re-run."
+    throw "当前 BaseItemTypes 已包含物价补丁标记，并且没有找到兼容的还原包。请先让官方启动器完成更新或修复游戏文件，然后重新运行一键更新。"
 }
 
 function Resolve-BundleExtractor {
@@ -840,8 +1006,10 @@ function Resolve-BundleExtractor {
     }
 }
 
+try {
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
+$DisplayLanguageName = Get-DisplayLanguageName $InstallInfo.LanguageName
 $ContentGgpk = Join-Path $Poe2Dir "Content.ggpk"
 $Bundles2Paths = Get-Bundles2Paths -Poe2Dir $Poe2Dir
 $LocalExtractorDll = Join-Path $PublicToolsRoot "GGPKExtractor\GGPKExtractor.dll"
@@ -889,13 +1057,13 @@ $PatchedWords = Join-Path $OutDir "words.patched.datc64"
 $ReportJson = Join-Path $OutDir "price_patch.report.json"
 $SummaryJson = Join-Path $OutDir "summary.json"
 
-Write-Host "POE2 price patch updater" -ForegroundColor Green
-Write-Host "Game dir : $Poe2Dir"
-Write-Host "Patch dir: $RepoRoot"
-Write-Host "Detected : $($InstallInfo.DisplayName)" -ForegroundColor Cyan
-Write-Host "Mode     : $GameMode" -ForegroundColor Cyan
-Write-Host "Language : $($InstallInfo.LanguageName) ($($InstallInfo.ConfigLanguage))" -ForegroundColor Cyan
-Write-Host "Target   : $($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cyan
+Write-Host "POE2 物价补丁更新器" -ForegroundColor Green
+Write-Host "游戏目录：$Poe2Dir"
+Write-Host "补丁目录：$RepoRoot"
+Write-Host "检测结果：$($InstallInfo.DisplayName)" -ForegroundColor Cyan
+Write-Host "安装模式：$GameMode" -ForegroundColor Cyan
+Write-Host "游戏语言：$DisplayLanguageName ($($InstallInfo.ConfigLanguage))" -ForegroundColor Cyan
+Write-Host "写入目标：$($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cyan
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
@@ -920,7 +1088,7 @@ if (-not $SkipExtract) {
     New-Item -ItemType Directory -Force -Path $LatestDir | Out-Null
 
     if ($GameMode -eq "GGPK") {
-        Write-Step "Extract latest BaseItemTypes from Content.ggpk"
+        Write-Step "从 Content.ggpk 提取最新 BaseItemTypes"
         try {
             if ($ExtractorUsesDotnet) {
                 & $Dotnet $Extractor $ContentGgpk $LatestDir *> $ExtractLog
@@ -931,13 +1099,13 @@ if (-not $SkipExtract) {
             if ($LASTEXITCODE -ne 0) {
                 throw "GGPKExtractor exit code: $LASTEXITCODE"
             }
-            Write-Host "Extracted to: $LatestDir"
+            Write-Host "已提取到：$LatestDir"
         }
         catch {
-            Write-Warning "Extract failed: $($_.Exception.Message)"
-            Write-Warning "If the game is running, close it and run this updater again."
+            Write-Warning "提取失败：$($_.Exception.Message)"
+            Write-Warning "如果游戏或启动器还在运行，请完全关闭后重新运行一键更新。"
             if ((Test-Path -LiteralPath $EnBaseItems) -and (Test-Path -LiteralPath $TcBaseItems)) {
-                Write-Warning "Using existing dat_files_latest instead."
+                Write-Warning "改用已有的 dat_files_latest 缓存继续。"
             }
             else {
                 throw "No usable BaseItemTypes files. Log: $ExtractLog"
@@ -945,54 +1113,54 @@ if (-not $SkipExtract) {
         }
     }
     else {
-        Write-Step "Extract latest BaseItemTypes from Bundles2 using BundleExtractor"
+        Write-Step "使用 BundleExtractor 从 Bundles2 提取最新 BaseItemTypes"
 
         $DestDir = Join-Path $LatestDir "data"
         New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
-        Write-Host "Extracting English BaseItemTypes..."
+        Write-Host "正在提取英文 BaseItemTypes..."
         & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.EnBaseItemsPath $EnBaseItems
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to extract English BaseItemTypes. Exit code: $LASTEXITCODE"
         }
-        Write-Host "Extracted to: $EnBaseItems"
+        Write-Host "已提取到：$EnBaseItems"
 
-        Write-Host "Extracting $($InstallInfo.LanguageName) BaseItemTypes..."
+        Write-Host "正在提取$DisplayLanguageName BaseItemTypes..."
         & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcBaseItemsPath $TcBaseItems
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to extract $($InstallInfo.LanguageName) BaseItemTypes. Exit code: $LASTEXITCODE"
         }
-        Write-Host "Extracted to: $TcBaseItems"
+        Write-Host "已提取到：$TcBaseItems"
 
         if ($SupportsUniqueWords) {
-            Write-Host "Extracting English Words..."
+            Write-Host "正在提取英文 Words..."
             & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/words.datc64" $EnWords
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to extract English Words. Exit code: $LASTEXITCODE"
             }
-            Write-Host "Extracted to: $EnWords"
+            Write-Host "已提取到：$EnWords"
 
-            Write-Host "Extracting $($InstallInfo.LanguageName) Words..."
+            Write-Host "正在提取$DisplayLanguageName Words..."
             & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $TcWordsPath $TcWords
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to extract $($InstallInfo.LanguageName) Words. Exit code: $LASTEXITCODE"
             }
-            Write-Host "Extracted to: $TcWords"
+            Write-Host "已提取到：$TcWords"
 
-            Write-Host "Extracting UniqueGoldPrices..."
+            Write-Host "正在提取 UniqueGoldPrices..."
             & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/uniquegoldprices.datc64" $UniqueGoldPrices
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to extract UniqueGoldPrices. Exit code: $LASTEXITCODE"
             }
-            Write-Host "Extracted to: $UniqueGoldPrices"
+            Write-Host "已提取到：$UniqueGoldPrices"
         }
         else {
-            Write-Host "Skip unique item Words extraction for $($InstallInfo.LanguageName)." -ForegroundColor Yellow
+            Write-Host "当前语言不支持传奇物品 Words 提取，已跳过。语言：$DisplayLanguageName" -ForegroundColor Yellow
         }
     }
 }
 else {
-    Write-Step "Skip extract and use existing BaseItemTypes"
+    Write-Step "跳过提取，使用已有 BaseItemTypes"
 }
 
 Assert-File $EnBaseItems "English BaseItemTypes"
@@ -1004,10 +1172,10 @@ $CanPatchUniqueWords = (
     (Test-Path -LiteralPath $UniqueGoldPrices -PathType Leaf)
 )
 if ($SupportsUniqueWords -and -not $CanPatchUniqueWords) {
-    Write-Warning "Unique item price labels disabled: Words or UniqueGoldPrices datc64 files were not extracted."
+    Write-Warning "传奇物品价格标记已禁用：Words 或 UniqueGoldPrices datc64 文件没有成功提取。"
 }
 elseif (-not $SupportsUniqueWords) {
-    Write-Warning "Unique item price labels disabled: current language does not have a supported Words.datc64 path."
+    Write-Warning "传奇物品价格标记已禁用：当前语言没有受支持的 Words.datc64 路径。"
 }
 $RestoreZip = Ensure-RestoreZip $TcBaseItems
 if ($GameMode -eq "GGPK" -and -not (Test-BaseItemsLookPatched $TcBaseItems)) {
@@ -1015,11 +1183,11 @@ if ($GameMode -eq "GGPK" -and -not (Test-BaseItemsLookPatched $TcBaseItems)) {
 }
 $SourceBaseItemsLooksPatched = Test-BaseItemsLookPatched $TcBaseItems
 if ($SourceBaseItemsLooksPatched) {
-    Write-Host "Current BaseItemTypes looks patched. Rebuilding from fixed restore zip..." -ForegroundColor Yellow
+    Write-Host "当前 BaseItemTypes 已包含补丁标记，正在从固定还原包重建干净文件..." -ForegroundColor Yellow
     Extract-RestoreBaseItems -RestoreZip $RestoreZip -OutputDat $TcBaseItems
 }
 if ($SupportsUniqueWords -and (Test-WordsLookPatched $TcWords)) {
-    Write-Host "Current Words.datc64 contains unique price labels. Rebuilding from fixed restore zip..." -ForegroundColor Yellow
+    Write-Host "当前 Words.datc64 已包含传奇价格标记，正在从固定还原包重建干净文件..." -ForegroundColor Yellow
     Extract-RestoreWords -RestoreZip $RestoreZip -OutputWords $TcWords
 }
 $CanPatchUniqueWords = (
@@ -1035,11 +1203,11 @@ if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like 
 }
 if ($GameMode -eq "Bundles2") {
     $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched $SourceBaseItemsLooksPatched
-    Write-Host "Physical restore package:" -ForegroundColor Green
+    Write-Host "真实还原包：" -ForegroundColor Green
     Write-Host "  $PhysicalRestoreZip"
 }
 
-Write-Step "Fetch POE2 Scout prices and build patch zip"
+Write-Step "获取 POE2 Scout 价格并生成补丁包"
 $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
 $PatchBuildMode = "append"
 if (-not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_BUILD_MODE)) {
@@ -1048,7 +1216,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_BUILD_MODE)) {
         throw "Invalid POE2_PATCH_BUILD_MODE '$($env:POE2_PATCH_BUILD_MODE)'. Use append or fixed."
     }
 }
-Write-Host "Patch mode: $PatchBuildMode" -ForegroundColor Cyan
+Write-Host "补丁模式：$PatchBuildMode" -ForegroundColor Cyan
 $BuildArgs = @(
     (Join-Path $CodeToolsRoot "build_poe2scout_price_patch.py"),
     "--en-baseitems", $EnBaseItems,
@@ -1084,17 +1252,17 @@ if ($LASTEXITCODE -ne 0) {
 
 Assert-File $PatchZip $PricePatchZipName
 
-Write-Step "Copy patch zip"
+Write-Step "复制补丁包"
 $PatchFolderZip = Join-Path $RepoRoot $PricePatchZipName
 Copy-Item -LiteralPath $PatchZip -Destination $PatchFolderZip -Force
 
-Write-Host "Generated:" -ForegroundColor Green
+Write-Host "已生成：" -ForegroundColor Green
 Write-Host "  $PatchZip"
-Write-Host "Copied:" -ForegroundColor Green
+Write-Host "已复制：" -ForegroundColor Green
 Write-Host "  $PatchFolderZip"
 
 if (Test-Path -LiteralPath $SummaryJson -PathType Leaf) {
-    Write-Step "Summary"
+    Write-Step "生成摘要"
     Get-Content -LiteralPath $SummaryJson -Encoding UTF8
 }
 
@@ -1104,10 +1272,10 @@ if ($NoOpenTool) {
 
 if (-not $NoInstall) {
     if ($GameMode -eq "GGPK") {
-        Write-Step "Install patch into Content.ggpk"
-        Write-Host "Installer: $BundledPatchDll"
-        Write-Host "GGPK     : $ContentGgpk"
-        Write-Host "Patch    : $PatchFolderZip"
+        Write-Step "写入补丁到 Content.ggpk"
+        Write-Host "安装工具：$BundledPatchDll"
+        Write-Host "GGPK 文件：$ContentGgpk"
+        Write-Host "补丁包  ：$PatchFolderZip"
 
         Push-Location -LiteralPath $BundledInstallerDir
         try {
@@ -1121,10 +1289,10 @@ if (-not $NoInstall) {
         finally {
             Pop-Location
         }
-        Write-Host "Patch installed into Content.ggpk." -ForegroundColor Green
+        Write-Host "补丁已写入 Content.ggpk。" -ForegroundColor Green
     }
     else {
-        Write-Step "Install patch into Bundles2 using PatchBundle3"
+        Write-Step "使用 PatchBundle3 写入补丁到 Bundles2"
 
         $UsePatchBundleDll = Test-Path -LiteralPath $BundledBundlePatchDll -PathType Leaf
         if (-not $UsePatchBundleDll -and -not (Test-Path -LiteralPath $BundledBundlePatchExe -PathType Leaf)) {
@@ -1137,13 +1305,13 @@ if (-not $NoInstall) {
         $TempPatchZip = $PatchZip
 
         if ($UsePatchBundleDll) {
-            Write-Host "Bundle3: $($BundledBundlePatchDll)"
+            Write-Host "Bundle3 工具：$($BundledBundlePatchDll)"
         }
         else {
-            Write-Host "Bundle3: $($BundledBundlePatchExe)"
+            Write-Host "Bundle3 工具：$($BundledBundlePatchExe)"
         }
-        Write-Host "Index  : $($Bundles2Paths.IndexBin)"
-        Write-Host "Patch  : $TempPatchZip"
+        Write-Host "索引文件：$($Bundles2Paths.IndexBin)"
+        Write-Host "补丁包  ：$TempPatchZip"
 
         Push-Location -LiteralPath $BundledInstallerDir
         try {
@@ -1166,12 +1334,17 @@ if (-not $NoInstall) {
         }
 
         Remove-Item -LiteralPath $TempPatchZip -Force -ErrorAction SilentlyContinue
-        Write-Host "Patch installed into Bundles2." -ForegroundColor Green
+        Write-Host "补丁已写入 Bundles2。" -ForegroundColor Green
     }
 }
 else {
-    Write-Host "Skip installing patch into game files." -ForegroundColor Yellow
+    Write-Host "已跳过写入游戏文件，仅生成补丁包。" -ForegroundColor Yellow
 }
 
 Write-Host ""
-Write-Host "Done." -ForegroundColor Green
+Write-Host "完成。" -ForegroundColor Green
+}
+catch {
+    Write-FriendlyFailure -ErrorRecord $_
+    exit 1
+}

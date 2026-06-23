@@ -26,7 +26,7 @@ internal static class Program
             {
                 "update" => "update_price_patch.ps1",
                 "restore" => "restore_price_patch.ps1",
-                _ => throw new InvalidOperationException("Unknown launcher mode: " + mode)
+                _ => throw new InvalidOperationException("无法识别启动模式：" + mode)
             };
 
             var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -40,7 +40,7 @@ internal static class Program
                 var scriptPath = Path.Combine(tempRoot, scriptName);
                 if (!File.Exists(scriptPath))
                 {
-                    throw new FileNotFoundException("Embedded script not found.", scriptPath);
+                    throw new FileNotFoundException("内置脚本不存在。", scriptPath);
                 }
 
                 var startInfo = new ProcessStartInfo
@@ -66,7 +66,7 @@ internal static class Program
                 using var process = Process.Start(startInfo);
                 if (process == null)
                 {
-                    throw new InvalidOperationException("Failed to start powershell.exe.");
+                    throw new InvalidOperationException("无法启动 powershell.exe。");
                 }
                 process.WaitForExit();
                 PrintCompletion(mode, process.ExitCode);
@@ -115,7 +115,7 @@ internal static class Program
         using var resource = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.enc");
         if (resource == null)
         {
-            throw new InvalidOperationException("Missing embedded payload.");
+            throw new InvalidOperationException("缺少内置运行文件。");
         }
 
         using var encrypted = new MemoryStream();
@@ -130,7 +130,7 @@ internal static class Program
     {
         if (data.Length < 28)
         {
-            throw new InvalidOperationException("Invalid payload.");
+            throw new InvalidOperationException("内置运行文件无效。");
         }
 
         var salt = data.AsSpan(0, 16).ToArray();
@@ -138,7 +138,7 @@ internal static class Program
         var cipherAndTag = data.AsSpan(28).ToArray();
         if (cipherAndTag.Length < 16)
         {
-            throw new InvalidOperationException("Invalid payload.");
+            throw new InvalidOperationException("内置运行文件无效。");
         }
 
         var cipher = cipherAndTag.AsSpan(0, cipherAndTag.Length - 16).ToArray();
