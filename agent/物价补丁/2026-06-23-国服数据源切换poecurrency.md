@@ -9,9 +9,9 @@
 - `update_price_patch.ps1` 根据 `InstallInfo.IsChina` / `CN-*` 安装类型传入 `--price-source poecurrency-cn`。
 - 国际服仍保持默认 `poe2scout` 数据源和现有抓取流程。
 - `build_poe2scout_price_patch.py` 新增 poecurrency.top summary 解析逻辑，按中文物品名匹配国服简体中文 `BaseItemTypes.datc64`。
+- 国服模式会同时抓取 poe2scout 作为兜底：普通物品按 metadata 去重，poecurrency.top 已命中的项目优先保留，缺失项才补 poe2scout；传奇 Words 标价先按国服中文传奇名匹配，没命中再按英文传奇名使用 poe2scout 价格。
 - D/E 换算比例不写死：国服从 poecurrency.top 返回的“神圣石”当前价格推导，国际服仍从 poe2scout 实时数据推导；无法推导时中止生成。
 - 国服 `buy_avg` / `sell_avg` 不直接算术平均：两边都有值且价差不超过 5 倍时取几何均值，价差超过 5 倍时取较低一侧；只有单边有效时使用单边价格。
-- 国服不再抓取 poe2scout 的国际服传奇物品列表，只标注 poecurrency.top 返回的中文名物品。
 
 ## 验证
 

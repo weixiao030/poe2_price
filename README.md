@@ -28,7 +28,7 @@
 
 ### 26/6/23 更新
 
-- 国服数据源已切换为 `poecurrency.top`：检测到国服 WeGame 时抓取 `https://poecurrency.top/api/summary?version=2`，国际服仍继续使用 poe2scout。
+- 国服数据源已切换为 `poecurrency.top` 优先：检测到国服 WeGame 时先抓取 `https://poecurrency.top/api/summary?version=2`，没有国服数据的普通物品和传奇装备再使用 poe2scout 国际服价格兜底；国际服仍继续直接使用 poe2scout。
 
 - D/E 换算比例改为实时读取：国服从数据源里的“神圣石”当前价格推导，国际服从 poe2scout 实时价格推导，不写死固定比例。
 
@@ -54,7 +54,7 @@
 
 - 适配当天最新版，重构了还原逻辑
 
-- 国服和国际服会按客户端类型使用不同价格源，避免国服继续套用国际服价格。
+- 国服和国际服会按客户端类型使用不同价格源；国服优先使用国服价格，缺失时才使用国际服价格兜底。
 
 ---
 

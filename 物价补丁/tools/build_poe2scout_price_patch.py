@@ -421,6 +421,79 @@ def patch_unique_word_prices(
     return len(patched), patched, missing
 
 
+def patch_unique_word_prices_with_cn_fallback(
+    tc_words_path: Path,
+    unique_names: dict[str, UniqueName],
+    primary_prices: dict[str, PriceObservation],
+    fallback_prices: dict[str, PriceObservation],
+    patched_words: Path,
+    label_mode: str = "markup",
+) -> tuple[int, list[dict[str, str]], list[dict[str, str]], int]:
+    data = tc_words_path.read_bytes()
+    layout = detect_words_layout(data)
+    output = bytearray(data)
+    patched_rows: set[int] = set()
+    patched: list[dict[str, str]] = []
+    missing: list[dict[str, str]] = []
+    fallback_count = 0
+
+    unique_entries = sorted(unique_names.values(), key=lambda item: item.display_name)
+    for unique in unique_entries:
+        if unique.row_index in patched_rows:
+            continue
+        obs = primary_prices.get(poecurrency_api_id(unique.display_name))
+        source = "poecurrency-cn"
+        if not obs or obs.price_exalted < Decimal("1") or not obs.display_price:
+            obs = fallback_prices.get(f"unique:{normalize_name(unique.en_name)}")
+            source = "poe2scout-fallback"
+        if not obs or obs.price_exalted < Decimal("1") or not obs.display_price:
+            missing.append(
+                {
+                    "api_id": f"cn:{normalize_market_name(unique.display_name)}",
+                    "en_name": unique.en_name,
+                    "reason": "not found in poecurrency-cn or poe2scout fallback",
+                }
+            )
+            continue
+
+        entry = read_words_row(data, layout, unique.row_index)
+        if not entry:
+            missing.append(
+                {
+                    "api_id": obs.api_id,
+                    "en_name": unique.en_name,
+                    "reason": "invalid target Words row",
+                }
+            )
+            continue
+        base_name = strip_existing_price(entry.display_name)
+        new_name = format_unique_price_name(base_name, obs.display_price, label_mode)
+        new_offset = append_utf16le_string(output, layout, new_name)
+        struct.pack_into("<I", output, entry.display_pointer_pos, new_offset)
+        patched_rows.add(unique.row_index)
+        if source == "poe2scout-fallback":
+            fallback_count += 1
+        patched.append(
+            {
+                "words_row_index": str(unique.row_index),
+                "en_name": unique.en_name,
+                "old_name": entry.display_name,
+                "new_name": new_name,
+                "price": obs.display_price,
+                "api_id": obs.api_id,
+                "price_exalted": str(obs.price_exalted),
+                "source_pair": f"{obs.source_pair}; source={source}",
+                "status": "patched",
+                "reason": "",
+            }
+        )
+
+    if patched:
+        patched_words.parent.mkdir(parents=True, exist_ok=True)
+        patched_words.write_bytes(bytes(output))
+    return len(patched), patched, missing, fallback_count
+
+
 def list_unique_word_price_candidates(
     unique_names: dict[str, UniqueName],
     prices: dict[str, PriceObservation],
@@ -587,6 +660,34 @@ def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> di
             name = future_to_name[future]
             results[name] = future.result()
     return results
+
+
+def build_scout_prices(
+    client: RetryingRequests,
+    api_base: str,
+    league: str,
+    include_uniques: bool,
+    max_workers: int,
+) -> tuple[
+    dict[str, Any],
+    dict[str, PriceObservation],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    scout = fetch_scout_data(client, api_base, league)
+    observations = collect_price_observations(scout["snapshot_pairs"])
+    best = choose_best_prices(observations, scout["reference_currencies"])
+    unique_categories: list[dict[str, Any]] = []
+    unique_items: list[dict[str, Any]] = []
+    if include_uniques:
+        unique_categories, unique_items = fetch_unique_items(
+            client,
+            api_base,
+            league,
+            max_workers=max(1, max_workers),
+        )
+        add_unique_observations(best, unique_items)
+    return scout, best, unique_categories, unique_items
 
 
 def fetch_poecurrency_summary(
@@ -997,6 +1098,25 @@ def match_cn_prices_to_base_items(
     return sorted(dedup.values(), key=lambda r: r["name"]), missing
 
 
+def merge_primary_with_fallback_rows(
+    primary: list[dict[str, str]],
+    fallback: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], int]:
+    merged: dict[str, dict[str, str]] = {
+        row["metadata_path"]: row for row in primary if row.get("metadata_path")
+    }
+    added = 0
+    for row in fallback:
+        metadata_path = row.get("metadata_path", "")
+        if not metadata_path or metadata_path in merged:
+            continue
+        row = dict(row)
+        row["source_pair"] = f"{row.get('source_pair', '')}; fallback=poe2scout"
+        merged[metadata_path] = row
+        added += 1
+    return sorted(merged.values(), key=lambda r: r["name"]), added
+
+
 def write_csv(path: Path, rows: list[dict[str, str]], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
@@ -1097,6 +1217,11 @@ def main(argv: list[str]) -> int:
     source_snapshot_epoch: Any = None
     source_base_currency = "Exalted Orb"
     source_item_count = 0
+    scout_fallback: dict[str, Any] | None = None
+    scout_fallback_prices: dict[str, PriceObservation] = {}
+    fallback_unique_by_name: dict[str, PriceObservation] = {}
+    fallback_rows_added = 0
+    fallback_unique_words_patched = 0
 
     if args.price_source == "poecurrency-cn":
         summary_data = fetch_poecurrency_summary(client, args.poecurrency_summary_url)
@@ -1110,29 +1235,52 @@ def main(argv: list[str]) -> int:
             for category in summary_data
             if isinstance(category, dict)
         )
+        scout_fallback, scout_fallback_prices, unique_categories, unique_items = build_scout_prices(
+            client,
+            args.api_base.rstrip("/"),
+            args.league,
+            include_uniques=not args.no_uniques,
+            max_workers=max(1, args.max_workers),
+        )
+        (args.out_dir / "poe2scout_fallback_raw.json").write_text(
+            json.dumps(scout_fallback, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     else:
-        scout = fetch_scout_data(client, args.api_base.rstrip("/"), args.league)
+        scout, best, unique_categories, unique_items = build_scout_prices(
+            client,
+            args.api_base.rstrip("/"),
+            args.league,
+            include_uniques=not args.no_uniques,
+            max_workers=max(1, args.max_workers),
+        )
         (args.out_dir / "poe2scout_raw.json").write_text(
             json.dumps(scout, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        observations = collect_price_observations(scout["snapshot_pairs"])
-        best = choose_best_prices(observations, scout["reference_currencies"])
         source_snapshot_epoch = scout["exchange_snapshot"].get("Epoch")
         source_base_currency = scout["exchange_snapshot"].get("BaseCurrencyText")
         source_item_count = len(best)
 
-    if args.price_source == "poe2scout" and not args.no_uniques:
-        unique_categories, unique_items = fetch_unique_items(
-            client,
-            args.api_base.rstrip("/"),
-            args.league,
-            max_workers=max(1, args.max_workers),
-        )
-        add_unique_observations(best, unique_items)
     divine_exalted = divine_price_exalted(best)
     apply_display_prices(best, divine_exalted)
     if args.price_source == "poecurrency-cn":
+        fallback_divine_exalted = divine_price_exalted(scout_fallback_prices)
+        apply_display_prices(scout_fallback_prices, fallback_divine_exalted)
         rows, missing = match_cn_prices_to_base_items(best, base_pairs)
+        fallback_rows, _fallback_missing = match_prices_to_base_items(
+            scout_fallback_prices,
+            base_pairs,
+            client=client,
+            use_poe2db=args.poe2db_fallback,
+            max_workers=max(1, args.max_workers),
+        )
+        rows, fallback_rows_added = merge_primary_with_fallback_rows(
+            rows, fallback_rows
+        )
+        fallback_unique_by_name = {
+            f"unique:{normalize_name(obs.en_name)}": obs
+            for obs in scout_fallback_prices.values()
+            if obs.api_id.startswith("unique:") and obs.display_price
+        }
     else:
         rows, missing = match_prices_to_base_items(
             best,
@@ -1147,8 +1295,7 @@ def main(argv: list[str]) -> int:
     unique_word_missing: list[dict[str, str]] = []
     unique_words_patched = 0
     can_patch_unique_words = (
-        args.price_source == "poe2scout"
-        and not args.no_uniques
+        not args.no_uniques
         and args.en_words.exists()
         and args.tc_words.exists()
         and args.unique_gold_prices.exists()
@@ -1204,10 +1351,12 @@ def main(argv: list[str]) -> int:
         "unique_price_label_mode": args.unique_price_label_mode,
         "unique_words_clean_passthrough": False,
         "matched_items": len(rows),
+        "fallback_matched_items": fallback_rows_added,
         "missing_items": len(missing),
         "divine_price_exalted": str(divine_exalted),
         "divine_exalted_ratio": divine_exalted_ratio_summary(divine_exalted),
-        "poe2db_fallback": bool(args.poe2db_fallback and args.price_source == "poe2scout"),
+        "poe2scout_fallback": bool(args.price_source == "poecurrency-cn"),
+        "poe2db_fallback": bool(args.poe2db_fallback),
     }
 
     if not args.no_build_patch:
@@ -1228,13 +1377,28 @@ def main(argv: list[str]) -> int:
             if words_game_path:
                 patched_words = args.patched_words or (args.out_dir / "words.patched.datc64")
                 if args.unique_price_label_mode in {"markup", "overlay", "newline"}:
-                    unique_words_patched, unique_word_rows, unique_word_missing = patch_unique_word_prices(
-                        tc_words_path=args.tc_words,
-                        unique_names=unique_names,
-                        prices=best,
-                        patched_words=patched_words,
-                        label_mode=args.unique_price_label_mode,
-                    )
+                    if args.price_source == "poecurrency-cn":
+                        (
+                            unique_words_patched,
+                            unique_word_rows,
+                            unique_word_missing,
+                            fallback_unique_words_patched,
+                        ) = patch_unique_word_prices_with_cn_fallback(
+                            tc_words_path=args.tc_words,
+                            unique_names=unique_names,
+                            primary_prices=best,
+                            fallback_prices=fallback_unique_by_name,
+                            patched_words=patched_words,
+                            label_mode=args.unique_price_label_mode,
+                        )
+                    else:
+                        unique_words_patched, unique_word_rows, unique_word_missing = patch_unique_word_prices(
+                            tc_words_path=args.tc_words,
+                            unique_names=unique_names,
+                            prices=best,
+                            patched_words=patched_words,
+                            label_mode=args.unique_price_label_mode,
+                        )
                     if unique_words_patched:
                         upsert_zip_entry(
                             output_zip,
@@ -1297,6 +1461,7 @@ def main(argv: list[str]) -> int:
     )
     summary["unique_words_available"] = len(unique_names)
     summary["unique_words_patched"] = unique_words_patched
+    summary["fallback_unique_words_patched"] = fallback_unique_words_patched
     summary["unique_price_label_mode"] = args.unique_price_label_mode
     summary["missing_unique_word_prices"] = len(unique_word_missing)
     (args.out_dir / "summary.json").write_text(
