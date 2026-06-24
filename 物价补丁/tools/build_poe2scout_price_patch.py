@@ -789,23 +789,42 @@ def poecurrency_api_id(name: str) -> str:
     return f"cn:{normalized}"
 
 
-def poecurrency_item_price(item: dict[str, Any]) -> tuple[Decimal, str]:
-    sell_avg = to_decimal(item.get("sell_avg"))
-    buy_avg = to_decimal(item.get("buy_avg"))
-    if buy_avg > 0 and sell_avg > 0:
-        high = max(buy_avg, sell_avg)
-        low = min(buy_avg, sell_avg)
+def choose_poecurrency_pair_price(
+    buy_price: Decimal,
+    sell_price: Decimal,
+    buy_field: str,
+    sell_field: str,
+) -> tuple[Decimal, str]:
+    if buy_price > 0 and sell_price > 0:
+        high = max(buy_price, sell_price)
+        low = min(buy_price, sell_price)
         ratio = high / low
         if ratio <= CN_TRUSTED_BUY_SELL_RATIO:
-            return (buy_avg * sell_avg).sqrt(), "geo_buy_sell"
-        if buy_avg <= sell_avg:
-            return buy_avg, "buy_avg_conservative_spread_gt_5x"
-        return sell_avg, "sell_avg_conservative_spread_gt_5x"
-    if sell_avg > 0:
-        return sell_avg, "sell_avg_only"
-    if buy_avg > 0:
-        return buy_avg, "buy_avg_only"
+            return (buy_price * sell_price).sqrt(), f"geo_{buy_field}_{sell_field}"
+        if buy_price <= sell_price:
+            return buy_price, f"{buy_field}_conservative_spread_gt_5x"
+        return sell_price, f"{sell_field}_conservative_spread_gt_5x"
+    if sell_price > 0:
+        return sell_price, f"{sell_field}_only"
+    if buy_price > 0:
+        return buy_price, f"{buy_field}_only"
     return Decimal("0"), ""
+
+
+def poecurrency_item_price(item: dict[str, Any]) -> tuple[Decimal, str]:
+    latest_buy = to_decimal(item.get("latest_buy1"))
+    latest_sell = to_decimal(item.get("latest_sell1"))
+    latest_price, latest_field = choose_poecurrency_pair_price(
+        latest_buy, latest_sell, "latest_buy1", "latest_sell1"
+    )
+    if latest_price > 0:
+        return latest_price, latest_field
+
+    buy_avg = to_decimal(item.get("buy_avg"))
+    sell_avg = to_decimal(item.get("sell_avg"))
+    return choose_poecurrency_pair_price(
+        buy_avg, sell_avg, "buy_avg", "sell_avg"
+    )
 
 
 def collect_poecurrency_observations(
@@ -1340,7 +1359,7 @@ def main(argv: list[str]) -> int:
     summary = {
         "price_source": args.price_source,
         "price_strategy": (
-            "poecurrency-cn geo buy/sell when spread <= 5x, lower side when spread > 5x"
+            "poecurrency-cn latest buy/sell first, avg fallback; geo when spread <= 5x, lower side when spread > 5x"
             if args.price_source == "poecurrency-cn"
             else "poe2scout relative price"
         ),
