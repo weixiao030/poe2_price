@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE2 物价补丁</h1>
+  <h1 align="center">⚗️ POE2 物价补丁v0.4.3</h1>
   <p align="center">为《Path of Exile 2》官服 / Steam 服 / 国服自动抓取物价并标注到物品名的补丁工具</p>
 </p>
 
