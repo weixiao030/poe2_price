@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "lmONOqUJ5+g=",
+  "dgSpecHash": "VGTmH6ftpg0=",
   "success": true,
-  "projectFilePath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\BundleExtractor\\BundleExtractor.csproj",
+  "projectFilePath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\BundleExtractor\\BundleExtractor.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\catmaotou\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.27\\microsoft.net.illink.tasks.8.0.27.nupkg.sha512",
     "C:\\Users\\catmaotou\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.27\\microsoft.netcore.app.runtime.win-x64.8.0.27.nupkg.sha512",

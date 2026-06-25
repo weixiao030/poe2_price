@@ -83,11 +83,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\BundleExtractor\\BundleExtractor.csproj",
+      "projectUniqueName": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\BundleExtractor\\BundleExtractor.csproj",
       "projectName": "BundleExtractor",
-      "projectPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\BundleExtractor\\BundleExtractor.csproj",
+      "projectPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\BundleExtractor\\BundleExtractor.csproj",
       "packagesPath": "C:\\Users\\catmaotou\\.nuget\\packages\\",
-      "outputPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\BundleExtractor\\obj\\",
+      "outputPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\BundleExtractor\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

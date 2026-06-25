@@ -81,6 +81,60 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(price, Decimal("279"))
         self.assertEqual(field, "latest_buy1_divine_ratio")
 
+    def test_currency_unit_d_is_converted_to_exalted(self):
+        best = self.price_patch.collect_poecurrency_observations(
+            [
+                {
+                    "category_label": "通货仓库",
+                    "items": [
+                        {
+                            "item_name": "神圣石",
+                            "latest_buy1": 291,
+                            "latest_sell1": 290,
+                            "currency_unit": "e",
+                        },
+                        {
+                            "item_name": "完美崇高石",
+                            "latest_buy1": 4.5,
+                            "latest_sell1": 0,
+                            "currency_unit": "d",
+                        },
+                    ],
+                }
+            ]
+        )
+
+        row = best[self.price_patch.poecurrency_api_id("完美崇高石")]
+        self.assertEqual(row.price_exalted, Decimal("1309.5"))
+        self.assertIn("d_to_e@291", row.source_pair)
+
+    def test_explicit_e_field_wins_over_display_unit(self):
+        best = self.price_patch.collect_poecurrency_observations(
+            [
+                {
+                    "category_label": "通货仓库",
+                    "items": [
+                        {
+                            "item_name": "神圣石",
+                            "latest_buy1": 291,
+                            "currency_unit": "e",
+                        },
+                        {
+                            "item_name": "测试物品",
+                            "latest_buy1": 4.5,
+                            "currency_unit": "d",
+                            "display": "4.5D",
+                            "e": 1234,
+                        },
+                    ],
+                }
+            ]
+        )
+
+        row = best[self.price_patch.poecurrency_api_id("测试物品")]
+        self.assertEqual(row.price_exalted, Decimal("1234"))
+        self.assertIn("e_api_exalted/e", row.source_pair)
+
     def test_high_value_outlier_uses_poe2scout_reference(self):
         primary = [
             {

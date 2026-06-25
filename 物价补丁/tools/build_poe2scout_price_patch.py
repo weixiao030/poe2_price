@@ -2,9 +2,9 @@
 """
 Fetch POE2 market prices and build a PoE2 item-name price patch.
 
-Network fetching uses requests + ThreadPoolExecutor + retry/backoff. Playwright
-is only useful for discovering the endpoints; this script performs the real
-data collection.
+Network fetching uses the Python standard library + ThreadPoolExecutor with
+retry/backoff. Playwright is only useful for discovering the endpoints; this
+script performs the real data collection.
 """
 
 from __future__ import annotations
@@ -18,19 +18,16 @@ import re
 import struct
 import subprocess
 import sys
-import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
-
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -137,6 +134,22 @@ class UniqueName:
     display_name: str
 
 
+@dataclass(frozen=True)
+class HttpResponse:
+    url: str
+    status_code: int
+    reason: str
+    content: bytes
+    encoding: str = "utf-8"
+
+    @property
+    def text(self) -> str:
+        return self.content.decode(self.encoding or "utf-8", errors="replace")
+
+    def json(self) -> Any:
+        return json.loads(self.text)
+
+
 class RetryingRequests:
     def __init__(
         self,
@@ -149,45 +162,65 @@ class RetryingRequests:
         self.backoff = backoff
         self.timeout = timeout
         self.user_agent = user_agent
-        self._local = threading.local()
+        self.retry_statuses = {429, 500, 502, 503, 504}
 
-    def session(self) -> requests.Session:
-        session = getattr(self._local, "session", None)
-        if session is None:
-            session = requests.Session()
-            retry = Retry(
-                total=self.max_retries,
-                connect=self.max_retries,
-                read=self.max_retries,
-                status=self.max_retries,
-                backoff_factor=self.backoff,
-                status_forcelist=(429, 500, 502, 503, 504),
-                allowed_methods=frozenset(["GET"]),
-                raise_on_status=False,
-            )
-            adapter = HTTPAdapter(max_retries=retry, pool_connections=64, pool_maxsize=64)
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
-            session.headers.update(
-                {
-                    "User-Agent": self.user_agent,
-                    "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
-                }
-            )
-            self._local.session = session
-        return session
+    def _headers(self) -> dict[str, str]:
+        return {
+            "User-Agent": self.user_agent,
+            "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
+        }
 
-    def get(self, url: str, **kwargs: Any) -> requests.Response:
+    def _decode_response(
+        self,
+        url: str,
+        status_code: int,
+        reason: str,
+        headers: Any,
+        content: bytes,
+    ) -> HttpResponse:
+        encoding = "utf-8"
+        get_content_charset = getattr(headers, "get_content_charset", None)
+        if callable(get_content_charset):
+            encoding = get_content_charset() or encoding
+        return HttpResponse(
+            url=url,
+            status_code=status_code,
+            reason=reason,
+            content=content,
+            encoding=encoding,
+        )
+
+    def _get_once(self, url: str) -> HttpResponse:
+        request = urllib.request.Request(url, headers=self._headers(), method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return self._decode_response(
+                    url=response.geturl(),
+                    status_code=response.status,
+                    reason=response.reason,
+                    headers=response.headers,
+                    content=response.read(),
+                )
+        except urllib.error.HTTPError as exc:
+            return self._decode_response(
+                url=exc.url,
+                status_code=exc.code,
+                reason=exc.reason,
+                headers=exc.headers,
+                content=exc.read(),
+            )
+
+    def get(self, url: str, **kwargs: Any) -> HttpResponse:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             try:
-                response = self.session().get(url, timeout=self.timeout, **kwargs)
+                response = self._get_once(url)
                 if response.status_code < 400:
                     return response
-                last_error = requests.HTTPError(
-                    f"{response.status_code} {response.reason}: {url}"
-                )
-            except Exception as exc:  # requests can raise several transient errors
+                if response.status_code not in self.retry_statuses:
+                    return response
+                last_error = RuntimeError(f"{response.status_code} {response.reason}: {url}")
+            except Exception as exc:
                 last_error = exc
             if attempt < self.max_retries:
                 time.sleep(self.backoff * (2**attempt))
@@ -856,6 +889,32 @@ def poecurrency_api_id(name: str) -> str:
     return f"cn:{normalized}"
 
 
+def poecurrency_item_unit(item: dict[str, Any]) -> str:
+    raw_unit = str(item.get("currency_unit") or item.get("unit") or "").strip().lower()
+    if raw_unit in {"d", "divine", "divine orb", "divine_orb", "神圣石", "神圣宝珠"}:
+        return "d"
+    if raw_unit in {"e", "exalted", "exalted orb", "exalted_orb", "崇高石", "崇高宝珠"}:
+        return "e"
+
+    display = str(
+        item.get("display")
+        or item.get("display_price")
+        or item.get("price_display")
+        or ""
+    ).strip().lower()
+    if display.endswith("d"):
+        return "d"
+    return "e"
+
+
+def poecurrency_explicit_exalted_price(item: dict[str, Any]) -> tuple[Decimal, str]:
+    for field_name in ("e", "price_e", "exalted", "exalted_price"):
+        price = to_decimal(item.get(field_name))
+        if price > 0:
+            return price, field_name
+    return Decimal("0"), ""
+
+
 def choose_poecurrency_pair_price(
     buy_price: Decimal,
     sell_price: Decimal,
@@ -902,10 +961,24 @@ def poecurrency_divine_price(item: dict[str, Any]) -> tuple[Decimal, str]:
     return Decimal("0"), ""
 
 
+def poecurrency_price_to_exalted(
+    price: Decimal, unit: str, divine_exalted: Decimal
+) -> Decimal:
+    if price <= 0:
+        return Decimal("0")
+    if unit == "d":
+        if divine_exalted <= 0:
+            return Decimal("0")
+        return price * divine_exalted
+    return price
+
+
 def collect_poecurrency_observations(
     summary: list[dict[str, Any]],
 ) -> dict[str, PriceObservation]:
-    best: dict[str, PriceObservation] = {}
+    candidates: list[dict[str, Any]] = []
+    divine_exalted = Decimal("0")
+
     for category in summary:
         if not isinstance(category, dict):
             continue
@@ -917,24 +990,75 @@ def collect_poecurrency_observations(
             if not isinstance(item, dict):
                 continue
             name = str(item.get("item_name") or "").strip()
+            if not name:
+                continue
+
             api_id = poecurrency_api_id(name)
-            if api_id == "divine":
+            unit = poecurrency_item_unit(item)
+            explicit_exalted, explicit_field = poecurrency_explicit_exalted_price(item)
+            if explicit_exalted > 0:
+                price = explicit_exalted
+                price_field = f"{explicit_field}_api_exalted"
+                unit = "e"
+            elif api_id == "divine":
                 price, price_field = poecurrency_divine_price(item)
             else:
                 price, price_field = poecurrency_item_price(item)
-            if not name or price <= 0:
+            if price <= 0:
                 continue
-            obs = PriceObservation(
-                api_id=api_id,
-                en_name=name,
-                category=f"cn:{category_label}",
-                price_exalted=price,
-                value_traded=Decimal("0"),
-                source_pair=f"poecurrency.top/{category_label}/{price_field}",
+
+            if api_id == "divine" and unit == "e":
+                divine_exalted = max(divine_exalted, price)
+
+            candidates.append(
+                {
+                    "api_id": api_id,
+                    "name": name,
+                    "category_label": category_label,
+                    "price": price,
+                    "price_field": price_field,
+                    "unit": unit,
+                }
             )
-            old = best.get(api_id)
-            if old is None or obs.price_exalted > old.price_exalted:
-                best[api_id] = obs
+
+    best: dict[str, PriceObservation] = {}
+    for candidate in candidates:
+        price = candidate["price"]
+        unit = candidate["unit"]
+        api_id = candidate["api_id"]
+        price_exalted = poecurrency_price_to_exalted(price, unit, divine_exalted)
+        if api_id == "divine" and unit == "d" and divine_exalted > 0:
+            price_exalted = divine_exalted
+        if price_exalted <= 0:
+            continue
+
+        unit_note = unit
+        if unit == "d":
+            unit_note = f"d_to_e@{divine_exalted}"
+        obs = PriceObservation(
+            api_id=api_id,
+            en_name=candidate["name"],
+            category=f"cn:{candidate['category_label']}",
+            price_exalted=price_exalted,
+            value_traded=Decimal("0"),
+            source_pair=(
+                f"poecurrency.top/{candidate['category_label']}/"
+                f"{candidate['price_field']}/{unit_note}"
+            ),
+        )
+        old = best.get(api_id)
+        if old is None or obs.price_exalted > old.price_exalted:
+            best[api_id] = obs
+
+    if "divine" not in best and divine_exalted > 0:
+        best["divine"] = PriceObservation(
+            api_id="divine",
+            en_name="Divine Orb",
+            category="cn:currency",
+            price_exalted=divine_exalted,
+            value_traded=Decimal("0"),
+            source_pair="poecurrency.top/divine/e",
+        )
     return best
 
 
@@ -1526,7 +1650,7 @@ def main(argv: list[str]) -> int:
     summary = {
         "price_source": args.price_source,
         "price_strategy": (
-            "poecurrency-cn uses latest buy/sell first with avg fallback; Divine ratio uses Divine latest_buy1; high-value outliers are replaced by poe2scout when CN and poe2scout differ beyond threshold"
+            "poecurrency-cn uses latest buy/sell first with avg fallback; currency_unit=d is converted to exalted by the current Divine ratio and explicit api e fields are preferred when present; high-value outliers are replaced by poe2scout when CN and poe2scout differ beyond threshold"
             if args.price_source == "poecurrency-cn"
             else "poe2scout relative price"
         ),

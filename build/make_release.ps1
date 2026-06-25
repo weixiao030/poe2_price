@@ -260,11 +260,53 @@ function Test-DotNet8Runtime {
         return $false
     }
 
+    function Test-DotNet8RuntimeDirectory {
+        param([string]$RuntimeDir)
+
+        if ([string]::IsNullOrWhiteSpace($RuntimeDir) -or -not (Test-Path -LiteralPath $RuntimeDir -PathType Container)) {
+            return $false
+        }
+        $RequiredFiles = @(
+            "System.Private.CoreLib.dll",
+            "System.Runtime.dll",
+            "System.Collections.dll",
+            "System.Console.dll",
+            "System.IO.Compression.dll"
+        )
+        foreach ($FileName in $RequiredFiles) {
+            if (-not (Test-Path -LiteralPath (Join-Path $RuntimeDir $FileName) -PathType Leaf)) {
+                return $false
+            }
+        }
+        return $true
+    }
+
     $RuntimeLines = & $DotnetPath --list-runtimes 2>$null
     if ($LASTEXITCODE -ne 0) {
         return $false
     }
-    return [bool]($RuntimeLines | Where-Object { $_ -match '^Microsoft\.NETCore\.App\s+8\.' } | Select-Object -First 1)
+
+    $DotnetRoot = Split-Path -Parent (Resolve-Path -LiteralPath $DotnetPath).Path
+    $LocalRuntimeRoot = Join-Path $DotnetRoot "shared\Microsoft.NETCore.App"
+    if (Test-Path -LiteralPath $LocalRuntimeRoot -PathType Container) {
+        $LocalRuntime = Get-ChildItem -LiteralPath $LocalRuntimeRoot -Directory |
+            Where-Object { $_.Name -match '^8\.' } |
+            Sort-Object @{ Expression = { [version]$_.Name }; Descending = $true } |
+            Select-Object -First 1
+        if ($null -ne $LocalRuntime -and (Test-DotNet8RuntimeDirectory $LocalRuntime.FullName)) {
+            return $true
+        }
+    }
+
+    foreach ($Line in $RuntimeLines) {
+        if ($Line -match '^Microsoft\.NETCore\.App\s+(8\.[0-9]+\.[0-9]+)\s+\[(.+)\]$') {
+            $RuntimeDir = Join-Path $Matches[2] $Matches[1]
+            if (Test-DotNet8RuntimeDirectory $RuntimeDir) {
+                return $true
+            }
+        }
+    }
+    return $false
 }
 
 function Test-PortablePython {
@@ -274,7 +316,7 @@ function Test-PortablePython {
         return $false
     }
 
-    & $PythonPath -c "import requests, urllib3, certifi, idna, charset_normalizer, chardet, ssl" 2>$null
+    & $PythonPath -c "import csv, decimal, html, json, ssl, urllib.error, urllib.parse, urllib.request, zipfile" 2>$null
     return ($LASTEXITCODE -eq 0)
 }
 
@@ -405,25 +447,7 @@ function Prepare-PythonRuntime {
     Set-Content -LiteralPath (Join-Path $TargetDir "python310._pth") -Encoding ASCII -Value @(
         "python310.zip",
         ".",
-        "Lib\site-packages",
-        "import site"
-    )
-
-    $SystemPython = (Get-Command python -ErrorAction Stop).Source
-    Invoke-Checked -FilePath $SystemPython -ArgumentList @(
-        "-m", "pip", "install",
-        "--target", $SitePackages,
-        "--upgrade",
-        "--no-compile",
-        "--disable-pip-version-check",
-        "--no-warn-conflicts",
-        "--only-binary=:all:",
-        "requests==2.32.3",
-        "urllib3==2.5.0",
-        "certifi==2025.6.15",
-        "idna==3.10",
-        "charset-normalizer==3.4.2",
-        "chardet==5.2.0"
+        "Lib\site-packages"
     )
 
     $TargetPython = Join-Path $TargetDir "python.exe"
@@ -601,6 +625,8 @@ function Test-ReleaseFolder {
         "国服还原包.zip",
         "国际服还原补丁.zip",
         "tools\dotnet-runtime\dotnet.exe",
+        "tools\python\python310.zip",
+        "tools\python\_ssl.pyd",
         "tools\python\python.exe",
         "tools\GGPKExtractor\GGPKExtractor.dll",
         "tools\BundleExtractor\BundleExtractor.exe",
@@ -617,7 +643,10 @@ function Test-ReleaseFolder {
     Invoke-Checked -FilePath (Join-Path $ReleaseToolsDir "dotnet-runtime\dotnet.exe") -ArgumentList @("--list-runtimes")
     Invoke-Checked -FilePath (Join-Path $ReleaseToolsDir "python\python.exe") -ArgumentList @(
         "-c",
-        "import requests, urllib3, certifi, idna, charset_normalizer, chardet, ssl; print('python ok')"
+        "import csv, decimal, html, json, ssl, urllib.error, urllib.parse, urllib.request, zipfile; print('python ok')"
+    )
+    Invoke-Checked -FilePath (Join-Path $ReleaseToolsDir "dotnet-runtime\dotnet.exe") -ArgumentList @(
+        (Join-Path $ReleaseDir "一键安装特殊补丁工具\PatchBundle3.dll")
     )
 }
 

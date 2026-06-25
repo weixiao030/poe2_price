@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj": {}
+    "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj": {}
   },
   "projects": {
-    "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj": {
+    "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj",
+        "projectUniqueName": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj",
         "projectName": "Poe2PatchLauncher",
-        "projectPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj",
+        "projectPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj",
         "packagesPath": "C:\\Users\\catmaotou\\.nuget\\packages\\",
-        "outputPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2过滤器价格\\三服合一物价补丁代码\\build\\Poe2PatchLauncher\\obj\\",
+        "outputPath": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\Poe2PatchLauncher\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

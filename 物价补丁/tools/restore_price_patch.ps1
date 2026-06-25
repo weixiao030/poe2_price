@@ -259,7 +259,7 @@ function Assert-RestoreZip {
             throw "Restore zip entry is too small to be a valid BaseItemTypes.datc64"
         }
         if ($SupportsUniqueWords -and $null -eq $Archive.GetEntry($TcWordsPath)) {
-            throw "Restore zip does not contain $TcWordsPath. Run one-key update once from a clean game state to refresh the restore package."
+            Write-Warning "还原包缺少 $TcWordsPath；将只还原 BaseItemTypes。请在游戏文件干净后运行一次一键更新，以刷新包含 Words 的新版还原包。"
         }
 
         $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_restore_assert_", [Guid]::NewGuid().ToString("N"), ".datc64"))
@@ -300,10 +300,6 @@ function Test-RestoreZipUsable {
         if ($null -eq $Entry -or $Entry.Length -le 1048576) {
             return $false
         }
-        if ($SupportsUniqueWords -and $null -eq $Archive.GetEntry($TcWordsPath)) {
-            return $false
-        }
-
         $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_restore_validate_", [Guid]::NewGuid().ToString("N"), ".datc64"))
         try {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $TempDat, $true)
@@ -345,7 +341,9 @@ function New-CurrentTargetRestoreZip {
         try {
             Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $InstallInfo.TcBaseItemsPath -Required | Out-Null
             if ($SupportsUniqueWords) {
-                Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $TcWordsPath -Required | Out-Null
+                if (-not (Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $TcWordsPath)) {
+                    Write-Warning "还原包缺少 $TcWordsPath；本次安装包不会包含 Words 还原条目。"
+                }
             }
         }
         finally {

@@ -391,12 +391,54 @@ function Test-DotNet8Runtime {
         return $false
     }
 
+    function Test-DotNet8RuntimeDirectory {
+        param([string]$RuntimeDir)
+
+        if ([string]::IsNullOrWhiteSpace($RuntimeDir) -or -not (Test-Path -LiteralPath $RuntimeDir -PathType Container)) {
+            return $false
+        }
+        $RequiredFiles = @(
+            "System.Private.CoreLib.dll",
+            "System.Runtime.dll",
+            "System.Collections.dll",
+            "System.Console.dll",
+            "System.IO.Compression.dll"
+        )
+        foreach ($FileName in $RequiredFiles) {
+            if (-not (Test-Path -LiteralPath (Join-Path $RuntimeDir $FileName) -PathType Leaf)) {
+                return $false
+            }
+        }
+        return $true
+    }
+
     try {
         $RuntimeLines = & $DotnetPath --list-runtimes 2>$null
         if ($LASTEXITCODE -ne 0) {
             return $false
         }
-        return [bool]($RuntimeLines | Where-Object { $_ -match '^Microsoft\.NETCore\.App\s+8\.' } | Select-Object -First 1)
+
+        $DotnetRoot = Split-Path -Parent (Resolve-Path -LiteralPath $DotnetPath).Path
+        $LocalRuntimeRoot = Join-Path $DotnetRoot "shared\Microsoft.NETCore.App"
+        if (Test-Path -LiteralPath $LocalRuntimeRoot -PathType Container) {
+            $LocalRuntime = Get-ChildItem -LiteralPath $LocalRuntimeRoot -Directory |
+                Where-Object { $_.Name -match '^8\.' } |
+                Sort-Object @{ Expression = { [version]$_.Name }; Descending = $true } |
+                Select-Object -First 1
+            if ($null -ne $LocalRuntime -and (Test-DotNet8RuntimeDirectory $LocalRuntime.FullName)) {
+                return $true
+            }
+        }
+
+        foreach ($Line in $RuntimeLines) {
+            if ($Line -match '^Microsoft\.NETCore\.App\s+(8\.[0-9]+\.[0-9]+)\s+\[(.+)\]$') {
+                $RuntimeDir = Join-Path $Matches[2] $Matches[1]
+                if (Test-DotNet8RuntimeDirectory $RuntimeDir) {
+                    return $true
+                }
+            }
+        }
+        return $false
     }
     catch {
         return $false
@@ -502,49 +544,51 @@ function Invoke-DownloadWithRetry {
 function Install-LocalDotNet8Runtime {
     param([string]$RepoRoot)
 
-    $RuntimeVersion = "8.0.28"
-    $RuntimeFile = "dotnet-runtime-$RuntimeVersion-win-x64.zip"
+    $RuntimeVersions = @("8.0.28", "8.0.27")
     $DownloadDir = Join-Path $RepoRoot "tools\downloads"
     $RuntimeDir = Join-Path $RepoRoot "tools\dotnet-runtime"
-    $ZipPath = Join-Path $DownloadDir $RuntimeFile
 
     New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
 
-    $Sources = @(
-        @{
-            Name = "Huawei Cloud mirror"
-            Url = "https://mirrors.huaweicloud.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
-        },
-        @{
-            Name = "Huawei Cloud repo mirror"
-            Url = "https://repo.huaweicloud.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
-        },
-        @{
-            Name = "Microsoft official fallback"
-            Url = "https://builds.dotnet.microsoft.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
-        }
-    )
-
-    foreach ($Source in $Sources) {
-        try {
-            Write-Host "Download .NET 8 runtime: $($Source.Name)"
-            Invoke-DownloadWithRetry -Url $Source.Url -OutFile $ZipPath
-
-            if (Test-Path -LiteralPath $RuntimeDir -PathType Container) {
-                Remove-Item -LiteralPath $RuntimeDir -Recurse -Force
+    foreach ($RuntimeVersion in $RuntimeVersions) {
+        $RuntimeFile = "dotnet-runtime-$RuntimeVersion-win-x64.zip"
+        $ZipPath = Join-Path $DownloadDir $RuntimeFile
+        $Sources = @(
+            @{
+                Name = "Huawei Cloud mirror"
+                Url = "https://mirrors.huaweicloud.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
+            },
+            @{
+                Name = "Huawei Cloud repo mirror"
+                Url = "https://repo.huaweicloud.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
+            },
+            @{
+                Name = "Microsoft official fallback"
+                Url = "https://builds.dotnet.microsoft.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
             }
-            New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
-            Expand-Archive -LiteralPath $ZipPath -DestinationPath $RuntimeDir -Force
+        )
 
-            $LocalDotnet = Join-Path $RuntimeDir "dotnet.exe"
-            if (Test-DotNet8Runtime $LocalDotnet) {
-                Write-Host ".NET 8 runtime ready: $LocalDotnet" -ForegroundColor Green
-                return $LocalDotnet
+        foreach ($Source in $Sources) {
+            try {
+                Write-Host "Download .NET 8 runtime $RuntimeVersion`: $($Source.Name)"
+                Invoke-DownloadWithRetry -Url $Source.Url -OutFile $ZipPath
+
+                if (Test-Path -LiteralPath $RuntimeDir -PathType Container) {
+                    Remove-Item -LiteralPath $RuntimeDir -Recurse -Force
+                }
+                New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+                Expand-Archive -LiteralPath $ZipPath -DestinationPath $RuntimeDir -Force
+
+                $LocalDotnet = Join-Path $RuntimeDir "dotnet.exe"
+                if (Test-DotNet8Runtime $LocalDotnet) {
+                    Write-Host ".NET 8 runtime ready: $LocalDotnet" -ForegroundColor Green
+                    return $LocalDotnet
+                }
+                throw "Extracted runtime is not usable."
             }
-            throw "Extracted runtime is not usable."
-        }
-        catch {
-            Write-Warning "$($Source.Name) failed: $($_.Exception.Message)"
+            catch {
+                Write-Warning "$RuntimeVersion $($Source.Name) failed: $($_.Exception.Message)"
+            }
         }
     }
 
@@ -560,7 +604,9 @@ function Ensure-DotNet8Runtime {
     }
 
     if (Test-Poe2ReleaseMode) {
-        throw "发布包不完整：缺少可用的 tools\dotnet-runtime\dotnet.exe，请重新打包发布版。"
+        Write-Host ""
+        Write-Host "==> 内置 .NET 运行时不可用，正在自动修复" -ForegroundColor Cyan
+        return Install-LocalDotNet8Runtime -RepoRoot $RepoRoot
     }
 
     Write-Host ""
@@ -609,32 +655,68 @@ function Test-Poe2PythonPackages {
     param([Parameter(Mandatory = $true)][string]$Python)
 
     $CheckCode = @"
-import importlib.util
+import csv
+import decimal
+import html
+import json
 import ssl
 import sys
-
-missing = []
-for name in ('urllib3', 'certifi', 'idna'):
-    if importlib.util.find_spec(name) is None:
-        missing.append(name)
-
-if (
-    importlib.util.find_spec('charset_normalizer') is None
-    and importlib.util.find_spec('chardet') is None
-):
-    missing.append('charset_normalizer or chardet')
-
-if missing:
-    raise SystemExit('missing Python package(s): ' + ', '.join(missing))
-
-import requests
-import urllib3
-import certifi
-import idna
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
 "@
 
     $Result = Invoke-Poe2Python -Python $Python -ArgumentList @("-c", $CheckCode) -Quiet
     return ($Result.ExitCode -eq 0)
+}
+
+function Install-LocalPythonRuntime {
+    param([string]$RepoRoot)
+
+    $PythonVersion = "3.10.6"
+    $PythonZipName = "python-$PythonVersion-embed-amd64.zip"
+    $DownloadDir = Join-Path $RepoRoot "tools\downloads"
+    $PythonDir = Join-Path $RepoRoot "tools\python"
+    $ZipPath = Join-Path $DownloadDir $PythonZipName
+
+    New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
+
+    $Sources = @(
+        @{
+            Name = "Python official"
+            Url = "https://www.python.org/ftp/python/$PythonVersion/$PythonZipName"
+        }
+    )
+
+    foreach ($Source in $Sources) {
+        try {
+            Write-Host "Download Python runtime: $($Source.Name)"
+            Invoke-DownloadWithRetry -Url $Source.Url -OutFile $ZipPath
+
+            if (Test-Path -LiteralPath $PythonDir -PathType Container) {
+                Remove-Item -LiteralPath $PythonDir -Recurse -Force
+            }
+            New-Item -ItemType Directory -Force -Path $PythonDir | Out-Null
+            Expand-Archive -LiteralPath $ZipPath -DestinationPath $PythonDir -Force
+            Set-Content -LiteralPath (Join-Path $PythonDir "python310._pth") -Encoding ASCII -Value @(
+                "python310.zip",
+                "."
+            )
+
+            $LocalPython = Join-Path $PythonDir "python.exe"
+            if (Test-Poe2PythonPackages $LocalPython) {
+                Write-Host "Python runtime ready: $LocalPython" -ForegroundColor Green
+                return $LocalPython
+            }
+            throw "Extracted Python runtime is not usable."
+        }
+        catch {
+            Write-Warning "$($Source.Name) failed: $($_.Exception.Message)"
+        }
+    }
+
+    throw "Unable to prepare Python runtime. Please check your network and run again."
 }
 
 function Ensure-PythonRequests {
@@ -652,30 +734,21 @@ function Ensure-PythonRequests {
     }
 
     if (Test-Poe2ReleaseMode) {
-        throw "发布包不完整：缺少可用的 tools\python\python.exe 或内置 Python 依赖 requests/urllib3/certifi/idna/charset_normalizer/chardet，请重新下载完整发布包或重新打包发布版。"
+        Write-Host ""
+        Write-Host "==> 内置 Python 不可用，正在自动修复" -ForegroundColor Cyan
+        return Install-LocalPythonRuntime -RepoRoot $RepoRoot
     }
 
     $PythonCommand = Get-Command python -ErrorAction SilentlyContinue
-    if ($null -eq $PythonCommand) {
-        throw "Python is required but was not found in PATH. Please install Python 3 and run again."
-    }
-
-    $Python = $PythonCommand.Source
-    if (Test-Poe2PythonPackages $Python) {
-        return $Python
+    if ($null -ne $PythonCommand) {
+        $Python = $PythonCommand.Source
+        if (Test-Poe2PythonPackages $Python) {
+            return $Python
+        }
     }
 
     Write-Host ""
-    Write-Host "==> Prepare Python requests package" -ForegroundColor Cyan
-    & $Python -m pip install -U requests urllib3 certifi idna charset-normalizer chardet -i https://pypi.tuna.tsinghua.edu.cn/simple
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install Python packages requests, urllib3, certifi, idna, charset-normalizer and chardet. Please check your network and run again."
-    }
-
-    if (-not (Test-Poe2PythonPackages $Python)) {
-        throw "Python packages requests, urllib3, certifi, idna, charset-normalizer and chardet are still not usable after install."
-    }
-
-    return $Python
+    Write-Host "==> Prepare local Python runtime" -ForegroundColor Cyan
+    return Install-LocalPythonRuntime -RepoRoot $RepoRoot
 }
 
