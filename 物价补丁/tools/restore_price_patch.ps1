@@ -537,12 +537,15 @@ function Extract-CurrentGgpkBaseItemsForRestoreCheck {
     $ExtractLog = Join-Path $TempDir "extract.log"
     New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
     if ($ExtractorUsesDotnet) {
-        & $Dotnet $Extractor $ContentGgpk $TempDir *> $ExtractLog
+        $ExtractorResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($Extractor, $ContentGgpk, $TempDir) -Quiet
+        $ExtractorResult.Text | Out-File -LiteralPath $ExtractLog -Encoding UTF8
+        $ExtractorExitCode = $ExtractorResult.ExitCode
     }
     else {
         & $Extractor $ContentGgpk $TempDir *> $ExtractLog
+        $ExtractorExitCode = $LASTEXITCODE
     }
-    if ($LASTEXITCODE -ne 0) {
+    if ($ExtractorExitCode -ne 0) {
         throw "Failed to extract current BaseItemTypes for compatibility check. Log: $ExtractLog"
     }
 
@@ -746,11 +749,9 @@ if ($GameMode -eq "GGPK") {
 
     Push-Location -LiteralPath $BundledInstallerDir
     try {
-        $InstallerOutput = "" | & $Dotnet $BundledPatchDll $ContentGgpk $InstallRestoreZip 2>&1
-        $InstallerOutput | ForEach-Object { Write-Host $_ }
-        $InstallerText = ($InstallerOutput | Out-String)
-        if ($LASTEXITCODE -ne 0 -or $InstallerText -match 'Exception|Unhandled|錯誤|错误|失敗|失败') {
-            throw "Restore installer failed. Exit code: $LASTEXITCODE"
+        $InstallerResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $InstallRestoreZip) -InputText ""
+        if ($InstallerResult.ExitCode -ne 0 -or $InstallerResult.Text -match 'Exception|Unhandled|錯誤|错误|失敗|失败') {
+            throw "Restore installer failed. Exit code: $($InstallerResult.ExitCode)"
         }
     }
     finally {
@@ -782,10 +783,13 @@ else {
     Push-Location -LiteralPath $BundledInstallerDir
     try {
         if ($UsePatchBundleDll) {
-            $BundlePatchOutput = & $Dotnet $BundledBundlePatchDll $Bundles2Paths.IndexBin $InstallRestoreZip 2>&1
+            $BundlePatchResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $InstallRestoreZip) -Quiet
+            $BundlePatchOutput = $BundlePatchResult.Lines
+            $BundlePatchExitCode = $BundlePatchResult.ExitCode
         }
         else {
             $BundlePatchOutput = & $BundledBundlePatchExe $Bundles2Paths.IndexBin $InstallRestoreZip 2>&1
+            $BundlePatchExitCode = $LASTEXITCODE
         }
     }
     finally {
@@ -794,8 +798,8 @@ else {
 
     $BundlePatchOutput | ForEach-Object { Write-Host $_ }
     $BundlePatchText = ($BundlePatchOutput | Out-String)
-    if ($LASTEXITCODE -ne 0 -or $BundlePatchText -match 'Exception|Unhandled|FileNotFound|Could not load|Error:|錯誤|错误|失敗|失败') {
-        throw "PatchBundle3 restore failed. Exit code: $LASTEXITCODE"
+    if ($BundlePatchExitCode -ne 0 -or $BundlePatchText -match 'Exception|Unhandled|FileNotFound|Could not load|Error:|錯誤|错误|失敗|失败') {
+        throw "PatchBundle3 restore failed. Exit code: $BundlePatchExitCode"
     }
 
     Write-Host "Restore installed into Bundles2." -ForegroundColor Green

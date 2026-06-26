@@ -1463,6 +1463,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--max-workers", type=int, default=12)
     parser.add_argument("--retries", type=int, default=4)
     parser.add_argument("--backoff", type=float, default=0.8)
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=12.0,
+        help="HTTP request timeout in seconds for price sources.",
+    )
     parser.add_argument("--poe2db-fallback", action="store_true")
     parser.add_argument("--no-uniques", action="store_true")
     parser.add_argument("--no-build-patch", action="store_true")
@@ -1514,7 +1520,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
-    client = RetryingRequests(max_retries=args.retries, backoff=args.backoff)
+    client = RetryingRequests(
+        max_retries=args.retries,
+        backoff=args.backoff,
+        timeout=max(1.0, args.timeout),
+    )
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems)

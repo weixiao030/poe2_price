@@ -614,6 +614,67 @@ function Ensure-DotNet8Runtime {
     return Install-LocalDotNet8Runtime -RepoRoot $RepoRoot
 }
 
+function Invoke-DotNet8 {
+    param(
+        [Parameter(Mandatory = $true)][string]$Dotnet,
+        [string[]]$ArgumentList = @(),
+        [string]$WorkingDirectory = "",
+        [AllowNull()][string]$InputText = $null,
+        [switch]$Quiet
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Dotnet) -or -not (Test-Path -LiteralPath $Dotnet -PathType Leaf)) {
+        throw "Missing dotnet executable: $Dotnet"
+    }
+
+    $DotnetPath = (Resolve-Path -LiteralPath $Dotnet).Path
+    $DotnetRoot = Split-Path -Parent $DotnetPath
+    $OldDotnetRoot = $env:DOTNET_ROOT
+    $OldDotnetMultilevelLookup = $env:DOTNET_MULTILEVEL_LOOKUP
+    $OldErrorActionPreference = $ErrorActionPreference
+    $PushedLocation = $false
+
+    try {
+        $env:DOTNET_ROOT = $DotnetRoot
+        $env:DOTNET_MULTILEVEL_LOOKUP = "0"
+        $ErrorActionPreference = "Continue"
+
+        if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory)) {
+            Push-Location -LiteralPath $WorkingDirectory
+            $PushedLocation = $true
+        }
+
+        if ($PSBoundParameters.ContainsKey("InputText")) {
+            $Output = $InputText | & $DotnetPath @ArgumentList 2>&1
+        }
+        else {
+            $Output = & $DotnetPath @ArgumentList 2>&1
+        }
+        $ExitCode = $LASTEXITCODE
+    }
+    finally {
+        if ($PushedLocation) {
+            Pop-Location
+        }
+        $env:DOTNET_ROOT = $OldDotnetRoot
+        $env:DOTNET_MULTILEVEL_LOOKUP = $OldDotnetMultilevelLookup
+        $ErrorActionPreference = $OldErrorActionPreference
+    }
+
+    $Lines = @($Output | ForEach-Object { [string]$_ })
+    if (-not $Quiet) {
+        foreach ($Line in $Lines) {
+            Write-Host $Line
+        }
+    }
+
+    return [pscustomobject]@{
+        ExitCode = $ExitCode
+        Lines    = $Lines
+        Text     = ($Lines -join "`n")
+    }
+}
+
 function Set-Poe2PythonEnvironment {
     $env:PYTHONIOENCODING = "utf-8"
     $env:PYTHONUTF8 = "1"

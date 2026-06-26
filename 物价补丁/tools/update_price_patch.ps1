@@ -1209,13 +1209,16 @@ if (-not $SkipExtract) {
         Write-Step "从 Content.ggpk 提取最新 BaseItemTypes"
         try {
             if ($ExtractorUsesDotnet) {
-                & $Dotnet $Extractor $ContentGgpk $LatestDir *> $ExtractLog
+                $ExtractorResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($Extractor, $ContentGgpk, $LatestDir) -Quiet
+                $ExtractorResult.Text | Out-File -LiteralPath $ExtractLog -Encoding UTF8
+                $ExtractorExitCode = $ExtractorResult.ExitCode
             }
             else {
                 & $Extractor $ContentGgpk $LatestDir *> $ExtractLog
+                $ExtractorExitCode = $LASTEXITCODE
             }
-            if ($LASTEXITCODE -ne 0) {
-                throw "GGPKExtractor exit code: $LASTEXITCODE"
+            if ($ExtractorExitCode -ne 0) {
+                throw "GGPKExtractor exit code: $ExtractorExitCode"
             }
             Write-Host "已提取到：$LatestDir"
         }
@@ -1412,11 +1415,9 @@ if (-not $NoInstall) {
 
         Push-Location -LiteralPath $BundledInstallerDir
         try {
-            $InstallerOutput = "" | & $Dotnet $BundledPatchDll $ContentGgpk $PatchFolderZip 2>&1
-            $InstallerOutput | ForEach-Object { Write-Host $_ }
-            $InstallerText = ($InstallerOutput | Out-String)
-            if ($LASTEXITCODE -ne 0 -or (Test-ToolOutputFailure -Text $InstallerText)) {
-                throw "Patch installer failed. Exit code: $LASTEXITCODE"
+            $InstallerResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $PatchFolderZip) -InputText ""
+            if ($InstallerResult.ExitCode -ne 0 -or (Test-ToolOutputFailure -Text $InstallerResult.Text)) {
+                throw "Patch installer failed. Exit code: $($InstallerResult.ExitCode)"
             }
         }
         finally {
@@ -1453,10 +1454,13 @@ if (-not $NoInstall) {
         Push-Location -LiteralPath $BundledInstallerDir
         try {
             if ($UsePatchBundleDll) {
-                $BundlePatchOutput = & $Dotnet $BundledBundlePatchDll $Bundles2Paths.IndexBin $TempPatchZip 2>&1
+                $BundlePatchResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $TempPatchZip) -Quiet
+                $BundlePatchOutput = $BundlePatchResult.Lines
+                $BundlePatchExitCode = $BundlePatchResult.ExitCode
             }
             else {
                 $BundlePatchOutput = & $BundledBundlePatchExe $Bundles2Paths.IndexBin $TempPatchZip 2>&1
+                $BundlePatchExitCode = $LASTEXITCODE
             }
         }
         finally {
@@ -1465,9 +1469,9 @@ if (-not $NoInstall) {
 
         $BundlePatchOutput | ForEach-Object { Write-Host $_ }
         $BundlePatchText = ($BundlePatchOutput | Out-String)
-        if ($LASTEXITCODE -ne 0 -or (Test-ToolOutputFailure -Text $BundlePatchText -ExtraNeedles @("FileNotFound", "Could not load"))) {
+        if ($BundlePatchExitCode -ne 0 -or (Test-ToolOutputFailure -Text $BundlePatchText -ExtraNeedles @("FileNotFound", "Could not load"))) {
             Remove-Item -LiteralPath $TempPatchZip -Force -ErrorAction SilentlyContinue
-            throw "PatchBundle3 failed. Exit code: $LASTEXITCODE"
+            throw "PatchBundle3 failed. Exit code: $BundlePatchExitCode"
         }
 
         Remove-Item -LiteralPath $TempPatchZip -Force -ErrorAction SilentlyContinue
