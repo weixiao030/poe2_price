@@ -3,6 +3,8 @@ import sys
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 SCRIPT_PATH = (
@@ -249,6 +251,118 @@ class PoecurrencyPricingTests(unittest.TestCase):
 
         self.assertEqual(count, 0)
         self.assertEqual(rows[0]["price"], "14.00D")
+
+    def test_patch_scope_currency_skips_unique_words(self):
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            calls = {"base": 0, "words": 0}
+
+            def fake_run_patch_builder(**kwargs):
+                calls["base"] += 1
+                kwargs["output_zip"].write_bytes(b"zip")
+
+            def fake_patch_unique_word_prices(**kwargs):
+                calls["words"] += 1
+                return 1, [], []
+
+            with patch.object(self.price_patch, "load_base_item_pairs", return_value=[]), patch.object(
+                self.price_patch,
+                "build_scout_prices",
+                return_value=({"exchange_snapshot": {}}, {}, [], []),
+            ), patch.object(self.price_patch, "divine_price_exalted", return_value=Decimal("100")), patch.object(
+                self.price_patch, "apply_display_prices", return_value=None
+            ), patch.object(
+                self.price_patch, "match_prices_to_base_items", return_value=([], [])
+            ), patch.object(
+                self.price_patch, "load_unique_names", return_value={"x": object()}
+            ), patch.object(
+                self.price_patch, "run_patch_builder", side_effect=fake_run_patch_builder
+            ), patch.object(
+                self.price_patch, "patch_unique_word_prices", side_effect=fake_patch_unique_word_prices
+            ):
+                rc = self.price_patch.main(
+                    [
+                        "--patch-scope",
+                        "currency",
+                        "--out-dir",
+                        str(out_dir),
+                        "--output-zip",
+                        str(out_dir / "patch.zip"),
+                        "--en-baseitems",
+                        str(out_dir / "en.datc64"),
+                        "--tc-baseitems",
+                        str(out_dir / "tc.datc64"),
+                        "--en-words",
+                        str(out_dir / "en_words.datc64"),
+                        "--tc-words",
+                        str(out_dir / "tc_words.datc64"),
+                        "--unique-gold-prices",
+                        str(out_dir / "unique.datc64"),
+                        "--game-path",
+                        "data/balance/baseitemtypes.datc64",
+                    ]
+                )
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls, {"base": 1, "words": 0})
+
+    def test_patch_scope_uniques_skips_base_items(self):
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            for name in ("en_words.datc64", "tc_words.datc64", "unique.datc64"):
+                (out_dir / name).write_bytes(b"data")
+            calls = {"base": 0, "words": 0}
+
+            def fake_run_patch_builder(**kwargs):
+                calls["base"] += 1
+
+            def fake_patch_unique_word_prices(**kwargs):
+                calls["words"] += 1
+                kwargs["patched_words"].write_bytes(b"words")
+                return 1, [{"status": "patched"}], []
+
+            with patch.object(self.price_patch, "load_base_item_pairs", return_value=[]), patch.object(
+                self.price_patch,
+                "build_scout_prices",
+                return_value=({"exchange_snapshot": {}}, {}, [], []),
+            ), patch.object(self.price_patch, "divine_price_exalted", return_value=Decimal("100")), patch.object(
+                self.price_patch, "apply_display_prices", return_value=None
+            ), patch.object(
+                self.price_patch, "match_prices_to_base_items", return_value=([{"api_id": "a", "en_name": "A"}], [])
+            ), patch.object(
+                self.price_patch, "load_unique_names", return_value={"x": object()}
+            ), patch.object(
+                self.price_patch, "run_patch_builder", side_effect=fake_run_patch_builder
+            ), patch.object(
+                self.price_patch, "patch_unique_word_prices", side_effect=fake_patch_unique_word_prices
+            ), patch.object(
+                self.price_patch, "upsert_zip_entry", return_value=None
+            ):
+                rc = self.price_patch.main(
+                    [
+                        "--patch-scope",
+                        "uniques",
+                        "--out-dir",
+                        str(out_dir),
+                        "--output-zip",
+                        str(out_dir / "patch.zip"),
+                        "--en-baseitems",
+                        str(out_dir / "en.datc64"),
+                        "--tc-baseitems",
+                        str(out_dir / "tc.datc64"),
+                        "--en-words",
+                        str(out_dir / "en_words.datc64"),
+                        "--tc-words",
+                        str(out_dir / "tc_words.datc64"),
+                        "--unique-gold-prices",
+                        str(out_dir / "unique.datc64"),
+                        "--game-path",
+                        "data/balance/baseitemtypes.datc64",
+                    ]
+                )
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls, {"base": 0, "words": 1})
 
 
 if __name__ == "__main__":

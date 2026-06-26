@@ -3,7 +3,9 @@
     [switch]$SkipExtract,
     [switch]$NoOpenTool,
     [switch]$NoInstall,
-    [switch]$NoPoe2dbFallback
+    [switch]$NoPoe2dbFallback,
+    [ValidateSet("", "all", "currency", "uniques")]
+    [string]$PatchScope = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +33,128 @@ function Write-Step {
     param([string]$Text)
     Write-Host ""
     Write-Host "==> $Text" -ForegroundColor Cyan
+}
+
+function New-Utf16Text {
+    param([Parameter(Mandatory = $true)][int[]]$CodePoints)
+    return [string]::Concat(($CodePoints | ForEach-Object { [char]$_ }))
+}
+
+function Get-PatchScopeDisplayName {
+    param([string]$Scope)
+
+    switch ($Scope) {
+        "currency" { return (New-Utf16Text @(0x53EA, 0x6253, 0x901A, 0x8D27, 0x8865, 0x4E01)) }
+        "uniques" { return (New-Utf16Text @(0x53EA, 0x6253, 0x4F20, 0x5947, 0x88C5, 0x5907, 0x8865, 0x4E01)) }
+        default { return (New-Utf16Text @(0x901A, 0x8D27, 0x0020, 0x002B, 0x0020, 0x4F20, 0x5947, 0x88C5, 0x5907)) }
+    }
+}
+
+function Show-PatchScopeDialog {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $Form = New-Object System.Windows.Forms.Form
+    $Form.Text = "POE2 Price Patch"
+    $Form.StartPosition = "CenterScreen"
+    $Form.FormBorderStyle = "FixedDialog"
+    $Form.MaximizeBox = $false
+    $Form.MinimizeBox = $false
+    $Form.TopMost = $true
+    $Form.ClientSize = New-Object System.Drawing.Size(420, 250)
+    $Form.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
+
+    $Title = New-Object System.Windows.Forms.Label
+    $Title.Text = (New-Utf16Text @(0x9009, 0x62E9, 0x672C, 0x6B21, 0x8981, 0x5199, 0x5165, 0x7684, 0x8865, 0x4E01, 0x5185, 0x5BB9))
+    $Title.AutoSize = $true
+    $Title.Location = New-Object System.Drawing.Point(18, 18)
+    $Title.Font = New-Object System.Drawing.Font($Form.Font.FontFamily, 11, [System.Drawing.FontStyle]::Bold)
+    $Form.Controls.Add($Title)
+
+    $Group = New-Object System.Windows.Forms.GroupBox
+    $Group.Text = (New-Utf16Text @(0x8865, 0x4E01, 0x8303, 0x56F4))
+    $Group.Location = New-Object System.Drawing.Point(18, 52)
+    $Group.Size = New-Object System.Drawing.Size(382, 120)
+    $Form.Controls.Add($Group)
+
+    $All = New-Object System.Windows.Forms.RadioButton
+    $All.Text = (Get-PatchScopeDisplayName "all")
+    $All.Tag = "all"
+    $All.Checked = $true
+    $All.Location = New-Object System.Drawing.Point(18, 28)
+    $All.AutoSize = $true
+    $Group.Controls.Add($All)
+
+    $Currency = New-Object System.Windows.Forms.RadioButton
+    $Currency.Text = (Get-PatchScopeDisplayName "currency")
+    $Currency.Tag = "currency"
+    $Currency.Location = New-Object System.Drawing.Point(18, 58)
+    $Currency.AutoSize = $true
+    $Group.Controls.Add($Currency)
+
+    $Uniques = New-Object System.Windows.Forms.RadioButton
+    $Uniques.Text = (Get-PatchScopeDisplayName "uniques")
+    $Uniques.Tag = "uniques"
+    $Uniques.Location = New-Object System.Drawing.Point(18, 88)
+    $Uniques.AutoSize = $true
+    $Group.Controls.Add($Uniques)
+
+    $OkButton = New-Object System.Windows.Forms.Button
+    $OkButton.Text = (New-Utf16Text @(0x5F00, 0x59CB, 0x66F4, 0x65B0))
+    $OkButton.Location = New-Object System.Drawing.Point(208, 196)
+    $OkButton.Size = New-Object System.Drawing.Size(90, 32)
+    $OkButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
+    $Form.AcceptButton = $OkButton
+    $Form.Controls.Add($OkButton)
+
+    $CancelButton = New-Object System.Windows.Forms.Button
+    $CancelButton.Text = (New-Utf16Text @(0x53D6, 0x6D88))
+    $CancelButton.Location = New-Object System.Drawing.Point(310, 196)
+    $CancelButton.Size = New-Object System.Drawing.Size(90, 32)
+    $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $Form.CancelButton = $CancelButton
+    $Form.Controls.Add($CancelButton)
+
+    $Result = $Form.ShowDialog()
+    if ($Result -ne [System.Windows.Forms.DialogResult]::OK) {
+        throw "Patch scope selection was cancelled."
+    }
+
+    foreach ($Control in $Group.Controls) {
+        if ($Control -is [System.Windows.Forms.RadioButton] -and $Control.Checked) {
+            return [string]$Control.Tag
+        }
+    }
+    return "all"
+}
+
+function Resolve-PatchScope {
+    param([string]$Requested)
+
+    $Allowed = @("all", "currency", "uniques")
+    $Scope = $Requested
+    if ([string]::IsNullOrWhiteSpace($Scope) -and -not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_SCOPE)) {
+        $Scope = $env:POE2_PATCH_SCOPE.Trim().ToLowerInvariant()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Scope)) {
+        $Scope = $Scope.Trim().ToLowerInvariant()
+        if ($Scope -notin $Allowed) {
+            throw "Invalid POE2_PATCH_SCOPE '$Scope'. Use all, currency or uniques."
+        }
+        return $Scope
+    }
+    if (Test-Poe2ReleaseMode) {
+        try {
+            return Show-PatchScopeDialog
+        }
+        catch {
+            if ($_.Exception.Message -eq "Patch scope selection was cancelled.") {
+                throw
+            }
+            Write-Warning "Patch scope dialog failed; falling back to all: $($_.Exception.Message)"
+        }
+    }
+    return "all"
 }
 
 function Get-DisplayLanguageName {
@@ -1123,6 +1247,8 @@ function Resolve-BundleExtractor {
 }
 
 try {
+$PatchScope = Resolve-PatchScope -Requested $PatchScope
+$PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
 $DisplayLanguageName = Get-DisplayLanguageName $InstallInfo.LanguageName
@@ -1180,6 +1306,7 @@ Write-Host "检测结果：$($InstallInfo.DisplayName)" -ForegroundColor Cyan
 Write-Host "安装模式：$GameMode" -ForegroundColor Cyan
 Write-Host "游戏语言：$DisplayLanguageName ($($InstallInfo.ConfigLanguage))" -ForegroundColor Cyan
 Write-Host "写入目标：$($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cyan
+Write-Host "补丁范围：$(Get-PatchScopeDisplayName $PatchScope)" -ForegroundColor Cyan
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
@@ -1253,7 +1380,7 @@ if (-not $SkipExtract) {
         }
         Write-Host "已提取到：$TcBaseItems"
 
-        if ($SupportsUniqueWords) {
+        if ($SupportsUniqueWords -and $PatchUniqueWordsEnabled) {
             Write-Host "正在提取英文 Words..."
             & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/words.datc64" $EnWords
             if ($LASTEXITCODE -ne 0) {
@@ -1275,6 +1402,9 @@ if (-not $SkipExtract) {
             }
             Write-Host "已提取到：$UniqueGoldPrices"
         }
+        elseif ($SupportsUniqueWords) {
+            Write-Host "当前选择只打通货补丁，已跳过传奇物品 Words 提取。" -ForegroundColor Yellow
+        }
         else {
             Write-Host "当前语言不支持传奇物品 Words 提取，已跳过。语言：$DisplayLanguageName" -ForegroundColor Yellow
         }
@@ -1287,15 +1417,16 @@ else {
 Assert-File $EnBaseItems "English BaseItemTypes"
 Assert-File $TcBaseItems "$($InstallInfo.LanguageName) BaseItemTypes"
 $CanPatchUniqueWords = (
+    $PatchUniqueWordsEnabled -and
     $SupportsUniqueWords -and
     (Test-Path -LiteralPath $EnWords -PathType Leaf) -and
     (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
     (Test-Path -LiteralPath $UniqueGoldPrices -PathType Leaf)
 )
-if ($SupportsUniqueWords -and -not $CanPatchUniqueWords) {
+if ($PatchUniqueWordsEnabled -and $SupportsUniqueWords -and -not $CanPatchUniqueWords) {
     Write-Warning "传奇物品价格标记已禁用：Words 或 UniqueGoldPrices datc64 文件没有成功提取。"
 }
-elseif (-not $SupportsUniqueWords) {
+elseif ($PatchUniqueWordsEnabled -and -not $SupportsUniqueWords) {
     Write-Warning "传奇物品价格标记已禁用：当前语言没有受支持的 Words.datc64 路径。"
 }
 $RestoreZip = Ensure-RestoreZip $TcBaseItems
@@ -1308,25 +1439,29 @@ if ($SourceBaseItemsLooksPatched -and $GameMode -eq "GGPK") {
     Extract-RestoreBaseItems -RestoreZip $RestoreZip -OutputDat $TcBaseItems
 }
 $SourceWordsLooksPatched = $false
-if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf)) {
+if ($PatchUniqueWordsEnabled -and $SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf)) {
     $SourceWordsLooksPatched = Test-WordsLookPatched $TcWords
 }
 if ($SourceBaseItemsLooksPatched -and $GameMode -eq "Bundles2") {
     Write-Host "当前 BaseItemTypes 已包含物价标记，将保留当前 Bundles2 底板并只替换物价层。" -ForegroundColor Yellow
 }
-if ($SupportsUniqueWords -and $SourceWordsLooksPatched -and $GameMode -eq "GGPK") {
+if ($PatchUniqueWordsEnabled -and $SupportsUniqueWords -and $SourceWordsLooksPatched -and $GameMode -eq "GGPK") {
     Write-Host "当前 Words.datc64 已包含传奇价格标记，正在从固定还原包重建干净文件..." -ForegroundColor Yellow
     Extract-RestoreWords -RestoreZip $RestoreZip -OutputWords $TcWords
 }
-elseif ($SupportsUniqueWords -and $SourceWordsLooksPatched -and $GameMode -eq "Bundles2") {
+elseif ($PatchUniqueWordsEnabled -and $SupportsUniqueWords -and $SourceWordsLooksPatched -and $GameMode -eq "Bundles2") {
     Write-Host "当前 Words.datc64 已包含传奇价格标记，将在生成补丁时清理并重打。" -ForegroundColor Yellow
 }
 $CanPatchUniqueWords = (
+    $PatchUniqueWordsEnabled -and
     $SupportsUniqueWords -and
     (Test-Path -LiteralPath $EnWords -PathType Leaf) -and
     (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
     (Test-Path -LiteralPath $UniqueGoldPrices -PathType Leaf)
 )
+if ($PatchScope -eq "uniques" -and -not $CanPatchUniqueWords) {
+    throw "Cannot build uniques-only patch: Words or UniqueGoldPrices datc64 files are unavailable."
+}
 Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $UniqueGoldPrices)
 if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
     Copy-Item -LiteralPath $RestoreZip -Destination $RestorePatchFolderZip -Force
@@ -1355,6 +1490,7 @@ $BuildArgs = @(
     "--output-zip", $PatchZip,
     "--patch-script", (Join-Path $CodeToolsRoot "poe2_name_price_patch.py"),
     "--mode", $PatchBuildMode,
+    "--patch-scope", $PatchScope,
     "--patched-dat", $PatchedDat,
     "--report", $ReportJson,
     "--game-path", $InstallInfo.TcBaseItemsPath

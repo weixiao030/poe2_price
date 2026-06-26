@@ -39,6 +39,7 @@ DEFAULT_SCOUT_API = "https://api.poe2scout.com"
 DEFAULT_POECURRENCY_SUMMARY_API = "https://poecurrency.top/api/summary?version=2"
 DEFAULT_LEAGUE = "runes"
 PRICE_SOURCES = ("poe2scout", "poecurrency-cn")
+PATCH_SCOPES = ("all", "currency", "uniques")
 SCRIPT_DIR = Path(__file__).resolve().parent
 PATCH_ROOT = SCRIPT_DIR.parent
 DEFAULT_EN_BASEITEMS = (
@@ -1473,6 +1474,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--no-uniques", action="store_true")
     parser.add_argument("--no-build-patch", action="store_true")
     parser.add_argument(
+        "--patch-scope",
+        choices=PATCH_SCOPES,
+        default="all",
+        help="Patch all prices, currency/base items only, or unique item names only.",
+    )
+    parser.add_argument(
         "--cn-high-value-fallback-threshold-divine",
         type=Decimal,
         default=CN_HIGH_VALUE_FALLBACK_THRESHOLD_DIVINE,
@@ -1526,6 +1533,8 @@ def main(argv: list[str]) -> int:
         timeout=max(1.0, args.timeout),
     )
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    patch_base_items = args.patch_scope in {"all", "currency"}
+    patch_unique_words = args.patch_scope in {"all", "uniques"}
 
     base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems)
     unique_categories: list[dict[str, Any]] = []
@@ -1556,7 +1565,7 @@ def main(argv: list[str]) -> int:
             client,
             args.api_base.rstrip("/"),
             args.league,
-            include_uniques=not args.no_uniques,
+            include_uniques=patch_unique_words and not args.no_uniques,
             max_workers=max(1, args.max_workers),
         )
         (args.out_dir / "poe2scout_fallback_raw.json").write_text(
@@ -1567,7 +1576,7 @@ def main(argv: list[str]) -> int:
             client,
             args.api_base.rstrip("/"),
             args.league,
-            include_uniques=not args.no_uniques,
+            include_uniques=patch_unique_words and not args.no_uniques,
             max_workers=max(1, args.max_workers),
         )
         (args.out_dir / "poe2scout_raw.json").write_text(
@@ -1614,13 +1623,27 @@ def main(argv: list[str]) -> int:
             use_poe2db=args.poe2db_fallback,
             max_workers=max(1, args.max_workers),
         )
+    if not patch_base_items:
+        missing.extend(
+            {
+                "api_id": row.get("api_id", ""),
+                "en_name": row.get("en_name", ""),
+                "poe2db_tw": "",
+                "reason": "base item price labels disabled by patch-scope=uniques",
+            }
+            for row in rows
+        )
+        rows = []
+        fallback_rows_added = 0
+        high_value_reference_rows = 0
 
     unique_names: dict[str, UniqueName] = {}
     unique_word_rows: list[dict[str, str]] = []
     unique_word_missing: list[dict[str, str]] = []
     unique_words_patched = 0
     can_patch_unique_words = (
-        not args.no_uniques
+        patch_unique_words
+        and not args.no_uniques
         and args.en_words.exists()
         and args.tc_words.exists()
         and args.unique_gold_prices.exists()
@@ -1659,6 +1682,7 @@ def main(argv: list[str]) -> int:
     output_zip = args.output_zip or (args.out_dir / "物价补丁.zip")
     summary = {
         "price_source": args.price_source,
+        "patch_scope": args.patch_scope,
         "price_strategy": (
             "poecurrency-cn uses latest buy/sell first with avg fallback; currency_unit=d is converted to exalted by the current Divine ratio and explicit api e fields are preferred when present; high-value outliers are replaced by poe2scout when CN and poe2scout differ beyond threshold"
             if args.price_source == "poecurrency-cn"
@@ -1692,16 +1716,19 @@ def main(argv: list[str]) -> int:
     }
 
     if not args.no_build_patch:
-        run_patch_builder(
-            patch_script=args.patch_script,
-            tc_baseitems=args.tc_baseitems,
-            prices_csv=prices_csv,
-            output_zip=output_zip,
-            report=args.report or (args.out_dir / "price_patch.report.json"),
-            mode=args.mode,
-            patched_dat=args.patched_dat,
-            game_path=args.game_path,
-        )
+        if patch_base_items:
+            run_patch_builder(
+                patch_script=args.patch_script,
+                tc_baseitems=args.tc_baseitems,
+                prices_csv=prices_csv,
+                output_zip=output_zip,
+                report=args.report or (args.out_dir / "price_patch.report.json"),
+                mode=args.mode,
+                patched_dat=args.patched_dat,
+                game_path=args.game_path,
+            )
+        elif output_zip.exists():
+            output_zip.unlink()
         if can_patch_unique_words:
             words_game_path = args.words_game_path or (
                 (args.game_path or "").replace("baseitemtypes.datc64", "words.datc64")
@@ -1773,7 +1800,7 @@ def main(argv: list[str]) -> int:
                             args.tc_words.read_bytes(),
                         )
                         summary["unique_words_clean_passthrough"] = True
-        elif not args.no_uniques:
+        elif patch_unique_words and not args.no_uniques:
             unique_word_missing.append(
                 {
                     "api_id": "",
