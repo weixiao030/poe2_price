@@ -64,9 +64,9 @@ function Show-PatchScopeDialog {
     $Form.MaximizeBox = $false
     $Form.MinimizeBox = $false
     $Form.TopMost = $true
-    $Form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::Font
-    $Form.ClientSize = New-Object System.Drawing.Size(620, 340)
     $Form.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
+    $Form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
+    $Form.ClientSize = New-Object System.Drawing.Size(610, 340)
 
     $Title = New-Object System.Windows.Forms.Label
     $Title.Text = (New-Utf16Text @(0x9009, 0x62E9, 0x672C, 0x6B21, 0x8981, 0x5199, 0x5165, 0x7684, 0x8865, 0x4E01, 0x5185, 0x5BB9))
