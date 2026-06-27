@@ -4,6 +4,7 @@
     [switch]$NoOpenTool,
     [switch]$NoInstall,
     [switch]$NoPoe2dbFallback,
+    [switch]$IslandRumourHints,
     [ValidateSet("", "all", "currency", "uniques")]
     [string]$PatchScope = ""
 )
@@ -23,6 +24,7 @@ else {
 }
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
+$script:PatchScopeDialogSelection = $null
 
 if ([string]::IsNullOrWhiteSpace($Poe2Dir)) {
     $Poe2Dir = (Split-Path -Parent $RepoRoot)
@@ -61,7 +63,7 @@ function Show-PatchScopeDialog {
     $Form.MaximizeBox = $false
     $Form.MinimizeBox = $false
     $Form.TopMost = $true
-    $Form.ClientSize = New-Object System.Drawing.Size(420, 250)
+    $Form.ClientSize = New-Object System.Drawing.Size(560, 312)
     $Form.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
 
     $Title = New-Object System.Windows.Forms.Label
@@ -99,9 +101,54 @@ function Show-PatchScopeDialog {
     $Uniques.AutoSize = $true
     $Group.Controls.Add($Uniques)
 
+    $IslandRumourCheck = New-Object System.Windows.Forms.CheckBox
+    $IslandRumourCheck.Text = (New-Utf16Text @(0x5C9B, 0x5C7F, 0x4F20, 0x8A00, 0x63D0, 0x793A))
+    $IslandRumourCheck.Tag = "island-rumour-hints"
+    $IslandRumourCheck.Location = New-Object System.Drawing.Point(36, 184)
+    $IslandRumourCheck.AutoSize = $true
+    $Form.Controls.Add($IslandRumourCheck)
+
+    $OpenLink = {
+        param($Sender, $EventArgs)
+
+        $Url = [string]$Sender.Tag
+        try {
+            Start-Process -FilePath $Url
+        }
+        catch {
+            [System.Windows.Forms.Clipboard]::SetText($Url)
+            [System.Windows.Forms.MessageBox]::Show(
+                "无法打开链接，已复制到剪贴板：`n$Url",
+                "更新地址"
+            ) | Out-Null
+        }
+    }
+
+    $UpdateLabel = New-Object System.Windows.Forms.Label
+    $UpdateLabel.Text = "更新地址:"
+    $UpdateLabel.Location = New-Object System.Drawing.Point(190, 184)
+    $UpdateLabel.AutoSize = $true
+    $Form.Controls.Add($UpdateLabel)
+
+    $GitHubLink = New-Object System.Windows.Forms.LinkLabel
+    $GitHubLink.Text = "weixiao030/poe2_price"
+    $GitHubLink.Tag = "https://github.com/weixiao030/poe2_price"
+    $GitHubLink.Location = New-Object System.Drawing.Point(258, 181)
+    $GitHubLink.Size = New-Object System.Drawing.Size(180, 22)
+    $GitHubLink.Add_LinkClicked($OpenLink)
+    $Form.Controls.Add($GitHubLink)
+
+    $CaimoguLink = New-Object System.Windows.Forms.LinkLabel
+    $CaimoguLink.Text = "caimogu.cc/post/2403703.html"
+    $CaimoguLink.Tag = "https://www.caimogu.cc/post/2403703.html"
+    $CaimoguLink.Location = New-Object System.Drawing.Point(258, 206)
+    $CaimoguLink.Size = New-Object System.Drawing.Size(250, 22)
+    $CaimoguLink.Add_LinkClicked($OpenLink)
+    $Form.Controls.Add($CaimoguLink)
+
     $OkButton = New-Object System.Windows.Forms.Button
     $OkButton.Text = (New-Utf16Text @(0x5F00, 0x59CB, 0x66F4, 0x65B0))
-    $OkButton.Location = New-Object System.Drawing.Point(208, 196)
+    $OkButton.Location = New-Object System.Drawing.Point(348, 262)
     $OkButton.Size = New-Object System.Drawing.Size(90, 32)
     $OkButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $Form.AcceptButton = $OkButton
@@ -109,7 +156,7 @@ function Show-PatchScopeDialog {
 
     $CancelButton = New-Object System.Windows.Forms.Button
     $CancelButton.Text = (New-Utf16Text @(0x53D6, 0x6D88))
-    $CancelButton.Location = New-Object System.Drawing.Point(310, 196)
+    $CancelButton.Location = New-Object System.Drawing.Point(450, 262)
     $CancelButton.Size = New-Object System.Drawing.Size(90, 32)
     $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $Form.CancelButton = $CancelButton
@@ -120,12 +167,17 @@ function Show-PatchScopeDialog {
         throw "Patch scope selection was cancelled."
     }
 
+    $Scope = "all"
     foreach ($Control in $Group.Controls) {
         if ($Control -is [System.Windows.Forms.RadioButton] -and $Control.Checked) {
-            return [string]$Control.Tag
+            $Scope = [string]$Control.Tag
+            break
         }
     }
-    return "all"
+    return [pscustomobject]@{
+        Scope              = $Scope
+        IslandRumourHints  = [bool]$IslandRumourCheck.Checked
+    }
 }
 
 function Resolve-PatchScope {
@@ -145,7 +197,9 @@ function Resolve-PatchScope {
     }
     if (Test-Poe2ReleaseMode) {
         try {
-            return Show-PatchScopeDialog
+            $Selection = Show-PatchScopeDialog
+            $script:PatchScopeDialogSelection = $Selection
+            return [string]$Selection.Scope
         }
         catch {
             if ($_.Exception.Message -eq "Patch scope selection was cancelled.") {
@@ -155,6 +209,28 @@ function Resolve-PatchScope {
         }
     }
     return "all"
+}
+
+function Resolve-IslandRumourHints {
+    param([switch]$Requested)
+
+    if ($Requested.IsPresent) {
+        return $true
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_ISLAND_RUMOUR_HINTS)) {
+        $Value = $env:POE2_PATCH_ISLAND_RUMOUR_HINTS.Trim().ToLowerInvariant()
+        if ($Value -in @("1", "true", "yes", "on")) {
+            return $true
+        }
+        if ($Value -in @("0", "false", "no", "off")) {
+            return $false
+        }
+        throw "Invalid POE2_PATCH_ISLAND_RUMOUR_HINTS '$($env:POE2_PATCH_ISLAND_RUMOUR_HINTS)'. Use 1 or 0."
+    }
+    if ($null -ne $script:PatchScopeDialogSelection) {
+        return [bool]$script:PatchScopeDialogSelection.IslandRumourHints
+    }
+    return $false
 }
 
 function Get-DisplayLanguageName {
@@ -189,6 +265,8 @@ function Get-FriendlyFileName {
         "^(.+) BaseItemTypes$" { return "$(Get-DisplayLanguageName $Matches[1]) BaseItemTypes.datc64" }
         "^English Words$" { return "英文 Words.datc64" }
         "^(.+) Words$" { return "$(Get-DisplayLanguageName $Matches[1]) Words.datc64" }
+        "^(.+) EndgameMaps$" { return "$(Get-DisplayLanguageName $Matches[1]) EndgameMaps.datc64" }
+        "^EndgameMaps$" { return "EndgameMaps.datc64" }
         "^UniqueGoldPrices$" { return "UniqueGoldPrices.datc64" }
         "BaseItemTypes" { return "$Name.datc64" }
         "^Content\.ggpk$" { return "游戏数据文件 Content.ggpk" }
@@ -497,6 +575,34 @@ function Test-WordsLookPatched {
     }
 }
 
+function Test-EndgameMapsLookPatched {
+    param([string]$SourceEndgameMaps)
+
+    if (-not (Test-Path -LiteralPath $SourceEndgameMaps -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+        $ScriptPath = Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py"
+        $Result = Invoke-Poe2Python -Python $Python -ArgumentList @(
+            $ScriptPath,
+            "check",
+            "--source", $SourceEndgameMaps,
+            "--game-path", $InstallInfo.TcEndgameMapsPath
+        ) -Quiet
+        if ($Result.ExitCode -ne 0) {
+            return $true
+        }
+        $Info = $Result.Text | ConvertFrom-Json
+        return ([int]$Info.patched_count -gt 0)
+    }
+    catch {
+        Write-Warning "检查 EndgameMaps.datc64 是否已打岛屿传言提示时失败：$($_.Exception.Message)"
+        return $true
+    }
+}
+
 function Get-BaseItemsMetadataSignature {
     param([string]$SourceDat)
 
@@ -797,6 +903,33 @@ function Extract-RestoreWords {
     }
 }
 
+function Extract-RestoreEndgameMaps {
+    param(
+        [Parameter(Mandatory = $true)][string]$RestoreZip,
+        [Parameter(Mandatory = $true)][string]$OutputEndgameMaps
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($RestoreZip)
+    try {
+        $Entry = $Archive.GetEntry($InstallInfo.TcEndgameMapsPath)
+        if ($null -eq $Entry) {
+            throw "还原包缺少目标文件 $($InstallInfo.TcEndgameMapsPath)：$RestoreZip"
+        }
+
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputEndgameMaps) | Out-Null
+        [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $OutputEndgameMaps, $true)
+    }
+    finally {
+        $Archive.Dispose()
+    }
+
+    if (Test-EndgameMapsLookPatched $OutputEndgameMaps) {
+        throw "还原包里的 EndgameMaps.datc64 已经带有岛屿传言提示，拒绝继续使用：$RestoreZip"
+    }
+}
+
 function Restore-CleanPatchSources {
     param([Parameter(Mandatory = $true)][string]$RestoreZip)
 
@@ -814,12 +947,25 @@ function Restore-CleanPatchSources {
             throw "缺少可用的干净 Words.datc64，无法保证按补丁范围清理旧传奇价格。请先运行一键还原或修复游戏文件后再更新。"
         }
     }
+
+    if ($PatchIslandRumourHintsEnabled) {
+        if (Test-ZipEntryExists -ZipPath $RestoreZip -EntryName $InstallInfo.TcEndgameMapsPath) {
+            Extract-RestoreEndgameMaps -RestoreZip $RestoreZip -OutputEndgameMaps $TcEndgameMaps
+        }
+        elseif ((Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf) -and -not (Test-EndgameMapsLookPatched $TcEndgameMaps)) {
+            Write-Host "还原包缺少 EndgameMaps，当前提取的 EndgameMaps 已确认干净，将作为底板。" -ForegroundColor Yellow
+        }
+        else {
+            throw "缺少可用的干净 EndgameMaps.datc64，无法生成岛屿传言提示。请先运行一键还原或修复游戏文件后再更新。"
+        }
+    }
 }
 
 function New-BaseItemZip {
     param(
         [string]$SourceDat,
         [string]$SourceWords = "",
+        [string]$SourceEndgameMaps = "",
         [string]$OutputZip
     )
 
@@ -845,6 +991,17 @@ function New-BaseItemZip {
                 $Archive,
                 $SourceWords,
                 $TcWordsPath,
+                [System.IO.Compression.CompressionLevel]::Optimal
+            ) | Out-Null
+        }
+        if (-not [string]::IsNullOrWhiteSpace($SourceEndgameMaps) -and (Test-Path -LiteralPath $SourceEndgameMaps -PathType Leaf)) {
+            if (Test-EndgameMapsLookPatched $SourceEndgameMaps) {
+                throw "检测到 EndgameMaps.datc64 已包含岛屿传言提示，拒绝用它创建还原包。"
+            }
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $Archive,
+                $SourceEndgameMaps,
+                $InstallInfo.TcEndgameMapsPath,
                 [System.IO.Compression.CompressionLevel]::Optimal
             ) | Out-Null
         }
@@ -1042,6 +1199,17 @@ function Update-IntlRestoreZipFromExtractedBaseItems {
             Update-ZipEntryFromFile -ZipPath $ZipPath -SourceDat $ExtractedWords -EntryName $WordsEntryName
             $Updated += 1
         }
+
+        $EndgameMapsEntryName = Get-Poe2EndgameMapsPathFromBaseItemsPath -BaseItemsPath $EntryName
+        $ExtractedEndgameMaps = Get-ExtractedBaseItemsPathForEntry $EndgameMapsEntryName
+        if (Test-Path -LiteralPath $ExtractedEndgameMaps -PathType Leaf) {
+            if (Test-EndgameMapsLookPatched $ExtractedEndgameMaps) {
+                Write-Warning "跳过 EndgameMaps 还原条目刷新：该文件已包含岛屿传言提示。条目：$EndgameMapsEntryName"
+                continue
+            }
+            Update-ZipEntryFromFile -ZipPath $ZipPath -SourceDat $ExtractedEndgameMaps -EntryName $EndgameMapsEntryName
+            $Updated += 1
+        }
     }
 
     if ($Updated -gt 0) {
@@ -1071,6 +1239,7 @@ function New-BaseItemZipFromPhysicalRestore {
             $TempIndex = Join-Path $TempDir "Bundles2\_.index.bin"
             $TempDat = Join-Path $TempDir "BaseItemTypes.datc64"
             $TempWords = Join-Path $TempDir "Words.datc64"
+            $TempEndgameMaps = Join-Path $TempDir "EndgameMaps.datc64"
             $ExtractLog = Join-Path $TempDir "extract.log"
             Assert-File $TempIndex "physical restore Bundles2 _.index.bin"
             Resolve-BundleExtractor
@@ -1098,7 +1267,19 @@ function New-BaseItemZipFromPhysicalRestore {
                 }
             }
 
-            New-BaseItemZip -SourceDat $TempDat -SourceWords $TempWords -OutputZip $OutputZip
+            if ($PatchIslandRumourHintsEnabled) {
+                & $BundledBundleExtractorExe $TempIndex $InstallInfo.TcEndgameMapsPath $TempEndgameMaps *> $ExtractLog
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "忽略真实还原包：提取 EndgameMaps 失败。文件：$Candidate；日志：$ExtractLog"
+                    continue
+                }
+                if (Test-EndgameMapsLookPatched $TempEndgameMaps) {
+                    Write-Warning "忽略真实还原包：提取出的 EndgameMaps 已包含岛屿传言提示。文件：$Candidate"
+                    continue
+                }
+            }
+
+            New-BaseItemZip -SourceDat $TempDat -SourceWords $TempWords -SourceEndgameMaps $TempEndgameMaps -OutputZip $OutputZip
             return (Resolve-Path -LiteralPath $OutputZip).Path
         }
         finally {
@@ -1228,7 +1409,12 @@ function Ensure-RestoreZip {
     if ($SourceWordsAvailable) {
         $SourceWordsLooksPatched = Test-WordsLookPatched $TcWords
     }
-    $SourceLooksPatched = $SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched
+    $SourceEndgameMapsLooksPatched = $false
+    $SourceEndgameMapsAvailable = $PatchIslandRumourHintsEnabled -and (Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf)
+    if ($SourceEndgameMapsAvailable) {
+        $SourceEndgameMapsLooksPatched = Test-EndgameMapsLookPatched $TcEndgameMaps
+    }
+    $SourceLooksPatched = $SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched
 
     foreach ($Candidate in (Get-RestoreZipCandidates)) {
         if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
@@ -1252,6 +1438,18 @@ function Ensure-RestoreZip {
                     Write-Warning "还原包缺少 Words，且当前没有可用的 Words 文件：$Candidate"
                 }
             }
+            if ($PatchIslandRumourHintsEnabled -and -not (Test-ZipEntryExists -ZipPath $RestoreOutZip -EntryName $InstallInfo.TcEndgameMapsPath)) {
+                if ($SourceEndgameMapsAvailable -and -not $SourceEndgameMapsLooksPatched) {
+                    Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $TcEndgameMaps -EntryName $InstallInfo.TcEndgameMapsPath
+                }
+                elseif ($SourceEndgameMapsLooksPatched) {
+                    Write-Warning "忽略缺少干净 EndgameMaps 的还原包：$Candidate"
+                    continue
+                }
+                else {
+                    Write-Warning "还原包缺少 EndgameMaps，且当前没有可用的 EndgameMaps 文件：$Candidate"
+                }
+            }
             return (Resolve-Path -LiteralPath $RestoreOutZip).Path
         }
     }
@@ -1262,8 +1460,12 @@ function Ensure-RestoreZip {
         if ($SourceWordsAvailable -and -not $SourceWordsLooksPatched) {
             $CleanTcWords = $TcWords
         }
+        $CleanTcEndgameMaps = ""
+        if ($SourceEndgameMapsAvailable -and -not $SourceEndgameMapsLooksPatched) {
+            $CleanTcEndgameMaps = $TcEndgameMaps
+        }
         if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
-            New-BaseItemZip -SourceDat $SourceDat -SourceWords $CleanTcWords -OutputZip $RestoreOutZip
+            New-BaseItemZip -SourceDat $SourceDat -SourceWords $CleanTcWords -SourceEndgameMaps $CleanTcEndgameMaps -OutputZip $RestoreOutZip
         }
         else {
             $SeedZip = ""
@@ -1279,6 +1481,9 @@ function Ensure-RestoreZip {
             Update-RestoreZipEntry -ZipPath $RestoreOutZip -SourceDat $SourceDat -EntryName $InstallInfo.TcBaseItemsPath
             if (-not [string]::IsNullOrWhiteSpace($CleanTcWords)) {
                 Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $CleanTcWords -EntryName $TcWordsPath
+            }
+            if (-not [string]::IsNullOrWhiteSpace($CleanTcEndgameMaps)) {
+                Update-ZipEntryFromFile -ZipPath $RestoreOutZip -SourceDat $CleanTcEndgameMaps -EntryName $InstallInfo.TcEndgameMapsPath
             }
         }
         if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") -and $RestoreOutZip -ne $RestorePatchFolderZip) {
@@ -1326,6 +1531,7 @@ function Resolve-BundleExtractor {
 try {
 $PatchScope = Resolve-PatchScope -Requested $PatchScope
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
+$PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
 $DisplayLanguageName = Get-DisplayLanguageName $InstallInfo.LanguageName
@@ -1359,6 +1565,7 @@ $TcBaseItems = Join-Path $LatestDir ("data\" + $InstallInfo.LanguageFileSlug)
 $EnWords = Join-Path $LatestDir "data\data_balance_words.datc64"
 $TcWordsPath = $InstallInfo.TcWordsPath
 $TcWords = Join-Path $LatestDir ("data\" + $InstallInfo.WordsFileSlug)
+$TcEndgameMaps = Join-Path $LatestDir ("data\" + $InstallInfo.EndgameMapsFileSlug)
 $UniqueGoldPrices = Join-Path $LatestDir "data\data_balance_uniquegoldprices.datc64"
 $SupportsUniqueWords = Test-Poe2UniqueWordsSupported -WordsPath $TcWordsPath
 $OutDir = Join-Path $RepoRoot "output\poe2_price_patch_latest"
@@ -1373,7 +1580,9 @@ $PricePatchZipName = Get-Poe2PatchName "PricePatchZip"
 $PatchZip = Join-Path $OutDir $PricePatchZipName
 $PatchedDat = Join-Path $OutDir "baseitemtypes.patched.datc64"
 $PatchedWords = Join-Path $OutDir "words.patched.datc64"
+$PatchedEndgameMaps = Join-Path $OutDir "endgamemaps.patched.datc64"
 $ReportJson = Join-Path $OutDir "price_patch.report.json"
+$IslandRumourReportJson = Join-Path $OutDir "island_rumour_patch.report.json"
 $SummaryJson = Join-Path $OutDir "summary.json"
 
 Write-Host "POE2 物价补丁更新器" -ForegroundColor Green
@@ -1384,6 +1593,7 @@ Write-Host "安装模式：$GameMode" -ForegroundColor Cyan
 Write-Host "游戏语言：$DisplayLanguageName ($($InstallInfo.ConfigLanguage))" -ForegroundColor Cyan
 Write-Host "写入目标：$($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cyan
 Write-Host "补丁范围：$(Get-PatchScopeDisplayName $PatchScope)" -ForegroundColor Cyan
+Write-Host "岛屿传言提示：$(if ($PatchIslandRumourHintsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
@@ -1402,6 +1612,9 @@ else {
 }
 Assert-File (Join-Path $CodeToolsRoot "build_poe2scout_price_patch.py") "price fetch script"
 Assert-File (Join-Path $CodeToolsRoot "poe2_name_price_patch.py") "patch build script"
+if ($PatchIslandRumourHintsEnabled) {
+    Assert-File (Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py") "island rumour patch script"
+}
 $Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
 Stop-LegacyInstallerProcesses
 Remove-LegacyFiles
@@ -1457,6 +1670,15 @@ if (-not $SkipExtract) {
         }
         Write-Host "已提取到：$TcBaseItems"
 
+        if ($PatchIslandRumourHintsEnabled) {
+            Write-Host "正在提取$DisplayLanguageName EndgameMaps..."
+            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcEndgameMapsPath $TcEndgameMaps
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to extract $($InstallInfo.LanguageName) EndgameMaps. Exit code: $LASTEXITCODE"
+            }
+            Write-Host "已提取到：$TcEndgameMaps"
+        }
+
         if ($SupportsUniqueWords) {
             Write-Host "正在提取英文 Words..."
             & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/words.datc64" $EnWords
@@ -1495,6 +1717,9 @@ else {
 
 Assert-File $EnBaseItems "English BaseItemTypes"
 Assert-File $TcBaseItems "$($InstallInfo.LanguageName) BaseItemTypes"
+if ($PatchIslandRumourHintsEnabled) {
+    Assert-File $TcEndgameMaps "$($InstallInfo.LanguageName) EndgameMaps"
+}
 $CanPatchUniqueWords = (
     $PatchUniqueWordsEnabled -and
     $SupportsUniqueWords -and
@@ -1523,6 +1748,13 @@ if ($SourceBaseItemsLooksPatched -and $GameMode -eq "Bundles2") {
 if ($SupportsUniqueWords -and $SourceWordsLooksPatched -and $GameMode -eq "Bundles2") {
     Write-Host "当前 Words.datc64 已包含传奇价格标记，将在生成补丁时清理并重打。" -ForegroundColor Yellow
 }
+$SourceEndgameMapsLooksPatched = $false
+if ($PatchIslandRumourHintsEnabled -and (Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf)) {
+    $SourceEndgameMapsLooksPatched = Test-EndgameMapsLookPatched $TcEndgameMaps
+}
+if ($PatchIslandRumourHintsEnabled -and $SourceEndgameMapsLooksPatched -and $GameMode -eq "Bundles2") {
+    Write-Host "当前 EndgameMaps.datc64 已包含岛屿传言提示，将在生成补丁时清理并重打。" -ForegroundColor Yellow
+}
 Restore-CleanPatchSources -RestoreZip $RestoreZip
 $CanPatchUniqueWords = (
     $PatchUniqueWordsEnabled -and
@@ -1534,12 +1766,12 @@ $CanPatchUniqueWords = (
 if ($PatchScope -eq "uniques" -and -not $CanPatchUniqueWords) {
     throw "Cannot build uniques-only patch: Words or UniqueGoldPrices datc64 files are unavailable."
 }
-Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $UniqueGoldPrices)
+Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $TcEndgameMaps, $UniqueGoldPrices)
 if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
     Copy-Item -LiteralPath $RestoreZip -Destination $RestorePatchFolderZip -Force
 }
 if ($GameMode -eq "Bundles2") {
-    $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched ($SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched)
+    $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched ($SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched)
     Write-Host "真实还原包：" -ForegroundColor Green
     Write-Host "  $PhysicalRestoreZip"
 }
@@ -1596,6 +1828,22 @@ if ($BuildResult.ExitCode -ne 0) {
 
 Assert-File $PatchZip $PricePatchZipName
 
+if ($PatchIslandRumourHintsEnabled) {
+    Write-Step "生成岛屿传言提示补丁"
+    $IslandRumourResult = Invoke-Poe2Python -Python $Python -ArgumentList @(
+        (Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py"),
+        "build",
+        "--source", $TcEndgameMaps,
+        "--output-zip", $PatchZip,
+        "--patched-dat", $PatchedEndgameMaps,
+        "--game-path", $InstallInfo.TcEndgameMapsPath,
+        "--report", $IslandRumourReportJson
+    )
+    if ($IslandRumourResult.ExitCode -ne 0) {
+        throw "Island rumour patch build failed. Exit code: $($IslandRumourResult.ExitCode)"
+    }
+}
+
 Write-Step "复制补丁包"
 $PatchFolderZip = Join-Path $RepoRoot $PricePatchZipName
 Copy-Item -LiteralPath $PatchZip -Destination $PatchFolderZip -Force
@@ -1647,7 +1895,8 @@ if (-not $NoInstall) {
         $TempPatchZip = $PatchZip
         Merge-ExistingBundlePatchEntries -ZipPath $TempPatchZip -ExcludeEntries @(
             $InstallInfo.TcBaseItemsPath,
-            $TcWordsPath
+            $TcWordsPath,
+            $InstallInfo.TcEndgameMapsPath
         )
 
         if ($UsePatchBundleDll) {

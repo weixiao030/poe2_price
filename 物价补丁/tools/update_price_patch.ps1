@@ -63,7 +63,7 @@ function Show-PatchScopeDialog {
     $Form.MaximizeBox = $false
     $Form.MinimizeBox = $false
     $Form.TopMost = $true
-    $Form.ClientSize = New-Object System.Drawing.Size(420, 286)
+    $Form.ClientSize = New-Object System.Drawing.Size(560, 312)
     $Form.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
 
     $Title = New-Object System.Windows.Forms.Label
@@ -108,9 +108,47 @@ function Show-PatchScopeDialog {
     $IslandRumourCheck.AutoSize = $true
     $Form.Controls.Add($IslandRumourCheck)
 
+    $OpenLink = {
+        param($Sender, $EventArgs)
+
+        $Url = [string]$Sender.Tag
+        try {
+            Start-Process -FilePath $Url
+        }
+        catch {
+            [System.Windows.Forms.Clipboard]::SetText($Url)
+            [System.Windows.Forms.MessageBox]::Show(
+                "无法打开链接，已复制到剪贴板：`n$Url",
+                "更新地址"
+            ) | Out-Null
+        }
+    }
+
+    $UpdateLabel = New-Object System.Windows.Forms.Label
+    $UpdateLabel.Text = "更新地址:"
+    $UpdateLabel.Location = New-Object System.Drawing.Point(190, 184)
+    $UpdateLabel.AutoSize = $true
+    $Form.Controls.Add($UpdateLabel)
+
+    $GitHubLink = New-Object System.Windows.Forms.LinkLabel
+    $GitHubLink.Text = "weixiao030/poe2_price"
+    $GitHubLink.Tag = "https://github.com/weixiao030/poe2_price"
+    $GitHubLink.Location = New-Object System.Drawing.Point(258, 181)
+    $GitHubLink.Size = New-Object System.Drawing.Size(180, 22)
+    $GitHubLink.Add_LinkClicked($OpenLink)
+    $Form.Controls.Add($GitHubLink)
+
+    $CaimoguLink = New-Object System.Windows.Forms.LinkLabel
+    $CaimoguLink.Text = "caimogu.cc/post/2403703.html"
+    $CaimoguLink.Tag = "https://www.caimogu.cc/post/2403703.html"
+    $CaimoguLink.Location = New-Object System.Drawing.Point(258, 206)
+    $CaimoguLink.Size = New-Object System.Drawing.Size(250, 22)
+    $CaimoguLink.Add_LinkClicked($OpenLink)
+    $Form.Controls.Add($CaimoguLink)
+
     $OkButton = New-Object System.Windows.Forms.Button
     $OkButton.Text = (New-Utf16Text @(0x5F00, 0x59CB, 0x66F4, 0x65B0))
-    $OkButton.Location = New-Object System.Drawing.Point(208, 236)
+    $OkButton.Location = New-Object System.Drawing.Point(348, 262)
     $OkButton.Size = New-Object System.Drawing.Size(90, 32)
     $OkButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $Form.AcceptButton = $OkButton
@@ -118,7 +156,7 @@ function Show-PatchScopeDialog {
 
     $CancelButton = New-Object System.Windows.Forms.Button
     $CancelButton.Text = (New-Utf16Text @(0x53D6, 0x6D88))
-    $CancelButton.Location = New-Object System.Drawing.Point(310, 236)
+    $CancelButton.Location = New-Object System.Drawing.Point(450, 262)
     $CancelButton.Size = New-Object System.Drawing.Size(90, 32)
     $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $Form.CancelButton = $CancelButton

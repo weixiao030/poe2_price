@@ -172,6 +172,34 @@ function Test-ZipEntryExists {
     }
 }
 
+function Test-EndgameMapsLookPatched {
+    param([string]$SourceEndgameMaps)
+
+    if (-not (Test-Path -LiteralPath $SourceEndgameMaps -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+        $ScriptPath = Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py"
+        $Result = Invoke-Poe2Python -Python $Python -ArgumentList @(
+            $ScriptPath,
+            "check",
+            "--source", $SourceEndgameMaps,
+            "--game-path", $InstallInfo.TcEndgameMapsPath
+        ) -Quiet
+        if ($Result.ExitCode -ne 0) {
+            return $true
+        }
+        $Info = $Result.Text | ConvertFrom-Json
+        return ([int]$Info.patched_count -gt 0)
+    }
+    catch {
+        Write-Warning "检查 EndgameMaps.datc64 是否已打岛屿传言提示时失败：$($_.Exception.Message)"
+        return $true
+    }
+}
+
 function Copy-ZipEntry {
     param(
         [Parameter(Mandatory = $true)]$SourceArchive,
@@ -205,6 +233,7 @@ function New-BaseItemRestoreZip {
     param(
         [string]$SourceDat,
         [string]$SourceWords = "",
+        [string]$SourceEndgameMaps = "",
         [string]$OutputZip
     )
 
@@ -237,6 +266,17 @@ function New-BaseItemRestoreZip {
                 [System.IO.Compression.CompressionLevel]::Optimal
             ) | Out-Null
         }
+        if (-not [string]::IsNullOrWhiteSpace($SourceEndgameMaps) -and (Test-Path -LiteralPath $SourceEndgameMaps -PathType Leaf)) {
+            if (Test-EndgameMapsLookPatched $SourceEndgameMaps) {
+                throw "Cached EndgameMaps looks patched. Refusing to build a restore zip from it."
+            }
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $Archive,
+                $SourceEndgameMaps,
+                $InstallInfo.TcEndgameMapsPath,
+                [System.IO.Compression.CompressionLevel]::Optimal
+            ) | Out-Null
+        }
     }
     finally {
         $Archive.Dispose()
@@ -261,17 +301,31 @@ function Assert-RestoreZip {
         if ($SupportsUniqueWords -and $null -eq $Archive.GetEntry($TcWordsPath)) {
             Write-Warning "还原包缺少 $TcWordsPath；将只还原 BaseItemTypes。请在游戏文件干净后运行一次一键更新，以刷新包含 Words 的新版还原包。"
         }
+        $EndgameMapsEntry = $Archive.GetEntry($InstallInfo.TcEndgameMapsPath)
+        if ($null -eq $EndgameMapsEntry) {
+            Write-Warning "还原包缺少 $($InstallInfo.TcEndgameMapsPath)；将只还原 BaseItemTypes/Words。请在游戏文件干净后运行一次一键更新，以刷新包含 EndgameMaps 的新版还原包。"
+        }
 
         $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_restore_assert_", [Guid]::NewGuid().ToString("N"), ".datc64"))
+        $TempEndgameMaps = Join-Path $env:TEMP ([string]::Concat("poe2_restore_endgamemaps_assert_", [Guid]::NewGuid().ToString("N"), ".datc64"))
         try {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $TempDat, $true)
             if (Test-BaseItemsLookPatched $TempDat) {
                 throw "Restore zip BaseItemTypes looks patched. Refusing to restore from a polluted backup."
             }
+            if ($null -ne $EndgameMapsEntry) {
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($EndgameMapsEntry, $TempEndgameMaps, $true)
+                if (Test-EndgameMapsLookPatched $TempEndgameMaps) {
+                    throw "Restore zip EndgameMaps looks patched. Refusing to restore from a polluted backup."
+                }
+            }
         }
         finally {
             if (Test-Path -LiteralPath $TempDat -PathType Leaf) {
                 Remove-Item -LiteralPath $TempDat -Force
+            }
+            if (Test-Path -LiteralPath $TempEndgameMaps -PathType Leaf) {
+                Remove-Item -LiteralPath $TempEndgameMaps -Force
             }
         }
     }
@@ -344,6 +398,9 @@ function New-CurrentTargetRestoreZip {
                 if (-not (Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $TcWordsPath)) {
                     Write-Warning "还原包缺少 $TcWordsPath；本次安装包不会包含 Words 还原条目。"
                 }
+            }
+            if (-not (Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $InstallInfo.TcEndgameMapsPath)) {
+                Write-Warning "还原包缺少 $($InstallInfo.TcEndgameMapsPath)；本次安装包不会包含 EndgameMaps 还原条目。"
             }
         }
         finally {
@@ -467,9 +524,10 @@ function Restore-PhysicalBundles2 {
 
         $HasLibBackup = [bool]($Entries | Where-Object { $_.FullName -like "Bundles2/LibGGPK3/*" } | Select-Object -First 1)
         $LibDir = Join-Path $Bundles2Root "LibGGPK3"
-        if (-not $HasLibBackup -and (Test-Path -LiteralPath $LibDir -PathType Container)) {
+        if (Test-Path -LiteralPath $LibDir -PathType Container) {
             $ResolvedLibDir = (Resolve-Path -LiteralPath $LibDir).Path
             Assert-Poe2PathInside -Path $ResolvedLibDir -Root $Bundles2Root -Message "Refusing to remove unexpected LibGGPK3 path" | Out-Null
+            # Restore the exact backed-up LibGGPK3 state; otherwise stale increment files can survive.
             Remove-Item -LiteralPath $ResolvedLibDir -Recurse -Force
         }
 
@@ -587,6 +645,7 @@ Write-Host "Detected : $($InstallInfo.DisplayName)" -ForegroundColor Cyan
 Write-Host "Mode     : $GameMode" -ForegroundColor Cyan
 Write-Host "Language : $($InstallInfo.LanguageName) ($($InstallInfo.ConfigLanguage))" -ForegroundColor Cyan
 Write-Host "Target   : $($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cyan
+Write-Host "EndgameMaps: $($InstallInfo.TcEndgameMapsPath)" -ForegroundColor Cyan
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }

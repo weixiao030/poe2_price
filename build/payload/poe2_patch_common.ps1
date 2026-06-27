@@ -296,6 +296,16 @@ function Get-Poe2WordsPathFromBaseItemsPath {
     return ($BaseItemsPath -replace 'baseitemtypes\.datc64$', 'words.datc64')
 }
 
+function Get-Poe2EndgameMapsPathFromBaseItemsPath {
+    param([Parameter(Mandatory = $true)][string]$BaseItemsPath)
+
+    if ($BaseItemsPath -notmatch 'baseitemtypes\.datc64$') {
+        throw "Cannot derive EndgameMaps path from BaseItemTypes path: $BaseItemsPath"
+    }
+
+    return ($BaseItemsPath -replace 'baseitemtypes\.datc64$', 'endgamemaps.datc64')
+}
+
 function Get-Poe2KnownBaseItemsPaths {
     return @(
         "data/balance/baseitemtypes.datc64",
@@ -310,6 +320,12 @@ function Get-Poe2KnownBaseItemsPaths {
         "data/balance/portuguese/baseitemtypes.datc64",
         "data/balance/thai/baseitemtypes.datc64"
     )
+}
+
+function Get-Poe2KnownEndgameMapsPaths {
+    return (Get-Poe2KnownBaseItemsPaths | ForEach-Object {
+            Get-Poe2EndgameMapsPathFromBaseItemsPath -BaseItemsPath $_
+        })
 }
 
 function Test-Poe2UniqueWordsSupported {
@@ -355,9 +371,11 @@ function Get-Poe2InstallInfo {
         EnBaseItemsPath  = "data/balance/baseitemtypes.datc64"
         TcBaseItemsPath  = $LanguagePath
         TcWordsPath      = (Get-Poe2WordsPathFromBaseItemsPath -BaseItemsPath $LanguagePath)
+        TcEndgameMapsPath = (Get-Poe2EndgameMapsPathFromBaseItemsPath -BaseItemsPath $LanguagePath)
         LanguageName     = $LanguageName
         LanguageFileSlug = ($LanguagePath -replace '/', '_')
         WordsFileSlug    = ((Get-Poe2WordsPathFromBaseItemsPath -BaseItemsPath $LanguagePath) -replace '/', '_')
+        EndgameMapsFileSlug = ((Get-Poe2EndgameMapsPathFromBaseItemsPath -BaseItemsPath $LanguagePath) -replace '/', '_')
         LanguageDefaulted = $LanguageDefaulted
         LanguageDefaultReason = $LanguageDefaultReason
     }
@@ -374,6 +392,7 @@ function Get-Bundles2Paths {
         IndexBin     = $IndexBin
         EnBaseItems  = "data/balance/baseitemtypes.datc64"
         TcBaseItems  = (Get-Poe2InstallInfo -Poe2Dir $Poe2Dir).TcBaseItemsPath
+        TcEndgameMaps = (Get-Poe2InstallInfo -Poe2Dir $Poe2Dir).TcEndgameMapsPath
     }
 }
 

@@ -524,9 +524,10 @@ function Restore-PhysicalBundles2 {
 
         $HasLibBackup = [bool]($Entries | Where-Object { $_.FullName -like "Bundles2/LibGGPK3/*" } | Select-Object -First 1)
         $LibDir = Join-Path $Bundles2Root "LibGGPK3"
-        if (-not $HasLibBackup -and (Test-Path -LiteralPath $LibDir -PathType Container)) {
+        if (Test-Path -LiteralPath $LibDir -PathType Container) {
             $ResolvedLibDir = (Resolve-Path -LiteralPath $LibDir).Path
             Assert-Poe2PathInside -Path $ResolvedLibDir -Root $Bundles2Root -Message "Refusing to remove unexpected LibGGPK3 path" | Out-Null
+            # Restore the exact backed-up LibGGPK3 state; otherwise stale increment files can survive.
             Remove-Item -LiteralPath $ResolvedLibDir -Recurse -Force
         }
 

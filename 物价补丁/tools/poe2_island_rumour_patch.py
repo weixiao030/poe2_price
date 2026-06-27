@@ -302,6 +302,16 @@ ISLAND_HINTS = {
 }
 
 SPECIAL_HINTS_BY_RUMOUR = {
+    "吞星者……": "静谧神庙/乌特雷",
+    "饮星者……": "静谧神庙/乌特雷",
+    "最后一个倒下……": "恸哭悬崖/沃拉娜",
+    "最后倒下者……": "恸哭悬崖/沃拉娜",
+    "圆环的终点……": "蔓生丛林/梅德维德",
+    "循环的尽头……": "蔓生丛林/梅德维德",
+    "殒落群星……": "天陨荒原/八孔遗物",
+    "陨落群星……": "天陨荒原/八孔遗物",
+    "陨落的源头……": "无名之岛/奥尔罗斯",
+    "堕落的起源……": "无名之岛/奥尔罗斯",
     "飲星者……": "隱密神廟/烏特雷",
     "最後倒下者……": "哀泣崖壁/沃拉娜",
     "圓環的終點……": "蔓延叢林/梅德偉",
@@ -309,10 +319,34 @@ SPECIAL_HINTS_BY_RUMOUR = {
     "墮落的起源……": "幽隱島嶼/奥尔罗斯",
 }
 
+REWARD_HINT_LABELS = {
+    "en": ("Gold", "Experience", "Unique Base Items", "Unique Items", "Boss Fight"),
+    "zh-cn": ("金币图", "经验图", "独特基底装备", "传奇装备", "首领战"),
+    "zh-tw": ("金幣圖", "經驗圖", "獨特基底裝備", "傳奇裝備", "首領戰"),
+    "ja": ("ゴールド", "経験値", "ユニークベース装備", "ユニーク装備", "ボス戦"),
+    "ko": ("골드", "경험치", "고유 베이스 장비", "고유 장비", "보스전"),
+    "ru": ("золото", "опыт", "уникальные базы", "уникальные предметы", "босс"),
+    "fr": ("or", "expérience", "bases uniques", "objets uniques", "boss"),
+    "de": ("Gold", "Erfahrung", "einzigartige Basistypen", "einzigartige Gegenstände", "Bosskampf"),
+    "es": ("oro", "experiencia", "bases únicas", "objetos únicos", "jefe"),
+    "pt": ("ouro", "experiência", "bases únicas", "itens únicos", "chefe"),
+    "th": ("ทอง", "ค่าประสบการณ์", "เบสยูนิค", "ไอเทมยูนิค", "บอส"),
+}
+
+SPECIAL_HINTS_BY_INDEX = {
+    language_key: {
+        map_index: f"{ISLAND_HINTS[language_key][map_index]}/{label}"
+        for map_index, label in enumerate(labels)
+    }
+    for language_key, labels in REWARD_HINT_LABELS.items()
+}
+
 TRAILING_HINT_RE = re.compile(r"^(?P<base>.+?)\((?P<hint>[^()\r\n]+)\)$")
 ALL_KNOWN_HINTS = {
     hint for hints in ISLAND_HINTS.values() for hint in hints
-} | set(SPECIAL_HINTS_BY_RUMOUR.values())
+} | set(SPECIAL_HINTS_BY_RUMOUR.values()) | {
+    hint for hints in SPECIAL_HINTS_BY_INDEX.values() for hint in hints.values()
+}
 
 
 @dataclass(frozen=True)
@@ -457,6 +491,9 @@ def strip_existing_hint(text: str) -> str:
     match = TRAILING_HINT_RE.match(text)
     if not match:
         return text
+    hint = match.group("hint")
+    if hint not in ALL_KNOWN_HINTS and "/" not in hint:
+        return text
     return match.group("base")
 
 
@@ -464,6 +501,9 @@ def expected_hint(language_key: str, map_index: int, base_text: str) -> str:
     special = SPECIAL_HINTS_BY_RUMOUR.get(base_text)
     if special:
         return special
+    special_by_index = SPECIAL_HINTS_BY_INDEX.get(language_key, {})
+    if map_index in special_by_index:
+        return special_by_index[map_index]
     hints = ISLAND_HINTS.get(language_key, ISLAND_HINTS["en"])
     return hints[map_index]
 
