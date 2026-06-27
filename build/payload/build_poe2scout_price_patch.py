@@ -39,7 +39,7 @@ DEFAULT_SCOUT_API = "https://api.poe2scout.com"
 DEFAULT_POECURRENCY_SUMMARY_API = "https://poecurrency.top/api/summary?version=2"
 DEFAULT_LEAGUE = "runes"
 PRICE_SOURCES = ("poe2scout", "poecurrency-cn")
-PATCH_SCOPES = ("all", "currency", "uniques")
+PATCH_SCOPES = ("all", "currency", "uniques", "none")
 SCRIPT_DIR = Path(__file__).resolve().parent
 PATCH_ROOT = SCRIPT_DIR.parent
 DEFAULT_EN_BASEITEMS = (
@@ -447,6 +447,42 @@ def clean_unique_word_prices_file(
     layout = detect_words_layout(data)
     output = bytearray(data)
     cleaned = clean_stale_unique_word_prices(data, layout, output, unique_names)
+    if cleaned:
+        patched_words.parent.mkdir(parents=True, exist_ok=True)
+        patched_words.write_bytes(bytes(output))
+    return cleaned
+
+
+def clean_word_price_labels_file(
+    tc_words_path: Path,
+    patched_words: Path,
+) -> list[dict[str, str]]:
+    data = tc_words_path.read_bytes()
+    layout = detect_words_layout(data)
+    output = bytearray(data)
+    cleaned: list[dict[str, str]] = []
+    for row_index in range(layout.row_count):
+        entry = read_words_row(data, layout, row_index)
+        if not entry:
+            continue
+        base_name = strip_existing_price(entry.display_name)
+        if base_name == entry.display_name:
+            continue
+        set_words_display_name(output, layout, entry, base_name)
+        cleaned.append(
+            {
+                "words_row_index": str(entry.row_index),
+                "en_name": entry.en_name,
+                "old_name": entry.display_name,
+                "new_name": base_name,
+                "price": "",
+                "api_id": "",
+                "price_exalted": "",
+                "source_pair": "existing-price-cleanup",
+                "status": "cleaned",
+                "reason": "removed disabled unique price label",
+            }
+        )
     if cleaned:
         patched_words.parent.mkdir(parents=True, exist_ok=True)
         patched_words.write_bytes(bytes(output))
@@ -1478,7 +1514,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--patch-scope",
         choices=PATCH_SCOPES,
         default="all",
-        help="Patch all prices, currency/base items only, or unique item names only.",
+        help="Patch all prices, currency/base items only, unique item names only, or cleanup prices only.",
     )
     parser.add_argument(
         "--cn-high-value-fallback-threshold-divine",
@@ -1528,19 +1564,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
-    client = RetryingRequests(
-        max_retries=args.retries,
-        backoff=args.backoff,
-        timeout=max(1.0, args.timeout),
-    )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     patch_base_items = args.patch_scope in {"all", "currency"}
     patch_unique_words = args.patch_scope in {"all", "uniques"}
     effective_patch_unique_words = patch_unique_words and not args.no_uniques
     if args.patch_scope == "uniques" and args.no_uniques:
         raise SystemExit("--patch-scope=uniques cannot be combined with --no-uniques")
+    if args.patch_scope == "none" and args.no_uniques:
+        effective_patch_unique_words = False
 
-    base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems)
+    fetch_prices = patch_base_items or effective_patch_unique_words
+    client = RetryingRequests(
+        max_retries=args.retries,
+        backoff=args.backoff,
+        timeout=max(1.0, args.timeout),
+    )
+    base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems) if fetch_prices else []
     unique_categories: list[dict[str, Any]] = []
     unique_items: list[dict[str, Any]] = []
     source_snapshot_epoch: Any = None
@@ -1552,8 +1591,14 @@ def main(argv: list[str]) -> int:
     fallback_rows_added = 0
     high_value_reference_rows = 0
     fallback_unique_words_patched = 0
+    best: dict[str, PriceObservation] = {}
+    rows: list[dict[str, str]] = []
+    missing: list[dict[str, str]] = []
+    divine_exalted = Decimal("0")
 
-    if args.price_source == "poecurrency-cn":
+    if not fetch_prices:
+        source_base_currency = "disabled"
+    elif args.price_source == "poecurrency-cn":
         summary_data = fetch_poecurrency_summary(client, args.poecurrency_summary_url)
         (args.out_dir / "poecurrency_cn_raw.json").write_text(
             json.dumps(summary_data, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -1590,50 +1635,51 @@ def main(argv: list[str]) -> int:
         source_base_currency = scout["exchange_snapshot"].get("BaseCurrencyText")
         source_item_count = len(best)
 
-    divine_exalted = divine_price_exalted(best)
-    apply_display_prices(best, divine_exalted)
-    if args.price_source == "poecurrency-cn":
-        fallback_divine_exalted = divine_price_exalted(scout_fallback_prices)
-        apply_display_prices(scout_fallback_prices, fallback_divine_exalted)
-        rows, missing = match_cn_prices_to_base_items(best, base_pairs)
-        fallback_rows, _fallback_missing = match_prices_to_base_items(
-            scout_fallback_prices,
-            base_pairs,
-            client=client,
-            use_poe2db=args.poe2db_fallback,
-            max_workers=max(1, args.max_workers),
-        )
-        rows, high_value_reference_rows = apply_high_value_reference_rows(
-            primary=rows,
-            fallback=fallback_rows,
-            primary_divine_exalted=divine_exalted,
-            fallback_divine_exalted=fallback_divine_exalted,
-            min_divine=args.cn_high_value_fallback_threshold_divine,
-            max_ratio=args.cn_high_value_fallback_max_ratio,
-        )
-        rows, fallback_rows_added = merge_primary_with_fallback_rows(
-            rows, fallback_rows
-        )
-        fallback_unique_by_name = {
-            f"unique:{normalize_name(obs.en_name)}": obs
-            for obs in scout_fallback_prices.values()
-            if obs.api_id.startswith("unique:") and obs.display_price
-        }
-    else:
-        rows, missing = match_prices_to_base_items(
-            best,
-            base_pairs,
-            client=client,
-            use_poe2db=args.poe2db_fallback,
-            max_workers=max(1, args.max_workers),
-        )
+    if fetch_prices:
+        divine_exalted = divine_price_exalted(best)
+        apply_display_prices(best, divine_exalted)
+        if args.price_source == "poecurrency-cn":
+            fallback_divine_exalted = divine_price_exalted(scout_fallback_prices)
+            apply_display_prices(scout_fallback_prices, fallback_divine_exalted)
+            rows, missing = match_cn_prices_to_base_items(best, base_pairs)
+            fallback_rows, _fallback_missing = match_prices_to_base_items(
+                scout_fallback_prices,
+                base_pairs,
+                client=client,
+                use_poe2db=args.poe2db_fallback,
+                max_workers=max(1, args.max_workers),
+            )
+            rows, high_value_reference_rows = apply_high_value_reference_rows(
+                primary=rows,
+                fallback=fallback_rows,
+                primary_divine_exalted=divine_exalted,
+                fallback_divine_exalted=fallback_divine_exalted,
+                min_divine=args.cn_high_value_fallback_threshold_divine,
+                max_ratio=args.cn_high_value_fallback_max_ratio,
+            )
+            rows, fallback_rows_added = merge_primary_with_fallback_rows(
+                rows, fallback_rows
+            )
+            fallback_unique_by_name = {
+                f"unique:{normalize_name(obs.en_name)}": obs
+                for obs in scout_fallback_prices.values()
+                if obs.api_id.startswith("unique:") and obs.display_price
+            }
+        else:
+            rows, missing = match_prices_to_base_items(
+                best,
+                base_pairs,
+                client=client,
+                use_poe2db=args.poe2db_fallback,
+                max_workers=max(1, args.max_workers),
+            )
     if not patch_base_items:
         missing.extend(
             {
                 "api_id": row.get("api_id", ""),
                 "en_name": row.get("en_name", ""),
                 "poe2db_tw": "",
-                "reason": "base item price labels disabled by patch-scope=uniques",
+                "reason": f"base item price labels disabled by patch-scope={args.patch_scope}",
             }
             for row in rows
         )
@@ -1736,10 +1782,18 @@ def main(argv: list[str]) -> int:
             )
         else:
             if not args.game_path:
-                raise SystemExit("--game-path is required when patch-scope=uniques")
-            if output_zip.exists():
-                output_zip.unlink()
-            upsert_zip_entry(output_zip, args.game_path, args.tc_baseitems.read_bytes())
+                raise SystemExit("--game-path is required when base item price labels are disabled")
+            cleanup_report = args.report or (args.out_dir / "price_patch.report.json")
+            run_patch_builder(
+                patch_script=args.patch_script,
+                tc_baseitems=args.tc_baseitems,
+                prices_csv=prices_csv,
+                output_zip=output_zip,
+                report=cleanup_report,
+                mode=args.mode,
+                patched_dat=args.patched_dat,
+                game_path=args.game_path,
+            )
         if can_patch_unique_words:
             if words_game_path:
                 patched_words = args.patched_words or (args.out_dir / "words.patched.datc64")
@@ -1813,8 +1867,25 @@ def main(argv: list[str]) -> int:
                     "--words-game-path is required when patching unique Words prices"
                 )
         elif args.tc_words.exists() and words_game_path:
-            upsert_zip_entry(output_zip, words_game_path, args.tc_words.read_bytes())
-            summary["unique_words_clean_passthrough"] = True
+            patched_words = args.patched_words or (args.out_dir / "words.patched.datc64")
+            try:
+                cleaned_rows = clean_word_price_labels_file(args.tc_words, patched_words)
+            except Exception as exc:
+                print(
+                    f"warning: failed to clean existing unique price labels; keeping current Words.datc64: {exc}",
+                    file=sys.stderr,
+                )
+                cleaned_rows = []
+            unique_word_rows.extend(cleaned_rows)
+            if cleaned_rows:
+                upsert_zip_entry(
+                    output_zip,
+                    words_game_path,
+                    patched_words.read_bytes(),
+                )
+            else:
+                upsert_zip_entry(output_zip, words_game_path, args.tc_words.read_bytes())
+                summary["unique_words_clean_passthrough"] = True
             if patch_unique_words and not args.no_uniques:
                 unique_word_missing.append(
                     {

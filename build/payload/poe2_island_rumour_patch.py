@@ -492,7 +492,7 @@ def strip_existing_hint(text: str) -> str:
     if not match:
         return text
     hint = match.group("hint")
-    if hint not in ALL_KNOWN_HINTS and "/" not in hint:
+    if hint not in ALL_KNOWN_HINTS:
         return text
     return match.group("base")
 
@@ -608,7 +608,7 @@ def has_known_hint(text: str) -> bool:
     if not match:
         return False
     hint = match.group("hint")
-    return hint in ALL_KNOWN_HINTS or "/" in hint
+    return hint in ALL_KNOWN_HINTS
 
 
 def get_patch_status(source: Path, game_path: str) -> dict[str, object]:
@@ -748,6 +748,89 @@ def build_patch(
     print(f"written: {output_zip}")
 
 
+def clean_patch(
+    source: Path,
+    output_zip: Path,
+    patched_dat: Path | None,
+    game_path: str,
+    report: Path | None,
+) -> None:
+    data = source.read_bytes()
+    layout, entries = scan_rumours(data)
+    replacements: list[RumourReplacement] = []
+    unchanged: list[dict[str, object]] = []
+
+    for entry in entries:
+        base_text = strip_existing_hint(entry.text)
+        item = {
+            "map_index": entry.map_index,
+            "row_index": entry.row_index,
+            "old_text": entry.text,
+            "base_text": base_text,
+            "new_text": base_text,
+            "hint": "",
+        }
+        if entry.text == base_text:
+            unchanged.append(item)
+            continue
+        replacements.append(
+            RumourReplacement(
+                map_index=entry.map_index,
+                row_index=entry.row_index,
+                old_text=entry.text,
+                base_text=base_text,
+                new_text=base_text,
+                hint="",
+                old_string_offset=entry.text_offset,
+                pointer_pos=entry.pointer_pos,
+            )
+        )
+
+    patched = apply_replacements(data, layout, replacements)
+    upsert_zip_entry(output_zip, game_path, patched)
+
+    if patched_dat:
+        patched_dat.parent.mkdir(parents=True, exist_ok=True)
+        patched_dat.write_bytes(patched)
+
+    info = {
+        "source": str(source),
+        "output_zip": str(output_zip),
+        "game_path": game_path.replace("\\", "/"),
+        "layout": {
+            "row_count": layout.row_count,
+            "row_size": layout.row_size,
+            "string_base": layout.string_base,
+        },
+        "source_size": len(data),
+        "patched_size": len(patched),
+        "size_delta": len(patched) - len(data),
+        "readable_rumours": len(entries),
+        "cleaned_rumours": len(replacements),
+        "unchanged_rumours": len(unchanged),
+        "replacements": [
+            {
+                "map_index": item.map_index,
+                "row_index": item.row_index,
+                "old_text": item.old_text,
+                "base_text": item.base_text,
+                "new_text": item.new_text,
+                "old_string_offset": f"0x{item.old_string_offset:x}",
+                "pointer_offset": f"0x{item.pointer_pos:x}",
+            }
+            for item in replacements
+        ],
+        "unchanged": unchanged,
+    }
+    if report:
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    print(f"island rumour hints cleaned: {len(replacements)} changed, {len(unchanged)} unchanged")
+    print(f"dat size: {len(data)} -> {len(patched)}")
+    print(f"written: {output_zip}")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Generate a PoE2 island rumour hint patch zip."
@@ -760,6 +843,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     build.add_argument("--patched-dat", type=Path)
     build.add_argument("--game-path", default=DEFAULT_GAME_PATH)
     build.add_argument("--report", type=Path, default=Path("island_rumour_patch.report.json"))
+
+    clean = sub.add_parser("clean", help="remove EndgameMaps.datc64 island hints from a patch zip")
+    clean.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
+    clean.add_argument("--output-zip", type=Path, default=Path("物价补丁.zip"))
+    clean.add_argument("--patched-dat", type=Path)
+    clean.add_argument("--game-path", default=DEFAULT_GAME_PATH)
+    clean.add_argument("--report", type=Path, default=Path("island_rumour_patch.report.json"))
 
     check = sub.add_parser("check", help="report whether a datc64 already has hints")
     check.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
@@ -776,6 +866,14 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if args.cmd == "build":
         build_patch(
+            source=args.source,
+            output_zip=args.output_zip,
+            patched_dat=args.patched_dat,
+            game_path=args.game_path,
+            report=args.report,
+        )
+    elif args.cmd == "clean":
+        clean_patch(
             source=args.source,
             output_zip=args.output_zip,
             patched_dat=args.patched_dat,

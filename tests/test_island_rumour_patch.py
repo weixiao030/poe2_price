@@ -196,6 +196,23 @@ class IslandRumourPatchTests(unittest.TestCase):
         self.assertEqual(replacements[0].base_text, "A clue (uncertain)")
         self.assertEqual(replacements[0].new_text, "A clue (uncertain)(Castaway/Gold)")
 
+    def test_unknown_slash_parenthetical_text_is_preserved(self):
+        entries = [
+            self.module.RumourEntry(
+                map_index=0,
+                row_index=self.module.RUMOUR_ROWS[0],
+                text="A clue (other/mod)",
+                text_offset=0,
+                pointer_pos=0,
+            )
+        ]
+
+        replacements, unchanged = self.module.build_replacements(entries, "en")
+
+        self.assertEqual(len(unchanged), len(self.module.RUMOUR_ROWS) - 1)
+        self.assertEqual(replacements[0].base_text, "A clue (other/mod)")
+        self.assertEqual(replacements[0].new_text, "A clue (other/mod)(Castaway/Gold)")
+
     def test_traditional_chinese_special_hints_override_map_name(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -337,6 +354,30 @@ class IslandRumourPatchTests(unittest.TestCase):
                 read_rumour(self.module, patched, 9),
                 "陨落的源头……(无名之岛/奥尔罗斯)",
             )
+
+    def test_clean_patch_removes_existing_island_hints(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "endgamemaps.datc64"
+            patched_dat = root / "patched.datc64"
+            output_zip = root / "patch.zip"
+            rumours = list(SC_RUMOURS)
+            rumours[0] = "闪光的未必是金……(颠沛领域/金币图)"
+            rumours[6] = "循环的尽头……(蔓生丛林/梅德维德)"
+            source.write_bytes(make_endgame_maps_dat(self.module, rumours))
+
+            self.module.clean_patch(
+                source=source,
+                output_zip=output_zip,
+                patched_dat=patched_dat,
+                game_path="data/balance/simplified chinese/endgamemaps.datc64",
+                report=None,
+            )
+
+            with zipfile.ZipFile(output_zip, "r") as zf:
+                patched = zf.read("data/balance/simplified chinese/endgamemaps.datc64")
+            self.assertEqual(read_rumour(self.module, patched, 0), "闪光的未必是金……")
+            self.assertEqual(read_rumour(self.module, patched, 6), "循环的尽头……")
 
 
 if __name__ == "__main__":

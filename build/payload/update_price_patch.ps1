@@ -5,7 +5,7 @@
     [switch]$NoInstall,
     [switch]$NoPoe2dbFallback,
     [switch]$IslandRumourHints,
-    [ValidateSet("", "all", "currency", "uniques")]
+    [ValidateSet("", "all", "currency", "uniques", "none")]
     [string]$PatchScope = ""
 )
 
@@ -48,6 +48,7 @@ function Get-PatchScopeDisplayName {
     switch ($Scope) {
         "currency" { return (New-Utf16Text @(0x53EA, 0x6253, 0x901A, 0x8D27, 0x8865, 0x4E01)) }
         "uniques" { return (New-Utf16Text @(0x53EA, 0x6253, 0x4F20, 0x5947, 0x88C5, 0x5907, 0x8865, 0x4E01)) }
+        "none" { return (New-Utf16Text @(0x4EC5, 0x5C9B, 0x5C7F, 0x4F20, 0x8A00, 0x8865, 0x4E01)) }
         default { return (New-Utf16Text @(0x901A, 0x8D27, 0x0020, 0x002B, 0x0020, 0x4F20, 0x5947, 0x88C5, 0x5907)) }
     }
 }
@@ -64,7 +65,7 @@ function Show-PatchScopeDialog {
     $Form.MinimizeBox = $false
     $Form.TopMost = $true
     $Form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::Font
-    $Form.ClientSize = New-Object System.Drawing.Size(620, 360)
+    $Form.ClientSize = New-Object System.Drawing.Size(620, 340)
     $Form.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
 
     $Title = New-Object System.Windows.Forms.Label
@@ -75,45 +76,34 @@ function Show-PatchScopeDialog {
     $Form.Controls.Add($Title)
 
     $Group = New-Object System.Windows.Forms.GroupBox
-    $Group.Text = (New-Utf16Text @(0x8865, 0x4E01, 0x8303, 0x56F4))
+    $Group.Text = (New-Utf16Text @(0x8865, 0x4E01, 0x5185, 0x5BB9))
     $Group.Location = New-Object System.Drawing.Point(24, 60)
-    $Group.Size = New-Object System.Drawing.Size(572, 124)
+    $Group.Size = New-Object System.Drawing.Size(572, 132)
     $Form.Controls.Add($Group)
 
-    $All = New-Object System.Windows.Forms.RadioButton
-    $All.Text = (Get-PatchScopeDisplayName "all")
-    $All.Tag = "all"
-    $All.Checked = $true
-    $All.Location = New-Object System.Drawing.Point(22, 30)
-    $All.AutoSize = $true
-    $Group.Controls.Add($All)
+    $CurrencyCheck = New-Object System.Windows.Forms.CheckBox
+    $CurrencyCheck.Text = (New-Utf16Text @(0x901A, 0x8D27, 0x4EF7, 0x683C, 0x8865, 0x4E01))
+    $CurrencyCheck.Tag = "currency-price"
+    $CurrencyCheck.Checked = $true
+    $CurrencyCheck.Location = New-Object System.Drawing.Point(22, 30)
+    $CurrencyCheck.AutoSize = $true
+    $Group.Controls.Add($CurrencyCheck)
 
-    $Currency = New-Object System.Windows.Forms.RadioButton
-    $Currency.Text = (Get-PatchScopeDisplayName "currency")
-    $Currency.Tag = "currency"
-    $Currency.Location = New-Object System.Drawing.Point(22, 60)
-    $Currency.AutoSize = $true
-    $Group.Controls.Add($Currency)
-
-    $Uniques = New-Object System.Windows.Forms.RadioButton
-    $Uniques.Text = (Get-PatchScopeDisplayName "uniques")
-    $Uniques.Tag = "uniques"
-    $Uniques.Location = New-Object System.Drawing.Point(22, 90)
-    $Uniques.AutoSize = $true
-    $Group.Controls.Add($Uniques)
-
-    $OptionsGroup = New-Object System.Windows.Forms.GroupBox
-    $OptionsGroup.Text = (New-Utf16Text @(0x9644, 0x52A0, 0x9009, 0x9879))
-    $OptionsGroup.Location = New-Object System.Drawing.Point(24, 202)
-    $OptionsGroup.Size = New-Object System.Drawing.Size(252, 82)
-    $Form.Controls.Add($OptionsGroup)
+    $UniqueCheck = New-Object System.Windows.Forms.CheckBox
+    $UniqueCheck.Text = (New-Utf16Text @(0x4F20, 0x5947, 0x88C5, 0x5907, 0x4EF7, 0x683C, 0x8865, 0x4E01))
+    $UniqueCheck.Tag = "unique-price"
+    $UniqueCheck.Checked = $true
+    $UniqueCheck.Location = New-Object System.Drawing.Point(22, 62)
+    $UniqueCheck.AutoSize = $true
+    $Group.Controls.Add($UniqueCheck)
 
     $IslandRumourCheck = New-Object System.Windows.Forms.CheckBox
-    $IslandRumourCheck.Text = (New-Utf16Text @(0x5C9B, 0x5C7F, 0x4F20, 0x8A00, 0x63D0, 0x793A))
+    $IslandRumourCheck.Text = (New-Utf16Text @(0x5C9B, 0x5C7F, 0x4F20, 0x8A00, 0x8865, 0x4E01))
     $IslandRumourCheck.Tag = "island-rumour-hints"
-    $IslandRumourCheck.Location = New-Object System.Drawing.Point(20, 34)
+    $IslandRumourCheck.Checked = $true
+    $IslandRumourCheck.Location = New-Object System.Drawing.Point(22, 94)
     $IslandRumourCheck.AutoSize = $true
-    $OptionsGroup.Controls.Add($IslandRumourCheck)
+    $Group.Controls.Add($IslandRumourCheck)
 
     $OpenLink = {
         param($Sender, $EventArgs)
@@ -133,8 +123,8 @@ function Show-PatchScopeDialog {
 
     $LinksGroup = New-Object System.Windows.Forms.GroupBox
     $LinksGroup.Text = "更新地址"
-    $LinksGroup.Location = New-Object System.Drawing.Point(292, 202)
-    $LinksGroup.Size = New-Object System.Drawing.Size(304, 82)
+    $LinksGroup.Location = New-Object System.Drawing.Point(24, 208)
+    $LinksGroup.Size = New-Object System.Drawing.Size(572, 72)
     $Form.Controls.Add($LinksGroup)
 
     $GitHubCaption = New-Object System.Windows.Forms.Label
@@ -167,34 +157,52 @@ function Show-PatchScopeDialog {
 
     $OkButton = New-Object System.Windows.Forms.Button
     $OkButton.Text = (New-Utf16Text @(0x5F00, 0x59CB, 0x66F4, 0x65B0))
-    $OkButton.Location = New-Object System.Drawing.Point(390, 310)
+    $OkButton.Location = New-Object System.Drawing.Point(390, 292)
     $OkButton.Size = New-Object System.Drawing.Size(96, 32)
-    $OkButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
     $Form.AcceptButton = $OkButton
     $Form.Controls.Add($OkButton)
 
     $CancelButton = New-Object System.Windows.Forms.Button
     $CancelButton.Text = (New-Utf16Text @(0x53D6, 0x6D88))
-    $CancelButton.Location = New-Object System.Drawing.Point(500, 310)
+    $CancelButton.Location = New-Object System.Drawing.Point(500, 292)
     $CancelButton.Size = New-Object System.Drawing.Size(96, 32)
     $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $Form.CancelButton = $CancelButton
     $Form.Controls.Add($CancelButton)
+
+    $OkButton.Add_Click({
+            if (-not ($CurrencyCheck.Checked -or $UniqueCheck.Checked -or $IslandRumourCheck.Checked)) {
+                [System.Windows.Forms.MessageBox]::Show(
+                    (New-Utf16Text @(0x8BF7, 0x81F3, 0x5C11, 0x9009, 0x62E9, 0x4E00, 0x4E2A, 0x8865, 0x4E01, 0x5185, 0x5BB9)),
+                    "POE2 Price Patch"
+                ) | Out-Null
+                return
+            }
+            $Form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+            $Form.Close()
+        })
 
     $Result = $Form.ShowDialog()
     if ($Result -ne [System.Windows.Forms.DialogResult]::OK) {
         throw "Patch scope selection was cancelled."
     }
 
-    $Scope = "all"
-    foreach ($Control in $Group.Controls) {
-        if ($Control -is [System.Windows.Forms.RadioButton] -and $Control.Checked) {
-            $Scope = [string]$Control.Tag
-            break
-        }
+    if ($CurrencyCheck.Checked -and $UniqueCheck.Checked) {
+        $Scope = "all"
+    }
+    elseif ($CurrencyCheck.Checked) {
+        $Scope = "currency"
+    }
+    elseif ($UniqueCheck.Checked) {
+        $Scope = "uniques"
+    }
+    else {
+        $Scope = "none"
     }
     return [pscustomobject]@{
         Scope              = $Scope
+        CurrencyPrices     = [bool]$CurrencyCheck.Checked
+        UniquePrices       = [bool]$UniqueCheck.Checked
         IslandRumourHints  = [bool]$IslandRumourCheck.Checked
     }
 }
@@ -202,7 +210,7 @@ function Show-PatchScopeDialog {
 function Resolve-PatchScope {
     param([string]$Requested)
 
-    $Allowed = @("all", "currency", "uniques")
+    $Allowed = @("all", "currency", "uniques", "none")
     $Scope = $Requested
     if ([string]::IsNullOrWhiteSpace($Scope) -and -not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_SCOPE)) {
         $Scope = $env:POE2_PATCH_SCOPE.Trim().ToLowerInvariant()
@@ -1550,6 +1558,7 @@ function Resolve-BundleExtractor {
 try {
 $PatchScope = Resolve-PatchScope -Requested $PatchScope
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
+$PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques"))
 $PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
@@ -1611,8 +1620,9 @@ Write-Host "检测结果：$($InstallInfo.DisplayName)" -ForegroundColor Cyan
 Write-Host "安装模式：$GameMode" -ForegroundColor Cyan
 Write-Host "游戏语言：$DisplayLanguageName ($($InstallInfo.ConfigLanguage))" -ForegroundColor Cyan
 Write-Host "写入目标：$($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cyan
-Write-Host "补丁范围：$(Get-PatchScopeDisplayName $PatchScope)" -ForegroundColor Cyan
-Write-Host "岛屿传言提示：$(if ($PatchIslandRumourHintsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
+Write-Host "通货价格补丁：$(if ($PatchScope -in @('all', 'currency')) { '开启' } else { '关闭' })" -ForegroundColor Cyan
+Write-Host "传奇装备价格补丁：$(if ($PatchUniqueWordsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
+Write-Host "岛屿传言补丁：$(if ($PatchIslandRumourHintsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
@@ -1689,12 +1699,15 @@ if (-not $SkipExtract) {
         }
         Write-Host "已提取到：$TcBaseItems"
 
-        if ($PatchIslandRumourHintsEnabled) {
-            Write-Host "正在提取$DisplayLanguageName EndgameMaps..."
-            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcEndgameMapsPath $TcEndgameMaps
-            if ($LASTEXITCODE -ne 0) {
+        Write-Host "正在提取$DisplayLanguageName EndgameMaps..."
+        & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcEndgameMapsPath $TcEndgameMaps
+        if ($LASTEXITCODE -ne 0) {
+            if ($PatchIslandRumourHintsEnabled) {
                 throw "Failed to extract $($InstallInfo.LanguageName) EndgameMaps. Exit code: $LASTEXITCODE"
             }
+            Write-Warning "EndgameMaps 提取失败，将无法清理旧岛屿传言提示。退出码：$LASTEXITCODE"
+        }
+        else {
             Write-Host "已提取到：$TcEndgameMaps"
         }
 
@@ -1752,10 +1765,6 @@ if ($PatchUniqueWordsEnabled -and $SupportsUniqueWords -and -not $CanPatchUnique
 elseif ($PatchUniqueWordsEnabled -and -not $SupportsUniqueWords) {
     Write-Warning "传奇物品价格标记已禁用：当前语言没有受支持的 Words.datc64 路径。"
 }
-$RestoreZip = Ensure-RestoreZip $TcBaseItems
-if ($GameMode -eq "GGPK" -and -not (Test-BaseItemsLookPatched $TcBaseItems)) {
-    $RestoreZip = Update-IntlRestoreZipFromExtractedBaseItems -ZipPath $RestoreZip
-}
 $SourceBaseItemsLooksPatched = Test-BaseItemsLookPatched $TcBaseItems
 $SourceWordsLooksPatched = $false
 if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf)) {
@@ -1768,13 +1777,12 @@ if ($SupportsUniqueWords -and $SourceWordsLooksPatched -and $GameMode -eq "Bundl
     Write-Host "当前 Words.datc64 已包含传奇价格标记，将在生成补丁时清理并重打。" -ForegroundColor Yellow
 }
 $SourceEndgameMapsLooksPatched = $false
-if ($PatchIslandRumourHintsEnabled -and (Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf)) {
+if (Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf) {
     $SourceEndgameMapsLooksPatched = Test-EndgameMapsLookPatched $TcEndgameMaps
 }
 if ($PatchIslandRumourHintsEnabled -and $SourceEndgameMapsLooksPatched -and $GameMode -eq "Bundles2") {
     Write-Host "当前 EndgameMaps.datc64 已包含岛屿传言提示，将在生成补丁时清理并重打。" -ForegroundColor Yellow
 }
-Restore-CleanPatchSources -RestoreZip $RestoreZip
 $CanPatchUniqueWords = (
     $PatchUniqueWordsEnabled -and
     $SupportsUniqueWords -and
@@ -1782,20 +1790,41 @@ $CanPatchUniqueWords = (
     (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
     (Test-Path -LiteralPath $UniqueGoldPrices -PathType Leaf)
 )
+$BuildPatchScope = $PatchScope
 if ($PatchScope -eq "uniques" -and -not $CanPatchUniqueWords) {
-    throw "Cannot build uniques-only patch: Words or UniqueGoldPrices datc64 files are unavailable."
+    Write-Warning "传奇装备价格补丁不可用：Words 或 UniqueGoldPrices datc64 文件没有成功提取。本次将只清理旧价格标记并继续。"
+    $BuildPatchScope = "none"
 }
 Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $TcEndgameMaps, $UniqueGoldPrices)
-if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
-    Copy-Item -LiteralPath $RestoreZip -Destination $RestorePatchFolderZip -Force
+try {
+    $RestoreZip = Ensure-RestoreZip $TcBaseItems
+    if ($GameMode -eq "GGPK" -and -not (Test-BaseItemsLookPatched $TcBaseItems)) {
+        $RestoreZip = Update-IntlRestoreZipFromExtractedBaseItems -ZipPath $RestoreZip
+    }
+    if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
+        Copy-Item -LiteralPath $RestoreZip -Destination $RestorePatchFolderZip -Force
+    }
+}
+catch {
+    Write-Warning "刷新逻辑还原包失败，将继续更新补丁；如需完全恢复原版，请使用一键还原或官方修复。原因：$($_.Exception.Message)"
 }
 if ($GameMode -eq "Bundles2") {
-    $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched ($SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched)
-    Write-Host "真实还原包：" -ForegroundColor Green
-    Write-Host "  $PhysicalRestoreZip"
+    try {
+        $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched ($SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched)
+        Write-Host "真实还原包：" -ForegroundColor Green
+        Write-Host "  $PhysicalRestoreZip"
+    }
+    catch {
+        Write-Warning "刷新真实还原包失败，将继续更新补丁；现有 A 大补丁/旧增量会尽量保留。原因：$($_.Exception.Message)"
+    }
 }
 
-Write-Step "获取 $PriceSourceName 价格并生成补丁包"
+if ($BuildPatchScope -in @("all", "currency", "uniques")) {
+    Write-Step "获取 $PriceSourceName 价格并生成补丁包"
+}
+else {
+    Write-Step "清理未勾选价格标记并生成补丁包"
+}
 $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
 $PatchBuildMode = "append"
 if (-not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_BUILD_MODE)) {
@@ -1813,7 +1842,7 @@ $BuildArgs = @(
     "--output-zip", $PatchZip,
     "--patch-script", (Join-Path $CodeToolsRoot "poe2_name_price_patch.py"),
     "--mode", $PatchBuildMode,
-    "--patch-scope", $PatchScope,
+    "--patch-scope", $BuildPatchScope,
     "--patched-dat", $PatchedDat,
     "--report", $ReportJson,
     "--game-path", $InstallInfo.TcBaseItemsPath
@@ -1828,6 +1857,13 @@ if ($CanPatchUniqueWords) {
     )
 }
 else {
+    if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf)) {
+        $BuildArgs += @(
+            "--tc-words", $TcWords,
+            "--patched-words", $PatchedWords,
+            "--words-game-path", $TcWordsPath
+        )
+    }
     $BuildArgs += "--no-uniques"
 }
 if (-not $NoPoe2dbFallback -and -not $IsChinaClient) {
@@ -1860,6 +1896,21 @@ if ($PatchIslandRumourHintsEnabled) {
     )
     if ($IslandRumourResult.ExitCode -ne 0) {
         throw "Island rumour patch build failed. Exit code: $($IslandRumourResult.ExitCode)"
+    }
+}
+elseif ((Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf) -and $SourceEndgameMapsLooksPatched) {
+    Write-Step "清理旧岛屿传言提示"
+    $IslandRumourResult = Invoke-Poe2Python -Python $Python -ArgumentList @(
+        (Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py"),
+        "clean",
+        "--source", $TcEndgameMaps,
+        "--output-zip", $PatchZip,
+        "--patched-dat", $PatchedEndgameMaps,
+        "--game-path", $InstallInfo.TcEndgameMapsPath,
+        "--report", $IslandRumourReportJson
+    )
+    if ($IslandRumourResult.ExitCode -ne 0) {
+        Write-Warning "清理旧岛屿传言提示失败，将继续安装其它补丁。退出码：$($IslandRumourResult.ExitCode)"
     }
 }
 
