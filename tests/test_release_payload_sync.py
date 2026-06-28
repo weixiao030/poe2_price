@@ -1,3 +1,4 @@
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -6,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "物价补丁" / "tools"
 PAYLOAD = ROOT / "build" / "payload"
 PAYLOAD_ZIP = ROOT / "build" / "payload.zip"
+PAYLOAD_ENC = ROOT / "build" / "Poe2PatchLauncher" / "payload.enc"
+PACKER_PROJECT = ROOT / "build" / "PayloadPacker" / "PayloadPacker.csproj"
 
 PAYLOAD_FILES = [
     "poe2_patch_common.ps1",
@@ -40,3 +43,24 @@ def test_payload_zip_matches_payload_folder():
             assert archive.read(relative) == (PAYLOAD / relative).read_bytes(), (
                 f"stale payload zip entry: {relative}"
             )
+
+
+def test_encrypted_payload_matches_payload_zip():
+    assert PAYLOAD_ENC.exists(), "missing build/Poe2PatchLauncher/payload.enc"
+    result = subprocess.run(
+        [
+            "dotnet",
+            "run",
+            "--project",
+            str(PACKER_PROJECT),
+            "--",
+            "--verify",
+            str(PAYLOAD_ZIP),
+            str(PAYLOAD_ENC),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

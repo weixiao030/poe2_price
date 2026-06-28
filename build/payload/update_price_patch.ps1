@@ -367,6 +367,24 @@ function Convert-ErrorMessage {
             -Details @("提取日志：$($Matches[1])")
     }
 
+    if ($Message -match '^GGPKExtractor failed\. Exit code: (.+?)\. Log: (.+)$') {
+        return New-FailureMessage `
+            -Reason "从 Content.ggpk 提取游戏数据失败。" `
+            -Suggestions (Get-BaseItemsFailureSuggestions) `
+            -Details @(
+                "GGPK 提取工具退出码：$($Matches[1])",
+                "提取日志：$($Matches[2])"
+            )
+    }
+
+    if ($Message -match '^GGPKExtractor did not refresh required file: (.+?)\. Log: (.+)$') {
+        $Name = Get-FriendlyFileName $Matches[1]
+        return New-FailureMessage `
+            -Reason "从 Content.ggpk 提取后没有刷新必要文件：$Name" `
+            -Suggestions (Get-BaseItemsFailureSuggestions) `
+            -Details @("提取日志：$($Matches[2])")
+    }
+
     if ($Message -match '^GGPKExtractor exit code: (.+)$') {
         return New-FailureMessage `
             -Reason "从 Content.ggpk 提取游戏数据失败。" `
@@ -1670,30 +1688,44 @@ if (-not $SkipExtract) {
 
     if ($GameMode -eq "GGPK") {
         Write-Step "从 Content.ggpk 提取最新 BaseItemTypes"
+        $ExtractStartedAt = (Get-Date).AddSeconds(-2)
         try {
             if ($ExtractorUsesDotnet) {
                 $ExtractorResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($Extractor, $ContentGgpk, $LatestDir) -Quiet
                 $ExtractorResult.Text | Out-File -LiteralPath $ExtractLog -Encoding UTF8
                 $ExtractorExitCode = $ExtractorResult.ExitCode
+                $ExtractorText = $ExtractorResult.Text
             }
             else {
                 & $Extractor $ContentGgpk $LatestDir *> $ExtractLog
                 $ExtractorExitCode = $LASTEXITCODE
+                $ExtractorText = if (Test-Path -LiteralPath $ExtractLog -PathType Leaf) {
+                    Get-Content -LiteralPath $ExtractLog -Raw -Encoding UTF8
+                }
+                else {
+                    ""
+                }
             }
-            if ($ExtractorExitCode -ne 0) {
-                throw "GGPKExtractor exit code: $ExtractorExitCode"
+            if ($ExtractorExitCode -ne 0 -or (Test-ToolOutputFailure -Text $ExtractorText -ExtraNeedles @("Fatal:"))) {
+                throw "GGPKExtractor failed. Exit code: $ExtractorExitCode. Log: $ExtractLog"
+            }
+            $RequiredExtractedFiles = @($EnBaseItems, $TcBaseItems) | Select-Object -Unique
+            foreach ($RequiredExtractedFile in $RequiredExtractedFiles) {
+                if (-not (Test-Path -LiteralPath $RequiredExtractedFile -PathType Leaf)) {
+                    throw "GGPKExtractor did not refresh required file: $RequiredExtractedFile. Log: $ExtractLog"
+                }
+                $RequiredFileInfo = Get-Item -LiteralPath $RequiredExtractedFile
+                if ($RequiredFileInfo.LastWriteTime -lt $ExtractStartedAt) {
+                    throw "GGPKExtractor did not refresh required file: $RequiredExtractedFile. Log: $ExtractLog"
+                }
             }
             Write-Host "已提取到：$LatestDir"
         }
         catch {
             Write-Warning "提取失败：$($_.Exception.Message)"
             Write-Warning "如果游戏或启动器还在运行，请完全关闭后重新运行一键更新。"
-            if ((Test-Path -LiteralPath $EnBaseItems) -and (Test-Path -LiteralPath $TcBaseItems)) {
-                Write-Warning "改用已有的 dat_files_latest 缓存继续。"
-            }
-            else {
-                throw "No usable BaseItemTypes files. Log: $ExtractLog"
-            }
+            Write-Warning "为避免误用旧缓存，本次不会自动改用 dat_files_latest；如确实要使用缓存，请显式传入 -SkipExtract。"
+            throw
         }
     }
     else {
