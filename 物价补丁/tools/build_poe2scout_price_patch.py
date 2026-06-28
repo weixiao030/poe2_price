@@ -37,8 +37,11 @@ if hasattr(sys.stderr, "reconfigure"):
 
 DEFAULT_SCOUT_API = "https://api.poe2scout.com"
 DEFAULT_POECURRENCY_SUMMARY_API = "https://poecurrency.top/api/summary?version=2"
+DEFAULT_POE2DB_ECONOMY_US_URL = "https://poe2db.tw/us/Economy"
+DEFAULT_POE2DB_ECONOMY_CN_URL = "https://poe2db.tw/cn/Economy"
 DEFAULT_LEAGUE = "runes"
 PRICE_SOURCES = ("poe2scout", "poecurrency-cn")
+CN_REFERENCE_SOURCES = ("poe2scout", "poe2db-economy", "none")
 PATCH_SCOPES = ("all", "currency", "uniques", "none")
 SCRIPT_DIR = Path(__file__).resolve().parent
 PATCH_ROOT = SCRIPT_DIR.parent
@@ -101,6 +104,17 @@ class BaseItemPair:
     tc_name: str
 
 
+@dataclass(frozen=True)
+class Poe2dbEconomyRow:
+    key: str
+    name: str
+    wiki_slug: str
+    left_key: str
+    left_qty: Decimal
+    right_qty: Decimal
+    volume: Decimal
+
+
 @dataclass
 class PriceObservation:
     api_id: str
@@ -157,7 +171,11 @@ class RetryingRequests:
         max_retries: int = 4,
         backoff: float = 0.8,
         timeout: float = 25.0,
-        user_agent: str = "Mozilla/5.0 poe2-price-patch/1.0",
+        user_agent: str = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36 poe2-price-patch/1.0"
+        ),
     ) -> None:
         self.max_retries = max_retries
         self.backoff = backoff
@@ -733,6 +751,15 @@ def load_base_item_pairs(en_path: Path, tc_path: Path) -> list[BaseItemPair]:
     return pairs
 
 
+def load_localized_base_item_pairs(tc_path: Path) -> list[BaseItemPair]:
+    tc = scan_base_items(tc_path)
+    return [
+        BaseItemPair(metadata_path, "", tc_name)
+        for metadata_path, tc_name in tc.items()
+        if tc_name
+    ]
+
+
 def normalize_name(value: str) -> str:
     value = html.unescape(value).lower()
     value = value.replace("’", "'")
@@ -786,6 +813,152 @@ def fetch_poe2db_translation(
         except Exception:
             continue
     return None
+
+
+def strip_html_tags(text: str) -> str:
+    text = re.sub(r"<script\b.*?</script>", "", text, flags=re.I | re.S)
+    text = re.sub(r"<style\b.*?</style>", "", text, flags=re.I | re.S)
+    return html.unescape(re.sub(r"<[^>]+>", " ", text)).strip()
+
+
+def clean_cell_text(text: str) -> str:
+    return re.sub(r"\s+", " ", strip_html_tags(text)).strip()
+
+
+def economy_href_key(href: str) -> str:
+    href = html.unescape(href or "").strip()
+    name = href.rsplit("/", 1)[-1].split("?", 1)[0].split("#", 1)[0]
+    if name.startswith("Economy_"):
+        return name[len("Economy_") :].lower()
+    return name.lower()
+
+
+def decimal_from_text(text: str) -> Decimal:
+    cleaned = re.sub(r"[^0-9.]", "", text)
+    if not cleaned:
+        return Decimal("0")
+    return Decimal(cleaned)
+
+
+def parse_poe2db_economy_rows(text: str) -> dict[str, Poe2dbEconomyRow]:
+    rows: dict[str, Poe2dbEconomyRow] = {}
+    for tr_match in re.finditer(r"<tr\b[^>]*>(.*?)</tr>", text, flags=re.I | re.S):
+        cells = re.findall(r"<td\b[^>]*>(.*?)</td>", tr_match.group(1), flags=re.I | re.S)
+        if len(cells) < 4:
+            continue
+
+        name_cell = cells[0]
+        value_cell = cells[1]
+        name_match = re.search(
+            r'<a\b[^>]*href="(Economy_[^"]+)"[^>]*>(.*?)</a>',
+            name_cell,
+            flags=re.I | re.S,
+        )
+        if not name_match:
+            continue
+
+        key = economy_href_key(name_match.group(1))
+        name = clean_cell_text(name_match.group(2))
+        wiki_match = re.search(
+            r'<a\b[^>]*href="([^"]+)"[^>]*class="[^"]*\bborder\b[^"]*"',
+            name_cell,
+            flags=re.I | re.S,
+        )
+        wiki_slug = html.unescape(wiki_match.group(1)).strip() if wiki_match else ""
+        value_links = re.findall(
+            r'<a\b[^>]*href="(Economy_[^"]+)"',
+            value_cell,
+            flags=re.I | re.S,
+        )
+        numbers = re.findall(r"(?<![\w.])[0-9][0-9,]*(?:\.[0-9]+)?", clean_cell_text(value_cell))
+        if len(value_links) < 2 or len(numbers) < 2:
+            continue
+
+        left_qty = decimal_from_text(numbers[0])
+        right_qty = decimal_from_text(numbers[1])
+        if left_qty <= 0 or right_qty <= 0:
+            continue
+
+        rows[key] = Poe2dbEconomyRow(
+            key=key,
+            name=name,
+            wiki_slug=wiki_slug,
+            left_key=economy_href_key(value_links[0]),
+            left_qty=left_qty,
+            right_qty=right_qty,
+            volume=decimal_from_text(clean_cell_text(cells[3])),
+        )
+    return rows
+
+
+def poe2db_divine_price_exalted(rows: dict[str, Poe2dbEconomyRow]) -> Decimal:
+    exalted = rows.get("exalted")
+    if exalted and exalted.left_key == "divine" and exalted.left_qty > 0:
+        return exalted.right_qty / exalted.left_qty
+    divine = rows.get("divine")
+    if divine and divine.left_key == "exalted" and divine.right_qty > 0:
+        return divine.left_qty / divine.right_qty
+    raise ValueError("cannot determine Poe2DB Economy Divine/Exalted ratio")
+
+
+def poe2db_row_price_exalted(row: Poe2dbEconomyRow, divine_exalted: Decimal) -> Decimal:
+    left_price = row.left_qty / row.right_qty
+    if row.left_key == "divine":
+        return left_price * divine_exalted
+    if row.left_key == "exalted":
+        return left_price
+    return Decimal("0")
+
+
+def build_poe2db_economy_prices(
+    client: RetryingRequests, us_url: str, cn_url: str
+) -> tuple[dict[str, Any], dict[str, PriceObservation]]:
+    us_html = client.get(us_url).text
+    cn_html = client.get(cn_url).text
+    us_rows = parse_poe2db_economy_rows(us_html)
+    cn_rows = parse_poe2db_economy_rows(cn_html)
+    if not us_rows:
+        raise ValueError("Poe2DB US Economy table is empty")
+    if not cn_rows:
+        raise ValueError("Poe2DB CN Economy table is empty")
+
+    divine_exalted = poe2db_divine_price_exalted(us_rows)
+    best: dict[str, PriceObservation] = {}
+    for key, us_row in us_rows.items():
+        cn_row = cn_rows.get(key)
+        if not cn_row:
+            continue
+        if key == "divine":
+            price_exalted = divine_exalted
+        elif key == "exalted":
+            price_exalted = Decimal("1")
+        else:
+            price_exalted = poe2db_row_price_exalted(us_row, divine_exalted)
+        if price_exalted <= 0:
+            continue
+        api_id = key if key in {"divine", "exalted"} else f"poe2db:{key}"
+        best[api_id] = PriceObservation(
+            api_id=api_id,
+            en_name=cn_row.name,
+            category="poe2db-economy",
+            price_exalted=price_exalted,
+            value_traded=us_row.volume,
+            source_pair=(
+                f"Poe2DB Economy/{us_row.name}; "
+                f"wiki={us_row.wiki_slug}; value={us_row.left_qty}/{us_row.right_qty} {us_row.left_key}"
+            ),
+        )
+
+    raw = {
+        "source": "poe2db-economy",
+        "us_url": us_url,
+        "cn_url": cn_url,
+        "us_rows": len(us_rows),
+        "cn_rows": len(cn_rows),
+        "matched_rows": len(best),
+        "divine_price_exalted": str(divine_exalted),
+    }
+    return raw, best
 
 
 def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> dict[str, Any]:
@@ -1375,7 +1548,8 @@ def merge_primary_with_fallback_rows(
         if not metadata_path or metadata_path in merged:
             continue
         row = dict(row)
-        row["source_pair"] = f"{row.get('source_pair', '')}; fallback=poe2scout"
+        label = "poe2db-economy" if "Poe2DB Economy" in row.get("source_pair", "") else "poe2scout"
+        row["source_pair"] = f"{row.get('source_pair', '')}; fallback={label}"
         merged[metadata_path] = row
         added += 1
     return sorted(merged.values(), key=lambda r: r["name"]), added
@@ -1429,9 +1603,10 @@ def apply_high_value_reference_rows(
             continue
 
         replacement = dict(fallback_row)
+        label = "poe2db-economy" if "Poe2DB Economy" in fallback_row.get("source_pair", "") else "poe2scout"
         replacement["source_pair"] = (
             f"{fallback_row.get('source_pair', '')}; "
-            f"high_value_reference=poe2scout; "
+            f"high_value_reference={label}; "
             f"cn_price={row.get('price', '')}; "
             f"cn_price_exalted={row.get('price_exalted', '')}; "
             f"cn_source={row.get('source_pair', '')}"
@@ -1491,6 +1666,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--price-source", choices=PRICE_SOURCES, default="poe2scout")
     parser.add_argument("--api-base", default=DEFAULT_SCOUT_API)
     parser.add_argument("--poecurrency-summary-url", default=DEFAULT_POECURRENCY_SUMMARY_API)
+    parser.add_argument("--poe2db-economy-us-url", default=DEFAULT_POE2DB_ECONOMY_US_URL)
+    parser.add_argument("--poe2db-economy-cn-url", default=DEFAULT_POE2DB_ECONOMY_CN_URL)
+    parser.add_argument(
+        "--cn-reference-source",
+        choices=CN_REFERENCE_SOURCES,
+        default="poe2scout",
+        help="International reference source used with poecurrency-cn.",
+    )
     parser.add_argument("--league", default=DEFAULT_LEAGUE)
     parser.add_argument("--en-baseitems", type=Path, default=DEFAULT_EN_BASEITEMS)
     parser.add_argument("--tc-baseitems", type=Path, default=DEFAULT_TC_BASEITEMS)
@@ -1579,7 +1762,12 @@ def main(argv: list[str]) -> int:
         backoff=args.backoff,
         timeout=max(1.0, args.timeout),
     )
-    base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems) if fetch_prices else []
+    if not fetch_prices:
+        base_pairs = []
+    elif args.price_source == "poecurrency-cn" and not args.en_baseitems.exists():
+        base_pairs = load_localized_base_item_pairs(args.tc_baseitems)
+    else:
+        base_pairs = load_base_item_pairs(args.en_baseitems, args.tc_baseitems)
     unique_categories: list[dict[str, Any]] = []
     unique_items: list[dict[str, Any]] = []
     source_snapshot_epoch: Any = None
@@ -1610,16 +1798,26 @@ def main(argv: list[str]) -> int:
             for category in summary_data
             if isinstance(category, dict)
         )
-        scout_fallback, scout_fallback_prices, unique_categories, unique_items = build_scout_prices(
-            client,
-            args.api_base.rstrip("/"),
-            args.league,
-            include_uniques=effective_patch_unique_words,
-            max_workers=max(1, args.max_workers),
-        )
-        (args.out_dir / "poe2scout_fallback_raw.json").write_text(
-            json.dumps(scout_fallback, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        if args.cn_reference_source == "poe2scout":
+            scout_fallback, scout_fallback_prices, unique_categories, unique_items = build_scout_prices(
+                client,
+                args.api_base.rstrip("/"),
+                args.league,
+                include_uniques=effective_patch_unique_words,
+                max_workers=max(1, args.max_workers),
+            )
+            (args.out_dir / "poe2scout_fallback_raw.json").write_text(
+                json.dumps(scout_fallback, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        elif args.cn_reference_source == "poe2db-economy":
+            scout_fallback, scout_fallback_prices = build_poe2db_economy_prices(
+                client,
+                args.poe2db_economy_us_url,
+                args.poe2db_economy_cn_url,
+            )
+            (args.out_dir / "poe2db_economy_fallback_raw.json").write_text(
+                json.dumps(scout_fallback, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
     else:
         scout, best, unique_categories, unique_items = build_scout_prices(
             client,
@@ -1639,32 +1837,40 @@ def main(argv: list[str]) -> int:
         divine_exalted = divine_price_exalted(best)
         apply_display_prices(best, divine_exalted)
         if args.price_source == "poecurrency-cn":
-            fallback_divine_exalted = divine_price_exalted(scout_fallback_prices)
-            apply_display_prices(scout_fallback_prices, fallback_divine_exalted)
             rows, missing = match_cn_prices_to_base_items(best, base_pairs)
-            fallback_rows, _fallback_missing = match_prices_to_base_items(
-                scout_fallback_prices,
-                base_pairs,
-                client=client,
-                use_poe2db=args.poe2db_fallback,
-                max_workers=max(1, args.max_workers),
-            )
-            rows, high_value_reference_rows = apply_high_value_reference_rows(
-                primary=rows,
-                fallback=fallback_rows,
-                primary_divine_exalted=divine_exalted,
-                fallback_divine_exalted=fallback_divine_exalted,
-                min_divine=args.cn_high_value_fallback_threshold_divine,
-                max_ratio=args.cn_high_value_fallback_max_ratio,
-            )
-            rows, fallback_rows_added = merge_primary_with_fallback_rows(
-                rows, fallback_rows
-            )
-            fallback_unique_by_name = {
-                f"unique:{normalize_name(obs.en_name)}": obs
-                for obs in scout_fallback_prices.values()
-                if obs.api_id.startswith("unique:") and obs.display_price
-            }
+            if scout_fallback_prices:
+                fallback_divine_exalted = divine_price_exalted(scout_fallback_prices)
+                apply_display_prices(scout_fallback_prices, fallback_divine_exalted)
+                if args.cn_reference_source == "poe2db-economy":
+                    fallback_rows, _fallback_missing = match_cn_prices_to_base_items(
+                        scout_fallback_prices,
+                        base_pairs,
+                    )
+                else:
+                    fallback_rows, _fallback_missing = match_prices_to_base_items(
+                        scout_fallback_prices,
+                        base_pairs,
+                        client=client,
+                        use_poe2db=args.poe2db_fallback,
+                        max_workers=max(1, args.max_workers),
+                    )
+                rows, high_value_reference_rows = apply_high_value_reference_rows(
+                    primary=rows,
+                    fallback=fallback_rows,
+                    primary_divine_exalted=divine_exalted,
+                    fallback_divine_exalted=fallback_divine_exalted,
+                    min_divine=args.cn_high_value_fallback_threshold_divine,
+                    max_ratio=args.cn_high_value_fallback_max_ratio,
+                )
+                rows, fallback_rows_added = merge_primary_with_fallback_rows(
+                    rows, fallback_rows
+                )
+                if args.cn_reference_source == "poe2scout":
+                    fallback_unique_by_name = {
+                        f"unique:{normalize_name(obs.en_name)}": obs
+                        for obs in scout_fallback_prices.values()
+                        if obs.api_id.startswith("unique:") and obs.display_price
+                    }
         else:
             rows, missing = match_prices_to_base_items(
                 best,
@@ -1734,7 +1940,7 @@ def main(argv: list[str]) -> int:
         "price_source": args.price_source,
         "patch_scope": args.patch_scope,
         "price_strategy": (
-            "poecurrency-cn uses latest buy/sell first with avg fallback; currency_unit=d is converted to exalted by the current Divine ratio and explicit api e fields are preferred when present; high-value outliers are replaced by poe2scout when CN and poe2scout differ beyond threshold"
+            "poecurrency-cn uses latest buy/sell first with avg fallback; currency_unit=d is converted to exalted by the current Divine ratio and explicit api e fields are preferred when present; high-value outliers are replaced by the configured international reference source when CN and reference prices differ beyond threshold"
             if args.price_source == "poecurrency-cn"
             else "poe2scout relative price"
         ),
@@ -1761,7 +1967,10 @@ def main(argv: list[str]) -> int:
         "missing_items": len(missing),
         "divine_price_exalted": str(divine_exalted),
         "divine_exalted_ratio": divine_exalted_ratio_summary(divine_exalted),
-        "poe2scout_fallback": bool(args.price_source == "poecurrency-cn"),
+        "poe2scout_fallback": bool(
+            args.price_source == "poecurrency-cn" and args.cn_reference_source == "poe2scout"
+        ),
+        "cn_reference_source": args.cn_reference_source,
         "poe2db_fallback": bool(args.poe2db_fallback),
     }
 

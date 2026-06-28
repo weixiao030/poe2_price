@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PayloadPacker")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2f4b50f2f41d868cd6cb72cf3879cd6efe1476e5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b5e19f0d87a9289a77494200feb83a9f591669a4")]
 [assembly: System.Reflection.AssemblyProductAttribute("PayloadPacker")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PayloadPacker")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

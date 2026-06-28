@@ -253,6 +253,68 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(count, 0)
         self.assertEqual(rows[0]["price"], "14.00D")
 
+    def test_parse_poe2db_economy_prices_pair_us_and_cn_rows(self):
+        us_html = """
+        <table><tbody>
+        <tr><td><a href="Economy_divine">Divine Orb</a><a href="Divine_Orb" class="border p-1">Wiki</a></td>
+        <td>9.93 <a href="Economy_chaos"></a> 1 <a href="Economy_divine"></a></td><td></td><td>4,913,645</td></tr>
+        <tr><td><a href="Economy_exalted">Exalted Orb</a><a href="Exalted_Orb" class="border p-1">Wiki</a></td>
+        <td>1 <a href="Economy_divine"></a> 393 <a href="Economy_exalted"></a></td><td></td><td>542,073,655</td></tr>
+        <tr><td><a href="Economy_mirror">Mirror of Kalandra</a><a href="Mirror_of_Kalandra" class="border p-1">Wiki</a></td>
+        <td>4656 <a href="Economy_divine"></a> 1 <a href="Economy_mirror"></a></td><td></td><td>995</td></tr>
+        </tbody></table>
+        """
+        cn_html = us_html.replace("Divine Orb", "神圣石").replace(
+            "Exalted Orb", "崇高石"
+        ).replace("Mirror of Kalandra", "卡兰德的魔镜")
+
+        class FakeClient:
+            def __init__(self):
+                self.calls = 0
+
+            def get(self, _url):
+                self.calls += 1
+                text = us_html if self.calls == 1 else cn_html
+                return type("Response", (), {"text": text})()
+
+        raw, best = self.price_patch.build_poe2db_economy_prices(
+            FakeClient(),
+            "https://poe2db.tw/us/Economy",
+            "https://poe2db.tw/cn/Economy",
+        )
+
+        self.assertEqual(raw["matched_rows"], 3)
+        self.assertEqual(best["divine"].price_exalted, Decimal("393"))
+        self.assertEqual(best["exalted"].price_exalted, Decimal("1"))
+        self.assertEqual(best["poe2db:mirror"].en_name, "卡兰德的魔镜")
+        self.assertEqual(best["poe2db:mirror"].price_exalted, Decimal("1829808"))
+
+    def test_poecurrency_cn_can_use_localized_baseitems_without_english_pairs(self):
+        pairs = [
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Currency/CurrencyMirror",
+                "",
+                "卡兰德的魔镜",
+            )
+        ]
+        prices = {
+            "poe2db:mirror": self.price_patch.PriceObservation(
+                api_id="poe2db:mirror",
+                en_name="卡兰德的魔镜",
+                category="poe2db-economy",
+                price_exalted=Decimal("1830408"),
+                value_traded=Decimal("995"),
+                source_pair="Poe2DB Economy/Mirror of Kalandra",
+                display_price="4656.00D",
+            )
+        }
+
+        rows, missing = self.price_patch.match_cn_prices_to_base_items(prices, pairs)
+
+        self.assertEqual(missing, [])
+        self.assertEqual(rows[0]["metadata_path"], "Metadata/Items/Currency/CurrencyMirror")
+        self.assertEqual(rows[0]["price"], "4656.00D")
+
     def test_patch_scope_currency_keeps_clean_words_entry(self):
         with TemporaryDirectory() as tmp:
             out_dir = Path(tmp)

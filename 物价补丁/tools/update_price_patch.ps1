@@ -1612,6 +1612,8 @@ $PatchedEndgameMaps = Join-Path $OutDir "endgamemaps.patched.datc64"
 $ReportJson = Join-Path $OutDir "price_patch.report.json"
 $IslandRumourReportJson = Join-Path $OutDir "island_rumour_patch.report.json"
 $SummaryJson = Join-Path $OutDir "summary.json"
+$EnglishBaseItemsUnavailable = $false
+$EnglishWordsUnavailable = $false
 
 Write-Host "POE2 物价补丁更新器" -ForegroundColor Green
 Write-Host "游戏目录：$Poe2Dir"
@@ -1688,9 +1690,20 @@ if (-not $SkipExtract) {
         Write-Host "正在提取英文 BaseItemTypes..."
         & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.EnBaseItemsPath $EnBaseItems
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract English BaseItemTypes. Exit code: $LASTEXITCODE"
+            if ($IsChinaClient) {
+                $EnglishBaseItemsUnavailable = $true
+                if (Test-Path -LiteralPath $EnBaseItems -PathType Leaf) {
+                    Remove-Item -LiteralPath $EnBaseItems -Force
+                }
+                Write-Warning "国服 Bundles2 未包含英文 BaseItemTypes，将改用 Poe2DB Economy 做国际服价格参考。退出码：$LASTEXITCODE"
+            }
+            else {
+                throw "Failed to extract English BaseItemTypes. Exit code: $LASTEXITCODE"
+            }
         }
-        Write-Host "已提取到：$EnBaseItems"
+        else {
+            Write-Host "已提取到：$EnBaseItems"
+        }
 
         Write-Host "正在提取$DisplayLanguageName BaseItemTypes..."
         & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcBaseItemsPath $TcBaseItems
@@ -1715,9 +1728,20 @@ if (-not $SkipExtract) {
             Write-Host "正在提取英文 Words..."
             & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/words.datc64" $EnWords
             if ($LASTEXITCODE -ne 0) {
-                throw "Failed to extract English Words. Exit code: $LASTEXITCODE"
+                if ($IsChinaClient) {
+                    $EnglishWordsUnavailable = $true
+                    if (Test-Path -LiteralPath $EnWords -PathType Leaf) {
+                        Remove-Item -LiteralPath $EnWords -Force
+                    }
+                    Write-Warning "国服 Bundles2 未包含英文 Words，将跳过依赖英文 Words 的传奇英文兜底。退出码：$LASTEXITCODE"
+                }
+                else {
+                    throw "Failed to extract English Words. Exit code: $LASTEXITCODE"
+                }
             }
-            Write-Host "已提取到：$EnWords"
+            else {
+                Write-Host "已提取到：$EnWords"
+            }
 
             Write-Host "正在提取$DisplayLanguageName Words..."
             & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $TcWordsPath $TcWords
@@ -1747,7 +1771,19 @@ else {
     Write-Step "跳过提取，使用已有 BaseItemTypes"
 }
 
-Assert-File $EnBaseItems "English BaseItemTypes"
+if ($IsChinaClient -and -not (Test-Path -LiteralPath $EnBaseItems -PathType Leaf)) {
+    $EnglishBaseItemsUnavailable = $true
+}
+if (-not ($IsChinaClient -and $EnglishBaseItemsUnavailable)) {
+    Assert-File $EnBaseItems "English BaseItemTypes"
+}
+elseif (Test-Path -LiteralPath $EnBaseItems -PathType Leaf) {
+    Write-Host "已找到英文 BaseItemTypes 缓存，将继续使用本地英文表。" -ForegroundColor Yellow
+    $EnglishBaseItemsUnavailable = $false
+}
+else {
+    Write-Host "英文 BaseItemTypes 不可用：国服将使用 Poe2DB Economy 作为国际服参考源。" -ForegroundColor Yellow
+}
 Assert-File $TcBaseItems "$($InstallInfo.LanguageName) BaseItemTypes"
 if ($PatchIslandRumourHintsEnabled) {
     Assert-File $TcEndgameMaps "$($InstallInfo.LanguageName) EndgameMaps"
@@ -1870,10 +1906,18 @@ if (-not $NoPoe2dbFallback -and -not $IsChinaClient) {
     $BuildArgs += "--poe2db-fallback"
 }
 if ($IsChinaClient) {
+    $CnReferenceSource = if ($EnglishBaseItemsUnavailable) { "poe2db-economy" } else { "poe2scout" }
     $BuildArgs += @(
         "--price-source", "poecurrency-cn",
-        "--poecurrency-summary-url", "https://poecurrency.top/api/summary?version=2"
+        "--poecurrency-summary-url", "https://poecurrency.top/api/summary?version=2",
+        "--cn-reference-source", $CnReferenceSource
     )
+    if ($EnglishBaseItemsUnavailable) {
+        Write-Host "国服国际服参考源：Poe2DB Economy（英文 BaseItemTypes 不可用）" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "国服国际服参考源：POE2 Scout（本地英文 BaseItemTypes 可用）" -ForegroundColor Cyan
+    }
 }
 
 $BuildResult = Invoke-Poe2Python -Python $Python -ArgumentList $BuildArgs
