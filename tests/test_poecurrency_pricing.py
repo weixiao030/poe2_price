@@ -31,6 +31,18 @@ class PoecurrencyPricingTests(unittest.TestCase):
     def setUpClass(cls):
         cls.price_patch = load_price_module()
 
+    def minimal_price_map(self):
+        return {
+            "divine": self.price_patch.PriceObservation(
+                api_id="divine",
+                en_name="Divine Orb",
+                category="currency",
+                price_exalted=Decimal("100"),
+                value_traded=Decimal("0"),
+                source_pair="test",
+            )
+        }
+
     def test_latest_buy_price_wins_over_avg_price(self):
         price, field = self.price_patch.poecurrency_item_price(
             {
@@ -554,6 +566,100 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(best["poe2db:mirror"].en_name, "卡兰德的魔镜")
         self.assertEqual(best["poe2db:mirror"].price_exalted, Decimal("1829808"))
 
+    def test_poe2db_economy_prices_fetch_all_category_pages(self):
+        nav = """
+        <nav>
+        <a href="Economy_Currency">Currency</a>
+        <a href="Economy_Fragments">Fragments</a>
+        <a href="Economy_mirror">Mirror of Kalandra</a>
+        </nav>
+        """
+        us_currency_html = nav + """
+        <table><tbody>
+        <tr><td><a href="Economy_divine">Divine Orb</a><a href="Divine_Orb" class="border p-1">Wiki</a></td>
+        <td>9.93 <a href="Economy_chaos"></a> 1 <a href="Economy_divine"></a></td><td></td><td>4,913,645</td></tr>
+        <tr><td><a href="Economy_exalted">Exalted Orb</a><a href="Exalted_Orb" class="border p-1">Wiki</a></td>
+        <td>1 <a href="Economy_divine"></a> 393 <a href="Economy_exalted"></a></td><td></td><td>542,073,655</td></tr>
+        </tbody></table>
+        """
+        us_fragments_html = """
+        <table><tbody>
+        <tr><td><a href="Economy_ritual-audience">An Audience with the King</a><a href="Ritual_Audience" class="border p-1">Wiki</a></td>
+        <td>5 <a href="Economy_divine"></a> 1 <a href="Economy_ritual-audience"></a></td><td></td><td>10</td></tr>
+        </tbody></table>
+        """
+        cn_currency_html = us_currency_html.replace("Divine Orb", "CN Divine").replace(
+            "Exalted Orb", "CN Exalted"
+        )
+        cn_fragments_html = us_fragments_html.replace(
+            "An Audience with the King", "CN Audience"
+        )
+
+        class FakeClient:
+            def __init__(self):
+                self.responses = {
+                    "https://poe2db.tw/Economy": us_currency_html,
+                    "https://poe2db.tw/cn/Economy": cn_currency_html,
+                    "https://poe2db.tw/Economy_Fragments": us_fragments_html,
+                    "https://poe2db.tw/cn/Economy_Fragments": cn_fragments_html,
+                }
+                self.urls: list[str] = []
+
+            def get(self, url):
+                self.urls.append(url)
+                return type("Response", (), {"text": self.responses[url]})()
+
+        client = FakeClient()
+        raw, best = self.price_patch.build_poe2db_economy_prices(
+            client,
+            "https://poe2db.tw/Economy",
+            "https://poe2db.tw/cn/Economy",
+        )
+
+        self.assertEqual(raw["category_pages"], ["Economy_Currency", "Economy_Fragments"])
+        self.assertEqual(raw["us_rows"], 3)
+        self.assertEqual(raw["matched_rows"], 3)
+        self.assertIn("https://poe2db.tw/Economy_Fragments", client.urls)
+        self.assertIn("https://poe2db.tw/cn/Economy_Fragments", client.urls)
+        self.assertIn("poe2db:ritual-audience", best)
+        self.assertEqual(best["poe2db:ritual-audience"].en_name, "CN Audience")
+        self.assertEqual(best["poe2db:ritual-audience"].price_exalted, Decimal("1965"))
+
+    def test_parse_poe_ninja_currency_prices(self):
+        class FakeClient:
+            def get_json(self, url):
+                self.url = url
+                return {
+                    "core": {
+                        "items": [
+                            {"id": "divine", "name": "Divine Orb", "category": "Currency"},
+                            {"id": "exalted", "name": "Exalted Orb", "category": "Currency"},
+                        ],
+                        "rates": {"exalted": 400},
+                    },
+                    "lines": [
+                        {"id": "divine", "primaryValue": 1, "volumePrimaryValue": 100},
+                        {"id": "exalted", "primaryValue": 0.0025, "volumePrimaryValue": 100},
+                        {"id": "mirror", "primaryValue": 4500, "volumePrimaryValue": 2},
+                    ],
+                    "items": [
+                        {"id": "mirror", "name": "Mirror of Kalandra", "category": "Currency"}
+                    ],
+                }
+
+        raw, best = self.price_patch.build_poe_ninja_currency_prices(
+            FakeClient(),
+            "https://poe.ninja/poe2/economy/runesofaldur/currency",
+            "https://poe.ninja/poe2/api/economy/exchange/current/overview",
+            "Runes of Aldur",
+        )
+
+        self.assertEqual(raw["source"], "poe-ninja")
+        self.assertEqual(best["divine"].price_exalted, Decimal("400"))
+        self.assertEqual(best["exalted"].price_exalted, Decimal("1"))
+        self.assertEqual(best["mirror"].en_name, "Mirror of Kalandra")
+        self.assertEqual(best["mirror"].price_exalted, Decimal("1800000"))
+
     def test_poecurrency_cn_can_use_localized_baseitems_without_english_pairs(self):
         pairs = [
             self.price_patch.BaseItemPair(
@@ -598,7 +704,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
             with patch.object(self.price_patch, "load_base_item_pairs", return_value=[]), patch.object(
                 self.price_patch,
                 "build_scout_prices",
-                return_value=({"exchange_snapshot": {}}, {}, [], []),
+                return_value=({"exchange_snapshot": {}}, self.minimal_price_map(), [], []),
             ), patch.object(self.price_patch, "divine_price_exalted", return_value=Decimal("100")), patch.object(
                 self.price_patch, "apply_display_prices", return_value=None
             ), patch.object(
@@ -614,6 +720,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
                     [
                         "--patch-scope",
                         "currency",
+                        "--fallback-price-sources",
+                        "none",
                         "--out-dir",
                         str(out_dir),
                         "--output-zip",
@@ -661,7 +769,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
             with patch.object(self.price_patch, "load_base_item_pairs", return_value=[]), patch.object(
                 self.price_patch,
                 "build_scout_prices",
-                return_value=({"exchange_snapshot": {}}, {}, [], []),
+                return_value=({"exchange_snapshot": {}}, self.minimal_price_map(), [], []),
             ), patch.object(self.price_patch, "divine_price_exalted", return_value=Decimal("100")), patch.object(
                 self.price_patch, "apply_display_prices", return_value=None
             ), patch.object(
@@ -677,6 +785,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
                     [
                         "--patch-scope",
                         "uniques",
+                        "--fallback-price-sources",
+                        "none",
                         "--out-dir",
                         str(out_dir),
                         "--output-zip",
@@ -732,6 +842,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
                 rc = self.price_patch.main(
                     [
                         "--patch-scope",
+                        "none",
+                        "--fallback-price-sources",
                         "none",
                         "--out-dir",
                         str(out_dir),
@@ -807,6 +919,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
                             source,
                             "--patch-scope",
                             "currency",
+                            "--fallback-price-sources",
+                            "none",
                             "--no-build-patch",
                             "--no-uniques",
                             "--out-dir",
@@ -824,6 +938,162 @@ class PoecurrencyPricingTests(unittest.TestCase):
                 self.assertEqual(len(summary_json["cn_reference_warnings"]), 1)
                 self.assertIn(source, summary_json["cn_reference_warnings"][0])
                 self.assertTrue((out_dir / error_file).exists())
+
+    def test_international_primary_failure_uses_poe_ninja_fallback(self):
+        pairs = [
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Currency/CurrencyMirror",
+                "Mirror of Kalandra",
+                "卡兰德的魔镜",
+            )
+        ]
+        fallback_prices = {
+            "divine": self.price_patch.PriceObservation(
+                api_id="divine",
+                en_name="Divine Orb",
+                category="currency",
+                price_exalted=Decimal("400"),
+                value_traded=Decimal("0"),
+                source_pair="poe.ninja/core/rates",
+            ),
+            "exalted": self.price_patch.PriceObservation(
+                api_id="exalted",
+                en_name="Exalted Orb",
+                category="currency",
+                price_exalted=Decimal("1"),
+                value_traded=Decimal("0"),
+                source_pair="poe.ninja/core/rates",
+            ),
+            "mirror": self.price_patch.PriceObservation(
+                api_id="mirror",
+                en_name="Mirror of Kalandra",
+                category="currency",
+                price_exalted=Decimal("1800000"),
+                value_traded=Decimal("2"),
+                source_pair="poe.ninja/Mirror of Kalandra",
+            ),
+        }
+
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            with patch.object(self.price_patch, "load_base_item_pairs", return_value=pairs), patch.object(
+                self.price_patch, "build_scout_prices", side_effect=RuntimeError("blocked")
+            ), patch.object(
+                self.price_patch,
+                "build_poe_ninja_currency_prices",
+                return_value=({"source": "poe-ninja"}, fallback_prices),
+            ):
+                rc = self.price_patch.main(
+                    [
+                        "--patch-scope",
+                        "currency",
+                        "--fallback-price-sources",
+                        "poe-ninja",
+                        "--no-build-patch",
+                        "--no-uniques",
+                        "--out-dir",
+                        str(out_dir),
+                        "--en-baseitems",
+                        str(out_dir / "en.datc64"),
+                        "--tc-baseitems",
+                        str(out_dir / "tc.datc64"),
+                    ]
+                )
+
+            self.assertEqual(rc, 0)
+            summary_json = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary_json["primary_source_status"], "failed")
+            self.assertEqual(summary_json["fallback_status"]["poe-ninja"], "ok")
+            self.assertEqual(summary_json["fallback_matched_items"], 1)
+            rows = list((out_dir / "matched_prices_detail.csv").read_text(encoding="utf-8-sig").splitlines())
+            self.assertTrue(any("卡兰德的魔镜" in row and "poe.ninja" in row for row in rows))
+
+    def test_cn_reference_failure_uses_next_fallback_source(self):
+        summary = [
+            {
+                "category_label": "通货仓库",
+                "items": [
+                    {"item_name": "神圣石", "latest_buy1": 300, "currency_unit": "e"},
+                    {"item_name": "卡兰德的魔镜", "latest_buy1": 1, "currency_unit": "e"},
+                ],
+            }
+        ]
+        pairs = [
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Currency/CurrencyMirror",
+                "Mirror of Kalandra",
+                "卡兰德的魔镜",
+            )
+        ]
+        poe_ninja_prices = {
+            "divine": self.price_patch.PriceObservation(
+                api_id="divine",
+                en_name="Divine Orb",
+                category="currency",
+                price_exalted=Decimal("400"),
+                value_traded=Decimal("0"),
+                source_pair="poe.ninja/core/rates",
+            ),
+            "exalted": self.price_patch.PriceObservation(
+                api_id="exalted",
+                en_name="Exalted Orb",
+                category="currency",
+                price_exalted=Decimal("1"),
+                value_traded=Decimal("0"),
+                source_pair="poe.ninja/core/rates",
+            ),
+            "mirror": self.price_patch.PriceObservation(
+                api_id="mirror",
+                en_name="Mirror of Kalandra",
+                category="currency",
+                price_exalted=Decimal("1800000"),
+                value_traded=Decimal("2"),
+                source_pair="poe.ninja/Mirror of Kalandra",
+            ),
+        }
+
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            tc_baseitems = out_dir / "tc.datc64"
+            en_baseitems = out_dir / "en.datc64"
+            en_baseitems.write_bytes(b"baseitems")
+            tc_baseitems.write_bytes(b"baseitems")
+            with patch.object(self.price_patch, "load_base_item_pairs", return_value=pairs), patch.object(
+                self.price_patch, "fetch_poecurrency_summary", return_value=summary
+            ), patch.object(
+                self.price_patch, "build_scout_prices", side_effect=RuntimeError("blocked")
+            ), patch.object(
+                self.price_patch,
+                "build_poe_ninja_currency_prices",
+                return_value=({"source": "poe-ninja"}, poe_ninja_prices),
+            ):
+                rc = self.price_patch.main(
+                    [
+                        "--price-source",
+                        "poecurrency-cn",
+                        "--cn-reference-source",
+                        "poe2scout",
+                        "--fallback-price-sources",
+                        "poe-ninja",
+                        "--patch-scope",
+                        "currency",
+                        "--no-build-patch",
+                        "--no-uniques",
+                        "--out-dir",
+                        str(out_dir),
+                        "--en-baseitems",
+                        str(en_baseitems),
+                        "--tc-baseitems",
+                        str(tc_baseitems),
+                    ]
+                )
+
+            self.assertEqual(rc, 0)
+            summary_json = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary_json["cn_reference_status"], "degraded")
+            self.assertEqual(summary_json["fallback_status"]["poe2scout"], "failed")
+            self.assertEqual(summary_json["fallback_status"]["poe-ninja"], "ok")
+            self.assertEqual(summary_json["high_value_reference_items"], 1)
 
 
 if __name__ == "__main__":
