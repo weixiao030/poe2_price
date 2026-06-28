@@ -1986,6 +1986,31 @@ def add_unique_observations(
         )
 
 
+def price_observation_merge_key(obs: PriceObservation) -> str:
+    if obs.api_id in {"divine", "exalted"}:
+        return obs.api_id
+    prefix = "unique" if obs.api_id.startswith("unique:") else "item"
+    normalized = normalize_name(obs.en_name)
+    return f"{prefix}:{normalized or obs.api_id}"
+
+
+def merge_price_source_results(
+    results: list[PriceSourceResult],
+) -> dict[str, PriceObservation]:
+    merged_by_key: dict[str, PriceObservation] = {}
+    for result in results:
+        for obs in (result.prices or {}).values():
+            key = price_observation_merge_key(obs)
+            if key not in merged_by_key:
+                merged_by_key[key] = obs
+
+    merged: dict[str, PriceObservation] = {}
+    for obs in merged_by_key.values():
+        if obs.api_id not in merged:
+            merged[obs.api_id] = obs
+    return merged
+
+
 def divine_price_exalted(best: dict[str, PriceObservation]) -> Decimal:
     obs = best.get("divine")
     if obs and obs.price_exalted > 0:
@@ -2496,6 +2521,7 @@ def main(argv: list[str]) -> int:
     fallback_divine_by_source: dict[str, Decimal] = {}
     primary_source_status = "ok"
     primary_source_warning = ""
+    merged_price_sources: set[str] = set()
     best: dict[str, PriceObservation] = {}
     rows: list[dict[str, str]] = []
     missing: list[dict[str, str]] = []
@@ -2571,20 +2597,20 @@ def main(argv: list[str]) -> int:
         )
         primary_source_status = primary_result.status
         primary_source_warning = primary_result.warning
+        preferred_results: list[PriceSourceResult] = []
         if primary_result.status == "ok" and primary_result.prices:
-            best = primary_result.prices
+            preferred_results.append(primary_result)
             unique_categories = primary_result.unique_categories or []
             unique_items = primary_result.unique_items or []
             scout = primary_result.raw or {}
             source_snapshot_epoch = (scout.get("exchange_snapshot") or {}).get("Epoch")
-            source_base_currency = (scout.get("exchange_snapshot") or {}).get(
-                "BaseCurrencyText"
-            )
-            source_item_count = len(best)
         elif primary_result.warning:
             fallback_warnings.append(primary_result.warning)
 
         for source in fallback_price_sources:
+            if source == "poe2db-economy" and preferred_results:
+                continue
+
             result = try_fetch_price_source(
                 source,
                 client,
@@ -2597,6 +2623,16 @@ def main(argv: list[str]) -> int:
                 fallback_warnings.append(result.warning)
             if result.status == "ok" and result.prices:
                 fallback_results.append(result)
+                if result.source == "poe-ninja":
+                    preferred_results.append(result)
+
+        if preferred_results:
+            best = merge_price_source_results(preferred_results)
+            source_base_currency = "+".join(
+                price_source_label(result.source) for result in preferred_results
+            )
+            source_item_count = len(best)
+            merged_price_sources = {result.source for result in preferred_results}
 
     if fetch_prices:
         if best:
@@ -2614,6 +2650,8 @@ def main(argv: list[str]) -> int:
                 )
 
         for result in fallback_results:
+            if result.source in merged_price_sources:
+                continue
             if not result.prices:
                 continue
             try:

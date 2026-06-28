@@ -1092,10 +1092,134 @@ class PoecurrencyPricingTests(unittest.TestCase):
             self.assertEqual(rc, 0)
             summary_json = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary_json["primary_source_status"], "failed")
+            self.assertEqual(summary_json["base_currency"], "poe.ninja")
             self.assertEqual(summary_json["fallback_status"]["poe-ninja"], "ok")
-            self.assertEqual(summary_json["fallback_matched_items"], 1)
+            self.assertEqual(summary_json["matched_items"], 1)
+            self.assertEqual(summary_json["fallback_matched_items"], 0)
             rows = list((out_dir / "matched_prices_detail.csv").read_text(encoding="utf-8-sig").splitlines())
             self.assertTrue(any("卡兰德的魔镜" in row and "poe.ninja" in row for row in rows))
+
+    def test_international_primary_and_poe_ninja_prices_are_merged_before_matching(self):
+        pairs = [
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Currency/CurrencyMirror",
+                "Mirror of Kalandra",
+                "Mirror CN",
+            ),
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Currency/AdeptRune",
+                "Adept Rune",
+                "Adept Rune CN",
+            ),
+        ]
+        scout_prices = {
+            "divine": self.price_patch.PriceObservation(
+                api_id="divine",
+                en_name="Divine Orb",
+                category="currency",
+                price_exalted=Decimal("400"),
+                value_traded=Decimal("0"),
+                source_pair="poe2scout/divine",
+            ),
+            "exalted": self.price_patch.PriceObservation(
+                api_id="exalted",
+                en_name="Exalted Orb",
+                category="currency",
+                price_exalted=Decimal("1"),
+                value_traded=Decimal("0"),
+                source_pair="poe2scout/exalted",
+            ),
+            "mirror": self.price_patch.PriceObservation(
+                api_id="mirror",
+                en_name="Mirror of Kalandra",
+                category="currency",
+                price_exalted=Decimal("1600000"),
+                value_traded=Decimal("100"),
+                source_pair="poe2scout/Mirror of Kalandra",
+            ),
+        }
+        poe_ninja_prices = {
+            "divine": self.price_patch.PriceObservation(
+                api_id="divine",
+                en_name="Divine Orb",
+                category="currency",
+                price_exalted=Decimal("400"),
+                value_traded=Decimal("0"),
+                source_pair="poe.ninja/core/rates",
+            ),
+            "exalted": self.price_patch.PriceObservation(
+                api_id="exalted",
+                en_name="Exalted Orb",
+                category="currency",
+                price_exalted=Decimal("1"),
+                value_traded=Decimal("0"),
+                source_pair="poe.ninja/core/rates",
+            ),
+            "mirror-poe-ninja": self.price_patch.PriceObservation(
+                api_id="mirror-poe-ninja",
+                en_name="Mirror of Kalandra",
+                category="currency",
+                price_exalted=Decimal("1800000"),
+                value_traded=Decimal("2"),
+                source_pair="poe.ninja/Mirror of Kalandra",
+            ),
+            "adept-rune": self.price_patch.PriceObservation(
+                api_id="adept-rune",
+                en_name="Adept Rune",
+                category="Runes",
+                price_exalted=Decimal("4"),
+                value_traded=Decimal("1"),
+                source_pair="poe.ninja/Runes/Adept Rune",
+            ),
+        }
+
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            with patch.object(self.price_patch, "load_base_item_pairs", return_value=pairs), patch.object(
+                self.price_patch,
+                "build_scout_prices",
+                return_value=(
+                    {"exchange_snapshot": {"Epoch": 123, "BaseCurrencyText": "Exalted Orb"}},
+                    scout_prices,
+                    [],
+                    [],
+                ),
+            ), patch.object(
+                self.price_patch,
+                "build_poe_ninja_currency_prices",
+                return_value=({"source": "poe-ninja"}, poe_ninja_prices),
+            ), patch.object(
+                self.price_patch,
+                "build_poe2db_economy_prices",
+                side_effect=AssertionError("poe2db should not be fetched"),
+            ):
+                rc = self.price_patch.main(
+                    [
+                        "--patch-scope",
+                        "currency",
+                        "--fallback-price-sources",
+                        "poe-ninja,poe2db-economy",
+                        "--no-build-patch",
+                        "--no-uniques",
+                        "--out-dir",
+                        str(out_dir),
+                        "--en-baseitems",
+                        str(out_dir / "en.datc64"),
+                        "--tc-baseitems",
+                        str(out_dir / "tc.datc64"),
+                    ]
+                )
+
+            self.assertEqual(rc, 0)
+            summary_json = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary_json["base_currency"], "poe2scout+poe.ninja")
+            self.assertEqual(summary_json["price_items"], 4)
+            self.assertEqual(summary_json["fallback_matched_items"], 0)
+            rows = (out_dir / "matched_prices_detail.csv").read_text(encoding="utf-8-sig")
+            self.assertIn("Adept Rune CN", rows)
+            self.assertIn("poe.ninja/Runes/Adept Rune", rows)
+            self.assertIn("poe2scout/Mirror of Kalandra", rows)
+            self.assertNotIn("poe.ninja/Mirror of Kalandra", rows)
 
     def test_cn_reference_failure_uses_next_fallback_source(self):
         summary = [
