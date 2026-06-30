@@ -17,8 +17,10 @@ PAYLOAD_FILES = [
     "poe2_name_price_patch.py",
     "poe2_island_rumour_patch.py",
     "build_poe2scout_price_patch.py",
+    "GGPKExtractor/vcruntime140.dll",
     "BundleExtractor/BundleExtractor.exe",
     "BundleExtractor/oo2core.dll",
+    "BundleExtractor/vcruntime140.dll",
 ]
 
 

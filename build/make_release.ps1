@@ -592,6 +592,8 @@ function Publish-BundleExtractor {
     Copy-Item -LiteralPath (Join-Path $BundleExtractorPublishDir "BundleExtractor.exe") -Destination (Join-Path $BundleExtractorDir "BundleExtractor.exe") -Force
     Assert-File -Path (Join-Path $SpecialToolDir "oo2core.dll") -Name "oo2core.dll"
     Copy-Item -LiteralPath (Join-Path $SpecialToolDir "oo2core.dll") -Destination (Join-Path $BundleExtractorDir "oo2core.dll") -Force
+    Assert-File -Path (Join-Path $SpecialToolDir "vcruntime140.dll") -Name "vcruntime140.dll"
+    Copy-Item -LiteralPath (Join-Path $SpecialToolDir "vcruntime140.dll") -Destination (Join-Path $BundleExtractorDir "vcruntime140.dll") -Force
 }
 
 function Build-ReleaseFolder {
@@ -644,8 +646,10 @@ function Test-ReleaseFolder {
         "tools\python\_ssl.pyd",
         "tools\python\python.exe",
         "tools\GGPKExtractor\GGPKExtractor.dll",
+        "tools\GGPKExtractor\vcruntime140.dll",
         "tools\BundleExtractor\BundleExtractor.exe",
         "tools\BundleExtractor\oo2core.dll",
+        "tools\BundleExtractor\vcruntime140.dll",
         "一键安装特殊补丁工具\PatchBundledGGPK3.dll",
         "一键安装特殊补丁工具\PatchBundle3.dll",
         "一键安装特殊补丁工具\PatchBundle3.runtimeconfig.json"

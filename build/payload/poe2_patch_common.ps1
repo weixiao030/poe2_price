@@ -49,6 +49,24 @@
     }
 }
 
+function Get-GgpkExtractorFailureSuggestions {
+    return @(
+        "请确认工具目录里的 vcruntime140.dll 没有被杀毒软件误删。",
+        "如果系统还没安装 Microsoft Visual C++ 2015-2022 x64 运行库，请先安装或修复后再重试。",
+        "如果仍然失败，把下方日志路径里的内容一起发给作者排查。"
+    )
+}
+
+function Test-GgpkExtractorMissingRuntimeDependency {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $false
+    }
+
+    return ($Text -match 'DllNotFoundException|oo2core|VCRUNTIME140|api-ms-win-crt')
+}
+
 function Get-Poe2FixedRestorePatchZipName {
     param([Parameter(Mandatory = $true)]$InstallInfo)
 

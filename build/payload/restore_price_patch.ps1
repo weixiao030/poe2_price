@@ -598,12 +598,22 @@ function Extract-CurrentGgpkBaseItemsForRestoreCheck {
         $ExtractorResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($Extractor, $ContentGgpk, $TempDir) -Quiet
         $ExtractorResult.Text | Out-File -LiteralPath $ExtractLog -Encoding UTF8
         $ExtractorExitCode = $ExtractorResult.ExitCode
+        $ExtractorText = $ExtractorResult.Text
     }
     else {
         & $Extractor $ContentGgpk $TempDir *> $ExtractLog
         $ExtractorExitCode = $LASTEXITCODE
+        $ExtractorText = if (Test-Path -LiteralPath $ExtractLog -PathType Leaf) {
+            Get-Content -LiteralPath $ExtractLog -Raw -Encoding UTF8
+        }
+        else {
+            ""
+        }
     }
     if ($ExtractorExitCode -ne 0) {
+        if (Test-GgpkExtractorMissingRuntimeDependency -Text $ExtractorText) {
+            throw "GGPKExtractor missing VC runtime dependency. Exit code: $ExtractorExitCode. Log: $ExtractLog"
+        }
         throw "Failed to extract current BaseItemTypes for compatibility check. Log: $ExtractLog"
     }
 
@@ -810,6 +820,9 @@ if ($GameMode -eq "GGPK") {
     try {
         $InstallerResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $InstallRestoreZip) -InputText ""
         if ($InstallerResult.ExitCode -ne 0 -or $InstallerResult.Text -match 'Exception|Unhandled|錯誤|错误|失敗|失败') {
+            if (Test-GgpkExtractorMissingRuntimeDependency -Text $InstallerResult.Text) {
+                throw "GGPKExtractor missing VC runtime dependency. Exit code: $($InstallerResult.ExitCode). Log: restore-install"
+            }
             throw "Restore installer failed. Exit code: $($InstallerResult.ExitCode)"
         }
     }
@@ -858,6 +871,9 @@ else {
     $BundlePatchOutput | ForEach-Object { Write-Host $_ }
     $BundlePatchText = ($BundlePatchOutput | Out-String)
     if ($BundlePatchExitCode -ne 0 -or $BundlePatchText -match 'Exception|Unhandled|FileNotFound|Could not load|Error:|錯誤|错误|失敗|失败') {
+        if (Test-GgpkExtractorMissingRuntimeDependency -Text $BundlePatchText) {
+            throw "GGPKExtractor missing VC runtime dependency. Exit code: $BundlePatchExitCode. Log: restore-install"
+        }
         throw "PatchBundle3 restore failed. Exit code: $BundlePatchExitCode"
     }
 

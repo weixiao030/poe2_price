@@ -25,6 +25,8 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
+$script:PatchVersion = "v0.4.7"
+$script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 
 if ([string]::IsNullOrWhiteSpace($Poe2Dir)) {
     $Poe2Dir = (Split-Path -Parent $RepoRoot)
@@ -58,7 +60,7 @@ function Show-PatchScopeDialog {
     Add-Type -AssemblyName System.Drawing
 
     $Form = New-Object System.Windows.Forms.Form
-    $Form.Text = "POE2 Price Patch"
+    $Form.Text = $script:PatchWindowTitle
     $Form.StartPosition = "CenterScreen"
     $Form.FormBorderStyle = "FixedDialog"
     $Form.MaximizeBox = $false
@@ -69,7 +71,7 @@ function Show-PatchScopeDialog {
     $Form.ClientSize = New-Object System.Drawing.Size(610, 340)
 
     $Title = New-Object System.Windows.Forms.Label
-    $Title.Text = (New-Utf16Text @(0x9009, 0x62E9, 0x672C, 0x6B21, 0x8981, 0x5199, 0x5165, 0x7684, 0x8865, 0x4E01, 0x5185, 0x5BB9))
+    $Title.Text = (New-Utf16Text @(0x9009, 0x62E9, 0x672C, 0x6B21, 0x8981, 0x5199, 0x5165, 0x7684, 0x8865, 0x4E01, 0x5185, 0x5BB9)) + " $script:PatchVersion"
     $Title.AutoSize = $true
     $Title.Location = New-Object System.Drawing.Point(24, 22)
     $Title.Font = New-Object System.Drawing.Font($Form.Font.FontFamily, 11, [System.Drawing.FontStyle]::Bold)
@@ -174,7 +176,7 @@ function Show-PatchScopeDialog {
             if (-not ($CurrencyCheck.Checked -or $UniqueCheck.Checked -or $IslandRumourCheck.Checked)) {
                 [System.Windows.Forms.MessageBox]::Show(
                     (New-Utf16Text @(0x8BF7, 0x81F3, 0x5C11, 0x9009, 0x62E9, 0x4E00, 0x4E2A, 0x8865, 0x4E01, 0x5185, 0x5BB9)),
-                    "POE2 Price Patch"
+                    $script:PatchWindowTitle
                 ) | Out-Null
                 return
             }
@@ -298,6 +300,8 @@ function Get-FriendlyFileName {
         "BaseItemTypes" { return "$Name.datc64" }
         "^Content\.ggpk$" { return "游戏数据文件 Content.ggpk" }
         "^GGPKExtractor$" { return "GGPK 提取工具" }
+        "^vcruntime140\.dll$" { return "VC++ 运行库 vcruntime140.dll" }
+        "^vcruntime140_1\.dll$" { return "VC++ 运行库 vcruntime140_1.dll" }
         "^PatchBundledGGPK3\.dll$" { return "GGPK 安装工具 PatchBundledGGPK3.dll" }
         "^PatchBundledGGPK3\.runtimeconfig\.json$" { return "GGPK 安装工具运行配置" }
         "^Bundles2 _\.index\.bin$" { return "Bundles2 索引文件 _.index.bin" }
@@ -390,6 +394,16 @@ function Convert-ErrorMessage {
             -Reason "从 Content.ggpk 提取游戏数据失败。" `
             -Suggestions (Get-BaseItemsFailureSuggestions) `
             -Details @("GGPK 提取工具退出码：$($Matches[1])")
+    }
+
+    if ($Message -match '^GGPKExtractor missing VC runtime dependency\. Exit code: (.+?)\. Log: (.+)$') {
+        return New-FailureMessage `
+            -Reason "GGPK 提取工具启动失败，缺少 VC++ 运行库依赖。" `
+            -Suggestions (Get-GgpkExtractorFailureSuggestions) `
+            -Details @(
+                "GGPK 提取工具退出码：$($Matches[1])",
+                "提取日志：$($Matches[2])"
+            )
     }
 
     if ($Message -match '^Failed to extract (.+?)\. Exit code: (.+)$') {
@@ -1648,7 +1662,7 @@ $PriceBuildLog = Join-Path $OutDir "price_patch_build.log"
 $EnglishBaseItemsUnavailable = $false
 $EnglishWordsUnavailable = $false
 
-Write-Host "POE2 物价补丁更新器" -ForegroundColor Green
+Write-Host "POE2 物价补丁更新器 $script:PatchVersion" -ForegroundColor Green
 Write-Host "游戏目录：$Poe2Dir"
 Write-Host "补丁目录：$RepoRoot"
 Write-Host "检测结果：$($InstallInfo.DisplayName)" -ForegroundColor Cyan
@@ -1707,6 +1721,9 @@ if (-not $SkipExtract) {
                 }
             }
             if ($ExtractorExitCode -ne 0 -or (Test-ToolOutputFailure -Text $ExtractorText -ExtraNeedles @("Fatal:"))) {
+                if (Test-GgpkExtractorMissingRuntimeDependency -Text $ExtractorText) {
+                    throw "GGPKExtractor missing VC runtime dependency. Exit code: $ExtractorExitCode. Log: $ExtractLog"
+                }
                 throw "GGPKExtractor failed. Exit code: $ExtractorExitCode. Log: $ExtractLog"
             }
             $RequiredExtractedFiles = @($EnBaseItems, $TcBaseItems) | Select-Object -Unique
