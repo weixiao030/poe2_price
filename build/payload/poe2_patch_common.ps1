@@ -166,8 +166,44 @@ function Test-Poe2ChinaClient {
     return ($Score -ge 2)
 }
 
+function Get-Poe2LanguageDisplayName {
+    param([string]$Name)
+
+    switch ($Name) {
+        "English" { return "English" }
+        "Traditional Chinese" { return "繁体中文" }
+        "Simplified Chinese" { return "简体中文" }
+        default { return $Name }
+    }
+}
+
+function Get-Poe2DefaultLanguageInfo {
+    param(
+        [string]$LanguageCode = "zh-TW",
+        [Parameter(Mandatory = $true)][string]$ReasonPrefix
+    )
+
+    if ([string]::IsNullOrWhiteSpace($LanguageCode)) {
+        $LanguageCode = "zh-TW"
+    }
+
+    $Fallback = Get-Poe2LanguageInfoFromCode -LanguageCode $LanguageCode
+    $DisplayName = Get-Poe2LanguageDisplayName $Fallback.Name
+
+    return [pscustomobject]@{
+        Code          = $Fallback.Code
+        Name          = $Fallback.Name
+        Path          = $Fallback.Path
+        Defaulted     = $true
+        DefaultReason = "$ReasonPrefix，已回退到 $DisplayName。可通过 POE2_PATCH_LANGUAGE 手动指定语言。"
+    }
+}
+
 function Get-Poe2LanguageInfoFromCode {
-    param([string]$LanguageCode)
+    param(
+        [string]$LanguageCode,
+        [string]$DefaultLanguageCode = "zh-TW"
+    )
 
     $CodeText = ""
     if (-not [string]::IsNullOrWhiteSpace($LanguageCode)) {
@@ -176,13 +212,7 @@ function Get-Poe2LanguageInfoFromCode {
     $Code = $CodeText.ToLowerInvariant().Replace("_", "-")
 
     if ([string]::IsNullOrWhiteSpace($CodeText)) {
-        return [pscustomobject]@{
-            Code          = "en"
-            Name          = "English"
-            Path          = "data/balance/baseitemtypes.datc64"
-            Defaulted     = $true
-            DefaultReason = "未读取到 POE2 语言配置，已回退到 English。可通过 POE2_PATCH_LANGUAGE 手动指定语言。"
-        }
+        return Get-Poe2DefaultLanguageInfo -LanguageCode $DefaultLanguageCode -ReasonPrefix "未读取到 POE2 语言配置"
     }
 
     if ($Code -in @("en", "en-us", "en-gb", "english")) {
@@ -263,13 +293,7 @@ function Get-Poe2LanguageInfoFromCode {
         }
     }
 
-    return [pscustomobject]@{
-        Code          = "en"
-        Name          = "English"
-        Path          = "data/balance/baseitemtypes.datc64"
-        Defaulted     = $true
-        DefaultReason = "无法识别 POE2 语言代码 '$CodeText'，已回退到 English。可通过 POE2_PATCH_LANGUAGE 手动指定语言。"
-    }
+    return Get-Poe2DefaultLanguageInfo -LanguageCode $DefaultLanguageCode -ReasonPrefix "无法识别 POE2 语言代码 '$CodeText'"
 }
 
 function Get-Poe2ConfigLanguage {
@@ -358,7 +382,8 @@ function Get-Poe2InstallInfo {
     $Mode = Get-Poe2GameMode -Poe2Dir $Poe2Dir
     $IsChina = Test-Poe2ChinaClient -Poe2Dir $Poe2Dir
     $ConfigLanguage = Get-Poe2ConfigLanguage -Poe2Dir $Poe2Dir
-    $LanguageInfo = Get-Poe2LanguageInfoFromCode -LanguageCode $ConfigLanguage
+    $DefaultLanguageCode = if ($IsChina) { "zh-CN" } else { "zh-TW" }
+    $LanguageInfo = Get-Poe2LanguageInfoFromCode -LanguageCode $ConfigLanguage -DefaultLanguageCode $DefaultLanguageCode
     $LanguagePath = $LanguageInfo.Path
     $LanguageName = $LanguageInfo.Name
     $LanguageDefaulted = [bool]$LanguageInfo.Defaulted
