@@ -1,0 +1,241 @@
+{
+  "contract_version": 1,
+  "captured_at": "2026-07-10",
+  "description": "Compact live-source category and field contract; contains no prices or item values.",
+  "sources": {
+    "poe2scout": {
+      "categories": [
+        "core:exchange_snapshot",
+        "core:reference_currencies",
+        "core:snapshot_pairs",
+        "accessory",
+        "armour",
+        "flask",
+        "jewel",
+        "map",
+        "weapon",
+        "sanctum"
+      ],
+      "field_sets": {
+        "exchange_snapshot": [
+          "BaseCurrencyApiId",
+          "BaseCurrencyText",
+          "Epoch",
+          "MarketCap",
+          "Volume"
+        ],
+        "reference_currency": [
+          "ApiId",
+          "IconUrl",
+          "RelativePrice",
+          "Text"
+        ],
+        "snapshot_pair": [
+          "BaseCurrencyApiId",
+          "BaseCurrencyText",
+          "CurrencyExchangeSnapshotId",
+          "CurrencyExchangeSnapshotPairId",
+          "CurrencyOne",
+          "CurrencyOneData",
+          "CurrencyTwo",
+          "CurrencyTwoData",
+          "Volume"
+        ],
+        "unique_category": [
+          "ApiId",
+          "Icon",
+          "ItemCategoryId",
+          "Label"
+        ],
+        "unique_item": [
+          "CategoryApiId",
+          "CurrentPrice",
+          "CurrentQuantity",
+          "IconUrl",
+          "IsChanceable",
+          "ItemId",
+          "ItemMetadata",
+          "Name",
+          "PriceLogs",
+          "Text",
+          "Type",
+          "UniqueItemId"
+        ]
+      }
+    },
+    "poe.ninja": {
+      "categories": [
+        "Currency",
+        "Fragments",
+        "Abyss",
+        "UncutGems",
+        "LineageSupportGems",
+        "Essences",
+        "SoulCores",
+        "Idols",
+        "Runes",
+        "Ritual",
+        "Expedition",
+        "Delirium",
+        "Breach",
+        "Verisium",
+        "UniqueWeapons",
+        "UniqueArmours",
+        "UniqueAccessories",
+        "UniqueFlasks",
+        "UniqueCharms",
+        "UniqueJewels",
+        "UniqueSanctumRelics",
+        "UniqueTablets",
+        "PrecursorTablets"
+      ],
+      "field_sets": {
+        "core": [
+          "items",
+          "primary",
+          "rates",
+          "secondary"
+        ],
+        "items": [
+          "category",
+          "detailsId",
+          "id",
+          "image",
+          "name"
+        ],
+        "lines": [
+          "baseType",
+          "category",
+          "corrupted",
+          "detailsId",
+          "explicitModifiers",
+          "flavourText",
+          "grantedSkillModifiers",
+          "icon",
+          "id",
+          "implicitModifiers",
+          "itemId",
+          "levelRequired",
+          "limitedTo",
+          "listingCount",
+          "maxVolumeCurrency",
+          "maxVolumeRate",
+          "name",
+          "primaryValue",
+          "propertyModifiers",
+          "radius",
+          "requirementModifiers",
+          "sparkLine",
+          "sparkline",
+          "utilityModifiers",
+          "variant",
+          "volumePrimaryValue"
+        ],
+        "root": [
+          "core",
+          "items",
+          "lines"
+        ]
+      }
+    },
+    "poecurrency.top": {
+      "categories": [
+        "通货仓库",
+        "催化剂",
+        "先祖秘藏",
+        "先驱徽记",
+        "凝视",
+        "合金通货",
+        "圣典",
+        "星辉矿石",
+        "梦魇拟像",
+        "液化情感",
+        "深渊通货",
+        "渡鸦之触",
+        "溶剂",
+        "灵核",
+        "神庙通货",
+        "祭坛通货",
+        "秘术溶剂",
+        "符文",
+        "精华",
+        "血脉辅助宝石",
+        "裂隙通货",
+        "雕像",
+        "预兆"
+      ],
+      "field_sets": {
+        "category": [
+          "category_label",
+          "items"
+        ],
+        "item": [
+          "anomaly_count",
+          "buy_avg",
+          "buy_avg_ratio",
+          "buy_avg_yesterday",
+          "currency_unit",
+          "engname",
+          "error",
+          "error_info",
+          "item_name",
+          "latest_buy1",
+          "latest_datetime",
+          "latest_sell1",
+          "prev_buy1",
+          "prev_buy1_datetime",
+          "sell_avg",
+          "sell_avg_ratio",
+          "sell_avg_yesterday"
+        ]
+      }
+    },
+    "poe2db": {
+      "categories": [
+        "Economy_Currency",
+        "Economy_Fragments",
+        "Economy_Ritual",
+        "Economy_Essences",
+        "Economy_Breach",
+        "Economy_Delirium",
+        "Economy_Expedition",
+        "Economy_Runes",
+        "Economy_Soul_Cores",
+        "Economy_Idols",
+        "Economy_Uncut_Gems",
+        "Economy_Abyss",
+        "Economy_Gems",
+        "Economy_Atziris_Temple"
+      ],
+      "field_sets": {
+        "category_stat": [
+          "cn_rows",
+          "cn_url",
+          "page",
+          "status",
+          "us_rows",
+          "us_url"
+        ],
+        "summary": [
+          "category_count",
+          "category_page_stats",
+          "category_pages",
+          "cn_rows",
+          "cn_url",
+          "discovered_categories",
+          "divine_price_exalted",
+          "enabled_categories",
+          "failed_categories",
+          "health_state",
+          "healthy_categories",
+          "matched_rows",
+          "source",
+          "status",
+          "us_rows",
+          "us_url",
+          "warning"
+        ]
+      }
+    }
+  }
+}

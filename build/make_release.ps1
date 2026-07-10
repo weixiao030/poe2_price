@@ -498,6 +498,17 @@ function Build-Payload {
         Copy-Item -LiteralPath $Source -Destination (Join-Path $PayloadDir $FileName) -Force
     }
 
+    # Price-source adapters are imported by build_poe2scout_price_patch.py at runtime.
+    # Copy Python sources explicitly so local __pycache__ files never enter a release.
+    $SourcePriceSourcesDir = Join-Path $SourceToolsDir "price_sources"
+    Assert-Directory -Path $SourcePriceSourcesDir -Name "price_sources"
+    foreach ($Source in @(Get-ChildItem -LiteralPath $SourcePriceSourcesDir -Recurse -File -Filter "*.py")) {
+        $Relative = $Source.FullName.Substring($SourcePriceSourcesDir.Length).TrimStart('\', '/')
+        $Destination = Join-Path $PayloadDir (Join-Path "price_sources" $Relative)
+        New-DirectorySafe -Path (Split-Path -Parent $Destination) -RootPath $Root | Out-Null
+        Copy-Item -LiteralPath $Source.FullName -Destination $Destination -Force
+    }
+
     # Fix #10: include Bundles2 extractor in the launcher payload fallback.
     $PayloadBundleExtractorDir = Join-Path $PayloadDir "BundleExtractor"
     New-DirectorySafe -Path $PayloadBundleExtractorDir -RootPath $Root | Out-Null

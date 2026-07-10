@@ -14,19 +14,15 @@ import csv
 import html
 import json
 import math
-import queue
 import re
 import struct
 import subprocess
 import sys
-import threading
-import time
-import urllib.error
 import urllib.parse
-import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -37,15 +33,29 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from price_sources.league import resolve_current_leagues
+from price_sources.health import (
+    evaluate_source_health,
+    failed_source_health,
+    skipped_source_health,
+)
+from price_sources.http_client import (
+    DEFAULT_REQUEST_TIME_BUDGET,
+    HTTP_READ_CHUNK_SIZE,
+    MAX_HTTP_RESPONSE_BYTES,
+    HttpResponse,
+    RequestDeadlineExceeded,
+    RetryingRequests,
+    compact_text,
+)
+from price_sources.models import BaseItemPair, PriceObservation, PriceSourceResult
+
 def progress(message: str) -> None:
     print(f"[进度] {message}", flush=True)
-
-
-def compact_text(value: Any, limit: int = 140) -> str:
-    text = str(value)
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3] + "..."
 
 
 DEFAULT_SCOUT_API = "https://api.poe2scout.com"
@@ -57,14 +67,10 @@ DEFAULT_POE_NINJA_LEAGUE = "Runes of Aldur"
 DEFAULT_POE2DB_ECONOMY_US_URL = "https://poe2db.tw/Economy"
 DEFAULT_POE2DB_ECONOMY_CN_URL = "https://poe2db.tw/cn/Economy"
 DEFAULT_LEAGUE = "runes"
-DEFAULT_REQUEST_TIME_BUDGET = 45.0
-HTTP_READ_CHUNK_SIZE = 64 * 1024
-MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
 PRICE_SOURCES = ("poe2scout", "poecurrency-cn")
 FALLBACK_PRICE_SOURCES = ("poe-ninja", "poe2db-economy")
 CN_REFERENCE_SOURCES = ("poe2scout", "poe-ninja", "poe2db-economy", "none")
 PATCH_SCOPES = ("all", "currency", "uniques", "none")
-SCRIPT_DIR = Path(__file__).resolve().parent
 PATCH_ROOT = SCRIPT_DIR.parent
 DEFAULT_EN_BASEITEMS = (
     PATCH_ROOT / "output" / "dat_files_latest" / "data" / "data_balance_baseitemtypes.datc64"
@@ -146,13 +152,6 @@ CN_HIGH_VALUE_FALLBACK_MAX_RATIO = Decimal("5")
 
 
 @dataclass(frozen=True)
-class BaseItemPair:
-    metadata_path: str
-    en_name: str
-    tc_name: str
-
-
-@dataclass(frozen=True)
 class Poe2dbEconomyRow:
     key: str
     name: str
@@ -161,17 +160,6 @@ class Poe2dbEconomyRow:
     left_qty: Decimal
     right_qty: Decimal
     volume: Decimal
-
-
-@dataclass
-class PriceObservation:
-    api_id: str
-    en_name: str
-    category: str
-    price_exalted: Decimal
-    value_traded: Decimal
-    source_pair: str
-    display_price: str = ""
 
 
 @dataclass(frozen=True)
@@ -195,257 +183,6 @@ class UniqueName:
     row_index: int
     en_name: str
     display_name: str
-
-
-@dataclass(frozen=True)
-class HttpResponse:
-    url: str
-    status_code: int
-    reason: str
-    content: bytes
-    encoding: str = "utf-8"
-
-    @property
-    def text(self) -> str:
-        return self.content.decode(self.encoding or "utf-8", errors="replace")
-
-    def json(self) -> Any:
-        return json.loads(self.text)
-
-
-@dataclass
-class PriceSourceResult:
-    source: str
-    raw: dict[str, Any] | None = None
-    prices: dict[str, PriceObservation] | None = None
-    unique_categories: list[dict[str, Any]] | None = None
-    unique_items: list[dict[str, Any]] | None = None
-    status: str = "skipped"
-    warning: str = ""
-
-
-class RequestDeadlineExceeded(TimeoutError):
-    """A wall-clock deadline expired while an HTTP worker was still active."""
-
-
-class RetryingRequests:
-    def __init__(
-        self,
-        max_retries: int = 4,
-        backoff: float = 0.8,
-        timeout: float = 25.0,
-        total_timeout: float = DEFAULT_REQUEST_TIME_BUDGET,
-        user_agent: str = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36 poe2-price-patch/1.0"
-        ),
-    ) -> None:
-        self.max_retries = max(0, int(max_retries))
-        self.backoff = max(0.0, float(backoff))
-        self.timeout = max(0.1, float(timeout))
-        self.total_timeout = max(0.1, float(total_timeout))
-        self.user_agent = user_agent
-        self.retry_statuses = {429, 500, 502, 503, 504}
-
-    def _headers(self) -> dict[str, str]:
-        return {
-            "User-Agent": self.user_agent,
-            "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
-        }
-
-    def _decode_response(
-        self,
-        url: str,
-        status_code: int,
-        reason: str,
-        headers: Any,
-        content: bytes,
-    ) -> HttpResponse:
-        encoding = "utf-8"
-        get_content_charset = getattr(headers, "get_content_charset", None)
-        if callable(get_content_charset):
-            encoding = get_content_charset() or encoding
-        return HttpResponse(
-            url=url,
-            status_code=status_code,
-            reason=reason,
-            content=content,
-            encoding=encoding,
-        )
-
-    @staticmethod
-    def _set_response_socket_timeout(response: Any, timeout: float) -> None:
-        """Best-effort update of urllib's socket timeout for the next body read."""
-
-        fp = getattr(response, "fp", None)
-        raw = getattr(fp, "raw", None)
-        sock = getattr(raw, "_sock", None)
-        settimeout = getattr(sock, "settimeout", None)
-        if callable(settimeout):
-            settimeout(max(0.1, timeout))
-
-    def _read_response_content(
-        self,
-        response: Any,
-        url: str,
-        deadline: float,
-        cancel_event: threading.Event,
-    ) -> bytes:
-        chunks: list[bytes] = []
-        total = 0
-        read_chunk = getattr(response, "read1", None)
-        if not callable(read_chunk):
-            read_chunk = response.read
-
-        while True:
-            if cancel_event.is_set():
-                raise RequestDeadlineExceeded(f"request cancelled after deadline: {url}")
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise RequestDeadlineExceeded(f"response body exceeded deadline: {url}")
-            self._set_response_socket_timeout(response, min(self.timeout, remaining))
-            chunk = read_chunk(HTTP_READ_CHUNK_SIZE)
-            if not chunk:
-                return b"".join(chunks)
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_HTTP_RESPONSE_BYTES:
-                raise RuntimeError(
-                    f"response exceeded {MAX_HTTP_RESPONSE_BYTES} byte safety limit: {url}"
-                )
-
-    def _get_once(
-        self,
-        url: str,
-        timeout: float,
-        cancel_event: threading.Event | None = None,
-    ) -> HttpResponse:
-        cancel_event = cancel_event or threading.Event()
-        deadline = time.monotonic() + timeout
-        request = urllib.request.Request(url, headers=self._headers(), method="GET")
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                content = self._read_response_content(
-                    response,
-                    url,
-                    deadline,
-                    cancel_event,
-                )
-                return self._decode_response(
-                    url=response.geturl(),
-                    status_code=response.status,
-                    reason=response.reason,
-                    headers=response.headers,
-                    content=content,
-                )
-        except urllib.error.HTTPError as exc:
-            try:
-                content = self._read_response_content(
-                    exc,
-                    url,
-                    deadline,
-                    cancel_event,
-                )
-                return self._decode_response(
-                    url=exc.url,
-                    status_code=exc.code,
-                    reason=exc.reason,
-                    headers=exc.headers,
-                    content=content,
-                )
-            finally:
-                exc.close()
-
-    def _get_once_with_deadline(self, url: str, timeout: float) -> HttpResponse:
-        """Run one urllib request behind a real wall-clock deadline.
-
-        ``urlopen(timeout=...)`` only limits individual blocking socket operations.
-        A large response that keeps delivering a few bytes can therefore make
-        an unbounded body read run forever.  A daemon worker lets the caller move
-        on to fallback/error handling even when DNS, TLS, or a trickling response
-        ignores that socket-level timeout.
-        """
-
-        result: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
-        cancel_event = threading.Event()
-
-        def request_worker() -> None:
-            try:
-                result.put((True, self._get_once(url, timeout, cancel_event)))
-            except BaseException as exc:
-                result.put((False, exc))
-
-        worker = threading.Thread(
-            target=request_worker,
-            name="poe2-price-http",
-            daemon=True,
-        )
-        worker.start()
-        worker.join(timeout)
-        if worker.is_alive():
-            cancel_event.set()
-            raise RequestDeadlineExceeded(
-                f"request attempt exceeded {timeout:.1f}s wall-clock deadline: {url}"
-            )
-
-        succeeded, value = result.get_nowait()
-        if succeeded:
-            return value
-        raise value
-
-    def get(self, url: str, **kwargs: Any) -> HttpResponse:
-        last_error: Exception | None = None
-        request_started = time.monotonic()
-        request_deadline = request_started + self.total_timeout
-        for attempt in range(self.max_retries + 1):
-            remaining = request_deadline - time.monotonic()
-            if remaining <= 0:
-                last_error = TimeoutError(
-                    f"request exceeded {self.total_timeout:.1f}s total time budget: {url}"
-                )
-                break
-            try:
-                response = self._get_once_with_deadline(
-                    url,
-                    min(self.timeout, remaining),
-                )
-                if response.status_code < 400:
-                    return response
-                if response.status_code not in self.retry_statuses:
-                    return response
-                last_error = RuntimeError(f"{response.status_code} {response.reason}: {url}")
-            except RequestDeadlineExceeded as exc:
-                # The daemon may still be unwinding a blocked DNS/TLS/socket call.
-                # Do not create another worker for this URL; fallback sources can
-                # proceed immediately and this leaves at most one orphan thread.
-                last_error = exc
-                break
-            except Exception as exc:
-                last_error = exc
-            if attempt < self.max_retries:
-                delay = self.backoff * (2**attempt)
-                remaining = request_deadline - time.monotonic()
-                if remaining <= 0:
-                    last_error = TimeoutError(
-                        f"request exceeded {self.total_timeout:.1f}s total time budget: {url}"
-                    )
-                    break
-                delay = min(delay, remaining)
-                print(
-                    "[进度] 请求失败，"
-                    f"{delay:.1f}s 后重试 {attempt + 1}/{self.max_retries}: "
-                    f"{compact_text(url)} ({compact_text(last_error)})",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                time.sleep(delay)
-        assert last_error is not None
-        raise last_error
-
-    def get_json(self, url: str) -> Any:
-        response = self.get(url)
-        return response.json()
 
 
 def read_utf16le_z(data: bytes, start: int) -> tuple[str, int]:
@@ -1080,6 +817,69 @@ def decimal_from_text(text: str) -> Decimal:
     return Decimal(cleaned)
 
 
+POE2DB_SINGLE_LINK_MARKER = "__POE2DB_REFERENCE_LINK__"
+POE2DB_SIGNED_NUMBER_RE = r"(?<![\w.])-?[0-9][0-9,]*(?:\.[0-9]+)?"
+
+
+def parse_poe2db_single_link_value(
+    value_cell: str,
+    row_key: str,
+    value_links: list[str],
+) -> tuple[str, Decimal, Decimal] | None:
+    """Parse the strict one-link Poe2DB variant without guessing currencies.
+
+    Poe2DB occasionally renders the item side as its plain-text Economy slug
+    instead of a second anchor.  The remaining anchor must identify a supported
+    reference currency, and the unlinked slug must exactly identify this row.
+    Quantities are normalized so the reference currency is always the left side.
+    """
+
+    if len(value_links) != 1:
+        return None
+    reference_key = economy_href_key(value_links[0])
+    if reference_key not in {"divine", "exalted"}:
+        return None
+
+    anchor_match = re.search(
+        r'<a\b[^>]*href="Economy_[^"]+"[^>]*>.*?</a>',
+        value_cell,
+        flags=re.I | re.S,
+    )
+    if not anchor_match:
+        return None
+
+    marked_cell = (
+        value_cell[: anchor_match.start()]
+        + f" {POE2DB_SINGLE_LINK_MARKER} "
+        + value_cell[anchor_match.end() :]
+    )
+    visible = clean_cell_text(marked_cell)
+    number_matches = list(re.finditer(POE2DB_SIGNED_NUMBER_RE, visible))
+    if len(number_matches) != 2:
+        return None
+
+    quantities = [Decimal(match.group(0).replace(",", "")) for match in number_matches]
+    if any(quantity <= 0 for quantity in quantities):
+        return None
+
+    marker_pos = visible.find(POE2DB_SINGLE_LINK_MARKER)
+    if marker_pos < 0:
+        return None
+
+    residual = visible.replace(POE2DB_SINGLE_LINK_MARKER, " ")
+    residual = re.sub(POE2DB_SIGNED_NUMBER_RE, " ", residual)
+    residual = re.sub(r"[\s|:;/,=<>↔⇄⇆⇌⟷⟺·•]+", "", residual).lower()
+    if residual != row_key.lower():
+        return None
+
+    first_number, second_number = number_matches
+    if first_number.end() <= marker_pos < second_number.start():
+        return reference_key, quantities[0], quantities[1]
+    if second_number.end() <= marker_pos:
+        return reference_key, quantities[1], quantities[0]
+    return None
+
+
 def parse_poe2db_economy_rows(text: str) -> dict[str, Poe2dbEconomyRow]:
     rows: dict[str, Poe2dbEconomyRow] = {}
     for tr_match in re.finditer(r"<tr\b[^>]*>(.*?)</tr>", text, flags=re.I | re.S):
@@ -1111,19 +911,23 @@ def parse_poe2db_economy_rows(text: str) -> dict[str, Poe2dbEconomyRow]:
             flags=re.I | re.S,
         )
         numbers = re.findall(r"(?<![\w.])[0-9][0-9,]*(?:\.[0-9]+)?", clean_cell_text(value_cell))
-        if len(value_links) < 2 or len(numbers) < 2:
-            continue
-
-        left_qty = decimal_from_text(numbers[0])
-        right_qty = decimal_from_text(numbers[1])
-        if left_qty <= 0 or right_qty <= 0:
-            continue
+        if len(value_links) >= 2 and len(numbers) >= 2:
+            left_key = economy_href_key(value_links[0])
+            left_qty = decimal_from_text(numbers[0])
+            right_qty = decimal_from_text(numbers[1])
+            if left_qty <= 0 or right_qty <= 0:
+                continue
+        else:
+            single_link_value = parse_poe2db_single_link_value(value_cell, key, value_links)
+            if single_link_value is None:
+                continue
+            left_key, left_qty, right_qty = single_link_value
 
         rows[key] = Poe2dbEconomyRow(
             key=key,
             name=name,
             wiki_slug=wiki_slug,
-            left_key=economy_href_key(value_links[0]),
+            left_key=left_key,
             left_qty=left_qty,
             right_qty=right_qty,
             volume=decimal_from_text(clean_cell_text(cells[3])),
@@ -1184,6 +988,10 @@ def build_poe2db_economy_prices(
 
             page_us_rows = parse_poe2db_economy_rows(page_us_html)
             page_cn_rows = parse_poe2db_economy_rows(page_cn_html)
+            if not page_us_rows:
+                raise ValueError("Poe2DB US Economy category table is empty")
+            if not page_cn_rows:
+                raise ValueError("Poe2DB CN Economy category table is empty")
             return (
                 page_us_rows,
                 page_cn_rows,
@@ -1236,9 +1044,15 @@ def build_poe2db_economy_prices(
         page_stats.append(stat)
 
     failed_pages = [stat for stat in page_stats if stat.get("status") != "ok"]
-    if failed_pages and len(category_pages) > 1:
-        failed_names = ", ".join(str(stat.get("page")) for stat in failed_pages)
-        raise ValueError(f"Poe2DB Economy category pages failed: {failed_names}")
+    core_page = (
+        "Economy_Currency"
+        if "Economy_Currency" in category_pages
+        else (poe2db_economy_page_name(us_url) or "Economy")
+    )
+    core_failures = [stat for stat in failed_pages if stat.get("page") == core_page]
+    if core_failures:
+        core_error = str(core_failures[0].get("error") or "unknown error")
+        raise ValueError(f"Poe2DB Economy core category {core_page} failed: {core_error}")
 
     if not us_rows:
         raise ValueError("Poe2DB US Economy table is empty")
@@ -1272,12 +1086,31 @@ def build_poe2db_economy_prices(
             ),
         )
 
+    failed_names = [str(stat.get("page")) for stat in failed_pages]
+    source_status = "partial" if failed_names else "ok"
+    warning = (
+        "Poe2DB Economy optional categories failed: " + ", ".join(failed_names)
+        if failed_names
+        else ""
+    )
+    if warning:
+        progress(f"Poe2DB Economy：部分分类失败，保留其余分类 ({', '.join(failed_names)})")
+
     raw = {
         "source": "poe2db-economy",
+        "status": source_status,
+        "health_state": source_status,
+        "warning": warning,
         "us_url": us_url,
         "cn_url": cn_url,
         "category_pages": category_pages,
         "category_count": len(category_pages),
+        "discovered_categories": list(category_pages),
+        "healthy_categories": [
+            str(stat.get("page")) for stat in page_stats if stat.get("status") == "ok"
+        ],
+        "enabled_categories": list(category_pages),
+        "failed_categories": failed_names,
         "category_page_stats": page_stats,
         "us_rows": len(us_rows),
         "cn_rows": len(cn_rows),
@@ -1307,6 +1140,7 @@ def build_poe_ninja_currency_prices(
 
     progress(f"poe.ninja：开始抓取 {len(source_specs)} 个分类")
     payloads: dict[tuple[str, str], dict[str, Any]] = {}
+    category_errors: dict[tuple[str, str], str] = {}
     with ThreadPoolExecutor(max_workers=min(8, len(source_specs))) as pool:
         futures = {
             pool.submit(client.get_json, source_url): (source_kind, item_type, source_url)
@@ -1315,10 +1149,27 @@ def build_poe_ninja_currency_prices(
         completed = 0
         for future in as_completed(futures):
             source_kind, item_type, _source_url = futures[future]
-            payloads[(source_kind, item_type)] = future.result()
+            try:
+                payload = future.result()
+                validate_poe_ninja_category_payload(
+                    payload, source_kind, item_type
+                )
+                payloads[(source_kind, item_type)] = payload
+                lines = len(payload.get("lines") or [])
+                state = f"完成 ({lines} 条)"
+            except Exception as exc:
+                category_errors[(source_kind, item_type)] = (
+                    f"{type(exc).__name__}: {exc}"
+                )
+                state = "失败"
             completed += 1
-            lines = len((payloads[(source_kind, item_type)] or {}).get("lines") or [])
-            progress(f"poe.ninja：{completed}/{len(source_specs)} {item_type} 完成 ({lines} 条)")
+            progress(
+                f"poe.ninja：{completed}/{len(source_specs)} {item_type} {state}"
+            )
+
+    core_error = category_errors.get(("exchange", "Currency"))
+    if core_error:
+        raise ValueError(f"poe.ninja core category Currency failed: {core_error}")
 
     currency_data = payloads.get(("exchange", "Currency")) or {}
     core = currency_data.get("core") or {}
@@ -1357,6 +1208,20 @@ def build_poe_ninja_currency_prices(
 
     category_stats: list[dict[str, Any]] = []
     for source_kind, item_type, source_url in source_specs:
+        error = category_errors.get((source_kind, item_type), "")
+        if error:
+            category_stats.append(
+                {
+                    "kind": source_kind,
+                    "type": item_type,
+                    "url": source_url,
+                    "lines": 0,
+                    "items": 0,
+                    "status": "failed",
+                    "error": error,
+                }
+            )
+            continue
         data = payloads.get((source_kind, item_type)) or {}
         lines = data.get("lines") or []
         category_stats.append(
@@ -1366,6 +1231,7 @@ def build_poe_ninja_currency_prices(
                 "url": source_url,
                 "lines": len(lines),
                 "items": len(data.get("items") or []),
+                "status": "ok",
             }
         )
         if source_kind == "exchange":
@@ -1417,10 +1283,34 @@ def build_poe_ninja_currency_prices(
                 source_pair=f"poe.ninja/{item_type}/{name}; primary_value={primary_value}",
             )
 
+    discovered_categories = [f"{kind}:{item_type}" for kind, item_type, _ in source_specs]
+    succeeded_categories = [
+        f"{stat['kind']}:{stat['type']}"
+        for stat in category_stats
+        if stat.get("status") == "ok"
+    ]
+    failed_categories = [
+        f"{stat['kind']}:{stat['type']}"
+        for stat in category_stats
+        if stat.get("status") == "failed"
+    ]
+    source_status = "partial" if failed_categories else "ok"
+    warning = (
+        "poe.ninja optional categories failed: " + ", ".join(failed_categories)
+        if failed_categories
+        else ""
+    )
     raw = {
         "source": "poe-ninja",
+        "status": source_status,
+        "health_state": source_status,
+        "warning": warning,
         "url": poe_ninja_api_url_from_page(page_url, api_url, league),
         "category_count": len(source_specs),
+        "discovered_categories": discovered_categories,
+        "enabled_categories": discovered_categories,
+        "healthy_categories": succeeded_categories,
+        "failed_categories": failed_categories,
         "category_stats": category_stats,
         "items": sum(stat["items"] for stat in category_stats),
         "lines": sum(stat["lines"] for stat in category_stats),
@@ -1428,6 +1318,46 @@ def build_poe_ninja_currency_prices(
         "divine_price_exalted": str(divine_exalted),
     }
     return raw, best
+
+
+def validate_poe_ninja_category_payload(
+    payload: Any,
+    source_kind: str,
+    item_type: str,
+) -> None:
+    """Validate one category before it can affect the whole source parser."""
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"poe.ninja {item_type} response root is not an object")
+    core = payload.get("core")
+    lines = payload.get("lines")
+    if not isinstance(core, dict):
+        raise ValueError(f"poe.ninja {item_type} core is not an object")
+    if not isinstance(lines, list):
+        raise ValueError(f"poe.ninja {item_type} lines is not an array")
+    if not lines:
+        raise ValueError(f"poe.ninja {item_type} lines is empty")
+    if any(not isinstance(line, dict) for line in lines):
+        raise ValueError(f"poe.ninja {item_type} lines contains a non-object row")
+    if source_kind == "exchange":
+        items = payload.get("items")
+        core_items = core.get("items")
+        if items is not None and not isinstance(items, list):
+            raise ValueError(f"poe.ninja {item_type} items is not an array")
+        if core_items is not None and not isinstance(core_items, list):
+            raise ValueError(f"poe.ninja {item_type} core.items is not an array")
+        if not isinstance(items, list) and not isinstance(core_items, list):
+            raise ValueError(f"poe.ninja {item_type} items is not an array")
+        if isinstance(items, list) and any(
+            not isinstance(item, dict) for item in items
+        ):
+            raise ValueError(f"poe.ninja {item_type} items contains a non-object row")
+        if isinstance(core_items, list) and any(
+            not isinstance(item, dict) for item in core_items
+        ):
+            raise ValueError(
+                f"poe.ninja {item_type} core.items contains a non-object row"
+            )
 
 
 def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> dict[str, Any]:
@@ -1479,14 +1409,53 @@ def build_scout_prices(
     progress(f"poe2scout：已整理 {len(best)} 条基础价格")
     unique_categories: list[dict[str, Any]] = []
     unique_items: list[dict[str, Any]] = []
+    unique_fetch_error = ""
     if include_uniques:
-        unique_categories, unique_items = fetch_unique_items(
-            client,
-            api_base,
-            league,
-            max_workers=max(1, max_workers),
-        )
+        try:
+            unique_categories, unique_items = fetch_unique_items(
+                client,
+                api_base,
+                league,
+                max_workers=max(1, max_workers),
+            )
+        except Exception as exc:
+            unique_fetch_error = f"{type(exc).__name__}: {exc}"
+            progress("poe2scout：传奇分类入口失败，保留基础价格")
         add_unique_observations(best, unique_items)
+    failed_unique_categories = [
+        str(category.get("ApiId") or "")
+        for category in unique_categories
+        if category.get("_fetch_status") == "failed"
+    ]
+    if unique_fetch_error:
+        failed_unique_categories.append("unique-category-index")
+    healthy_unique_categories = [
+        str(category.get("ApiId") or "")
+        for category in unique_categories
+        if category.get("_fetch_status") == "ok"
+    ]
+    enabled_unique_categories = [
+        str(category.get("ApiId") or "")
+        for category in unique_categories
+        if category.get("ApiId")
+    ]
+    source_status = "partial" if failed_unique_categories else "ok"
+    warning = (
+        "poe2scout optional unique categories failed: "
+        + ", ".join(failed_unique_categories)
+        if failed_unique_categories
+        else ""
+    )
+    scout["status"] = source_status
+    scout["health_state"] = source_status
+    scout["warning"] = warning
+    scout["unique_fetch_error"] = unique_fetch_error
+    scout["discovered_categories"] = sorted(
+        {obs.category for obs in best.values() if obs.category}
+    )
+    scout["enabled_unique_categories"] = enabled_unique_categories
+    scout["healthy_unique_categories"] = healthy_unique_categories
+    scout["failed_unique_categories"] = failed_unique_categories
     return scout, best, unique_categories, unique_items
 
 
@@ -1544,7 +1513,8 @@ def fetch_price_source(
             prices=prices,
             unique_categories=unique_categories,
             unique_items=unique_items,
-            status="ok",
+            status=str(raw.get("status") or "ok"),
+            warning=str(raw.get("warning") or ""),
         )
     if source == "poe-ninja":
         raw, prices = build_poe_ninja_currency_prices(
@@ -1554,15 +1524,131 @@ def fetch_price_source(
             args.poe_ninja_league,
             args.poe_ninja_item_api_url,
         )
-        return PriceSourceResult(source=source, raw=raw, prices=prices, status="ok")
+        return PriceSourceResult(
+            source=source,
+            raw=raw,
+            prices=prices,
+            status=str(raw.get("status") or "ok"),
+            warning=str(raw.get("warning") or ""),
+        )
     if source == "poe2db-economy":
         raw, prices = build_poe2db_economy_prices(
             client,
             args.poe2db_economy_us_url,
             args.poe2db_economy_cn_url,
         )
-        return PriceSourceResult(source=source, raw=raw, prices=prices, status="ok")
+        status = str(raw.get("status") or "ok")
+        if status not in {"ok", "partial"}:
+            raise ValueError(f"invalid Poe2DB Economy source status: {status}")
+        return PriceSourceResult(
+            source=source,
+            raw=raw,
+            prices=prices,
+            status=status,
+            warning=str(raw.get("warning") or ""),
+        )
     raise ValueError(f"unknown price source: {source}")
+
+
+def price_source_result_is_usable(result: PriceSourceResult) -> bool:
+    return (
+        result.status in {"ok", "partial"}
+        and result.health_state not in {"empty", "incompatible", "failed"}
+        and bool(result.prices)
+    )
+
+
+def price_source_health_item_names(
+    prices: dict[str, PriceObservation] | None,
+) -> list[str]:
+    names: list[str] = []
+    for api_id, observation in (prices or {}).items():
+        if api_id == "divine":
+            names.append("Divine Orb")
+        elif api_id == "exalted":
+            names.append("Exalted Orb")
+        else:
+            names.append(observation.en_name)
+    return names
+
+
+def attach_price_source_health(result: PriceSourceResult) -> PriceSourceResult:
+    """Attach a provider-neutral health contract without changing usable data."""
+
+    raw = result.raw if isinstance(result.raw, dict) else {}
+    prices = result.prices or {}
+    discovered: list[str] = []
+    enabled: list[str] = []
+    succeeded: list[str] = []
+    failed: list[str] = []
+    freshness_timestamp: Any = None
+    key_fields: tuple[str, ...] = ()
+
+    if result.source == "poe2scout":
+        discovered = [str(value) for value in raw.get("discovered_categories") or []]
+        enabled_unique = [
+            str(value) for value in raw.get("enabled_unique_categories") or []
+        ]
+        failed = [str(value) for value in raw.get("failed_unique_categories") or []]
+        discovered = sorted(set(discovered).union(enabled_unique).union(failed))
+        enabled = list(discovered)
+        succeeded = [value for value in discovered if value not in set(failed)]
+        snapshot = raw.get("exchange_snapshot") or {}
+        if isinstance(snapshot, dict):
+            freshness_timestamp = snapshot.get("Epoch", snapshot.get("epoch"))
+        key_fields = (
+            "CurrencyOne",
+            "CurrencyTwo",
+            "RelativePrice",
+            "ValueTraded",
+        )
+    elif result.source == "poe-ninja":
+        discovered = [str(value) for value in raw.get("discovered_categories") or []]
+        enabled = [str(value) for value in raw.get("enabled_categories") or discovered]
+        succeeded = [str(value) for value in raw.get("healthy_categories") or []]
+        failed = [str(value) for value in raw.get("failed_categories") or []]
+        key_fields = ("core", "lines", "items", "primaryValue")
+    elif result.source == "poe2db-economy":
+        discovered = [str(value) for value in raw.get("discovered_categories") or []]
+        enabled = [str(value) for value in raw.get("enabled_categories") or discovered]
+        succeeded = [str(value) for value in raw.get("healthy_categories") or []]
+        failed = [str(value) for value in raw.get("failed_categories") or []]
+        key_fields = ("page", "us_rows", "cn_rows", "matched_rows")
+
+    health = evaluate_source_health(
+        result.source,
+        raw,
+        expected_root="object",
+        item_count=len(prices),
+        match_count=len(prices),
+        item_names=price_source_health_item_names(prices),
+        # Divine is the only runtime conversion prerequisite. Exalted is the
+        # implicit unit (1E) and the stricter live audit still checks both rows.
+        required_references=("Divine Orb",),
+        discovered_categories=discovered,
+        enabled_categories=enabled,
+        succeeded_categories=succeeded,
+        failed_categories=failed,
+        freshness_timestamp=freshness_timestamp,
+        max_age_seconds=48 * 60 * 60 if freshness_timestamp is not None else None,
+        key_fields=key_fields,
+    )
+    result.health_state = health.state
+    result.health = health.to_dict()
+    if result.raw is not None:
+        result.raw["source_health"] = result.health
+
+    if health.is_failure:
+        issue_text = "; ".join(
+            issue.get("message", "") for issue in result.health.get("issues", [])
+        )
+        result.status = "failed"
+        result.warning = "; ".join(
+            value for value in (result.warning, issue_text) if value
+        )
+    elif health.state == "partial" and result.status == "ok":
+        result.status = "partial"
+    return result
 
 
 def try_fetch_price_source(
@@ -1575,9 +1661,21 @@ def try_fetch_price_source(
 ) -> PriceSourceResult:
     progress(f"价格源 {price_source_label(source)}：开始获取")
     try:
-        result = fetch_price_source(source, client, args, include_uniques)
+        result = attach_price_source_health(
+            fetch_price_source(source, client, args, include_uniques)
+        )
         price_count = len(result.prices or {})
-        progress(f"价格源 {price_source_label(source)}：获取成功 ({price_count} 条价格)")
+        if result.status == "failed":
+            progress(
+                f"价格源 {price_source_label(source)}：健康校验未通过 "
+                f"({price_count} 条价格)"
+            )
+        elif result.status == "partial":
+            progress(f"价格源 {price_source_label(source)}：部分成功 ({price_count} 条价格)")
+            if result.warning:
+                print(f"warning: {result.warning}", file=sys.stderr)
+        else:
+            progress(f"价格源 {price_source_label(source)}：获取成功 ({price_count} 条价格)")
         if result.raw is not None:
             (out_dir / fallback_raw_filename(source, primary=primary)).write_text(
                 json.dumps(result.raw, ensure_ascii=False, indent=2),
@@ -1603,7 +1701,14 @@ def try_fetch_price_source(
             ),
             encoding="utf-8",
         )
-        return PriceSourceResult(source=source, status="failed", warning=warning)
+        health = failed_source_health(source, exc).to_dict()
+        return PriceSourceResult(
+            source=source,
+            status="failed",
+            warning=warning,
+            health_state="failed",
+            health=health,
+        )
 
 
 def fetch_poecurrency_summary(
@@ -1617,7 +1722,14 @@ def fetch_unique_categories(
     client: RetryingRequests, api_base: str, league: str
 ) -> list[dict[str, Any]]:
     data = client.get_json(f"{api_base}/poe2/Leagues/{league}/Items/Categories")
-    return data.get("UniqueCategories") or []
+    if not isinstance(data, dict):
+        raise ValueError("poe2scout unique category response root is not an object")
+    categories = data.get("UniqueCategories") or []
+    if not isinstance(categories, list) or any(
+        not isinstance(category, dict) for category in categories
+    ):
+        raise ValueError("poe2scout UniqueCategories is not an array of objects")
+    return categories
 
 
 def fetch_unique_category_items(
@@ -1644,7 +1756,17 @@ def fetch_unique_category_items(
         data = client.get_json(
             f"{api_base}/poe2/Leagues/{league}/Uniques/ByCategory?{query}"
         )
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"poe2scout unique category {category} response root is not an object"
+            )
         items = data.get("Items") or []
+        if not isinstance(items, list) or any(
+            not isinstance(item, dict) for item in items
+        ):
+            raise ValueError(
+                f"poe2scout unique category {category} Items is not an array of objects"
+            )
         all_items.extend(items)
 
         total_pages = int(data.get("Pages") or 1)
@@ -1670,7 +1792,7 @@ def fetch_unique_items(
     max_workers: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     categories = [
-        category
+        dict(category)
         for category in fetch_unique_categories(client, api_base, league)
         if category.get("ApiId") in DEFAULT_UNIQUE_CATEGORIES
     ]
@@ -1691,13 +1813,24 @@ def fetch_unique_items(
         completed = 0
         for future in as_completed(future_to_category):
             category = future_to_category[future]
-            items = future.result()
-            all_items.extend(items)
+            try:
+                items = future.result()
+                if not items:
+                    raise ValueError("unique category returned no items")
+                category["_fetch_status"] = "ok"
+                category["_fetch_items"] = len(items)
+                all_items.extend(items)
+                state = f"完成 ({len(items)} 件)"
+            except Exception as exc:
+                category["_fetch_status"] = "failed"
+                category["_fetch_items"] = 0
+                category["_fetch_error"] = f"{type(exc).__name__}: {exc}"
+                state = "失败"
             completed += 1
             progress(
                 "poe2scout："
-                f"{completed}/{len(future_to_category)} 传奇分类 {category.get('ApiId')} 完成 "
-                f"({len(items)} 件)"
+                f"{completed}/{len(future_to_category)} 传奇分类 "
+                f"{category.get('ApiId')} {state}"
             )
     return categories, all_items
 
@@ -1726,6 +1859,50 @@ POECURRENCY_LATEST_SELL_KEYS = ("latest_sell1", "latest_sell", "sell1", "sell_pr
 POECURRENCY_AVG_BUY_KEYS = ("buy_avg", "avg_buy", "buyAverage", "buy")
 POECURRENCY_AVG_SELL_KEYS = ("sell_avg", "avg_sell", "sellAverage", "sell")
 POECURRENCY_PREV_BUY_KEYS = ("prev_buy1", "previous_buy1", "prev_buy")
+POECURRENCY_ENGLISH_NAME_KEYS = (
+    "engname",
+    "english_name",
+    "englishName",
+    "en_name",
+)
+POECURRENCY_LATEST_DATETIME_KEYS = (
+    "latest_datetime",
+    "latestDateTime",
+    "latest_time",
+    "datetime",
+)
+POECURRENCY_PREV_BUY_DATETIME_KEYS = (
+    "prev_buy1_datetime",
+    "prevBuy1Datetime",
+    "previous_buy1_datetime",
+    "prev_buy_datetime",
+)
+POECURRENCY_BUY_AVG_YESTERDAY_KEYS = (
+    "buy_avg_yesterday",
+    "buyAvgYesterday",
+    "yesterday_buy_avg",
+)
+POECURRENCY_SELL_AVG_YESTERDAY_KEYS = (
+    "sell_avg_yesterday",
+    "sellAvgYesterday",
+    "yesterday_sell_avg",
+)
+POECURRENCY_BUY_AVG_RATIO_KEYS = (
+    "buy_avg_ratio",
+    "buyAvgRatio",
+)
+POECURRENCY_SELL_AVG_RATIO_KEYS = (
+    "sell_avg_ratio",
+    "sellAvgRatio",
+)
+POECURRENCY_ANOMALY_COUNT_KEYS = (
+    "anomaly_count",
+    "anomalyCount",
+)
+POECURRENCY_ERROR_KEYS = ("error", "has_error", "hasError")
+POECURRENCY_ERROR_INFO_KEYS = ("error_info", "errorInfo", "error_message")
+POECURRENCY_SOURCE_TIMEZONE = timezone(timedelta(hours=8))
+POECURRENCY_QUALITY_STALE_HOURS = Decimal("24")
 
 
 def poecurrency_api_id(name: str) -> str:
@@ -1776,6 +1953,16 @@ def normalize_poecurrency_summary(data: Any) -> list[dict[str, Any]]:
                 ("buy_avg", POECURRENCY_AVG_BUY_KEYS),
                 ("sell_avg", POECURRENCY_AVG_SELL_KEYS),
                 ("prev_buy1", POECURRENCY_PREV_BUY_KEYS),
+                ("engname", POECURRENCY_ENGLISH_NAME_KEYS),
+                ("latest_datetime", POECURRENCY_LATEST_DATETIME_KEYS),
+                ("prev_buy1_datetime", POECURRENCY_PREV_BUY_DATETIME_KEYS),
+                ("buy_avg_yesterday", POECURRENCY_BUY_AVG_YESTERDAY_KEYS),
+                ("sell_avg_yesterday", POECURRENCY_SELL_AVG_YESTERDAY_KEYS),
+                ("buy_avg_ratio", POECURRENCY_BUY_AVG_RATIO_KEYS),
+                ("sell_avg_ratio", POECURRENCY_SELL_AVG_RATIO_KEYS),
+                ("anomaly_count", POECURRENCY_ANOMALY_COUNT_KEYS),
+                ("error", POECURRENCY_ERROR_KEYS),
+                ("error_info", POECURRENCY_ERROR_INFO_KEYS),
             ):
                 value = first_present(item, keys)
                 if value is not None:
@@ -1786,12 +1973,25 @@ def normalize_poecurrency_summary(data: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def poecurrency_raw_unit(item: dict[str, Any]) -> str:
+    for key in ("currency_unit", "unit"):
+        value = item.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
 def poecurrency_item_unit(item: dict[str, Any]) -> str:
-    raw_unit = str(item.get("currency_unit") or item.get("unit") or "").strip().lower()
+    raw_unit = poecurrency_raw_unit(item).lower()
     if raw_unit in {"d", "divine", "divine orb", "divine_orb", "神圣石", "神圣宝珠"}:
         return "d"
     if raw_unit in {"e", "exalted", "exalted orb", "exalted_orb", "崇高石", "崇高宝珠"}:
         return "e"
+    if raw_unit:
+        return ""
 
     display = str(
         item.get("display")
@@ -1926,6 +2126,17 @@ def poecurrency_avg_price(item: dict[str, Any]) -> tuple[Decimal, str]:
     )
 
 
+def poecurrency_yesterday_avg_price(item: dict[str, Any]) -> tuple[Decimal, str]:
+    buy_avg = to_decimal(item.get("buy_avg_yesterday"))
+    sell_avg = to_decimal(item.get("sell_avg_yesterday"))
+    return choose_poecurrency_pair_price(
+        buy_avg,
+        sell_avg,
+        "buy_avg_yesterday",
+        "sell_avg_yesterday",
+    )
+
+
 def poecurrency_item_price(item: dict[str, Any]) -> tuple[Decimal, str]:
     avg_price, avg_field = poecurrency_avg_price(item)
     unit = poecurrency_item_unit(item)
@@ -1961,7 +2172,9 @@ def poecurrency_item_price(item: dict[str, Any]) -> tuple[Decimal, str]:
     if latest_price > 0:
         return latest_price, latest_field
 
-    return avg_price, avg_field
+    if avg_price > 0:
+        return avg_price, avg_field
+    return poecurrency_yesterday_avg_price(item)
 
 
 def poecurrency_divine_price(item: dict[str, Any]) -> tuple[Decimal, str]:
@@ -2007,6 +2220,9 @@ def poecurrency_divine_price(item: dict[str, Any]) -> tuple[Decimal, str]:
         return latest_sell, "latest_sell1_divine_ratio"
     if stable_avg > 0:
         return stable_avg, f"{stable_avg_field}_divine_ratio"
+    yesterday_price, yesterday_field = poecurrency_yesterday_avg_price(item)
+    if yesterday_price > 0:
+        return yesterday_price, f"{yesterday_field}_divine_yesterday_fallback"
     return Decimal("0"), ""
 
 
@@ -2022,26 +2238,209 @@ def poecurrency_price_to_exalted(
     return price
 
 
-def collect_poecurrency_observations(
+def poecurrency_anomaly_count(item: dict[str, Any]) -> int:
+    value = to_decimal(item.get("anomaly_count"))
+    if not value.is_finite():
+        return 0
+    try:
+        return max(0, int(value))
+    except (OverflowError, ValueError):
+        return 0
+
+
+def parse_poecurrency_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=POECURRENCY_SOURCE_TIMEZONE)
+    return parsed.astimezone(POECURRENCY_SOURCE_TIMEZONE)
+
+
+def poecurrency_serializable_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    return str(value)
+
+
+def poecurrency_item_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: poecurrency_serializable_value(item.get(key))
+        for key in (
+            "engname",
+            "latest_datetime",
+            "prev_buy1_datetime",
+            "buy_avg_yesterday",
+            "sell_avg_yesterday",
+            "buy_avg_ratio",
+            "sell_avg_ratio",
+            "anomaly_count",
+            "error",
+            "error_info",
+        )
+        if item.get(key) is not None
+    }
+
+
+def collect_poecurrency_observations_with_quality(
     summary: Any,
-) -> dict[str, PriceObservation]:
+    *,
+    now: datetime | None = None,
+    stale_after_hours: Decimal = POECURRENCY_QUALITY_STALE_HOURS,
+) -> tuple[dict[str, PriceObservation], dict[str, Any]]:
+    categories = normalize_poecurrency_summary(summary)
+    current_time = now or datetime.now(POECURRENCY_SOURCE_TIMEZONE)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=POECURRENCY_SOURCE_TIMEZONE)
+    else:
+        current_time = current_time.astimezone(POECURRENCY_SOURCE_TIMEZONE)
+    stale_after = timedelta(seconds=float(stale_after_hours * Decimal("3600")))
+
     candidates: list[dict[str, Any]] = []
     divine_exalted = Decimal("0")
+    schema_fields: set[str] = set()
+    latest_times: list[datetime] = []
+    previous_times: list[datetime] = []
+    source_times: list[datetime] = []
+    quality: dict[str, Any] = {
+        "category_count": len(categories),
+        "categories": [],
+        "category_stats": [],
+        "empty_categories": [],
+        "field_set": [],
+        "item_count": 0,
+        "named_item_count": 0,
+        "candidate_count": 0,
+        "observation_count": 0,
+        "valid_price_items": 0,
+        "error_items": 0,
+        "anomaly_items": 0,
+        "anomaly_total": 0,
+        "unknown_unit_items": 0,
+        "unknown_units": [],
+        "missing_unit_items": 0,
+        "stale_items": 0,
+        "invalid_timestamp_items": 0,
+        "latest_datetime_items": 0,
+        "prev_buy1_datetime_items": 0,
+        "english_alias_items": 0,
+        "english_alias_matches": 0,
+        "localized_name_matches": 0,
+        "yesterday_fallback_items": 0,
+        "skipped_no_name": 0,
+        "skipped_no_price": 0,
+        "skipped_unknown_unit": 0,
+        "skipped_missing_divine_ratio": 0,
+        "latest_datetime_min": "",
+        "latest_datetime_max": "",
+        "prev_buy1_datetime_min": "",
+        "prev_buy1_datetime_max": "",
+        "source_timestamp_min": "",
+        "source_timestamp_max": "",
+        "stale_after_hours": float(stale_after_hours),
+    }
+    category_labels: list[str] = []
+    empty_category_labels: list[str] = []
+    category_stats: list[dict[str, Any]] = []
+    unknown_units: set[str] = set()
 
-    for category in normalize_poecurrency_summary(summary):
+    for category in categories:
         category_label = str(category.get("category_label") or "").strip()
+        if category_label and category_label not in category_labels:
+            category_labels.append(category_label)
         items = category.get("items") or []
+        item_count = len(items) if isinstance(items, list) else 0
+        category_state = "ok" if item_count > 0 else "empty"
+        category_stats.append(
+            {
+                "category": category_label,
+                "items": item_count,
+                "status": category_state,
+            }
+        )
+        if category_label and category_state == "empty":
+            empty_category_labels.append(category_label)
         if not isinstance(items, list):
             continue
         for item in items:
             if not isinstance(item, dict):
                 continue
+            quality["item_count"] += 1
+            schema_fields.update(str(key) for key in item)
             name = str(item.get("item_name") or "").strip()
             if not name:
+                quality["skipped_no_name"] += 1
                 continue
+            quality["named_item_count"] += 1
+
+            english_name = str(item.get("engname") or "").strip()
+            if english_name:
+                quality["english_alias_items"] += 1
+
+            item_has_error = poecurrency_item_has_error(item)
+            anomaly_count = poecurrency_anomaly_count(item)
+            if item_has_error:
+                quality["error_items"] += 1
+            if anomaly_count:
+                quality["anomaly_items"] += 1
+                quality["anomaly_total"] += anomaly_count
+
+            latest_datetime_raw = str(item.get("latest_datetime") or "").strip()
+            previous_datetime_raw = str(item.get("prev_buy1_datetime") or "").strip()
+            latest_datetime = parse_poecurrency_datetime(latest_datetime_raw)
+            previous_datetime = parse_poecurrency_datetime(previous_datetime_raw)
+            timestamp_invalid = False
+            if latest_datetime_raw:
+                quality["latest_datetime_items"] += 1
+                if latest_datetime is None:
+                    timestamp_invalid = True
+                else:
+                    latest_times.append(latest_datetime)
+                    source_times.append(latest_datetime)
+            if previous_datetime_raw:
+                quality["prev_buy1_datetime_items"] += 1
+                if previous_datetime is None:
+                    timestamp_invalid = True
+                else:
+                    previous_times.append(previous_datetime)
+                    source_times.append(previous_datetime)
+            if timestamp_invalid:
+                quality["invalid_timestamp_items"] += 1
+
+            source_datetime = latest_datetime or previous_datetime
+            error_info = str(item.get("error_info") or "").strip().lower()
+            stale_from_error = any(
+                marker in error_info for marker in ("过时", "stale", "outdated")
+            )
+            is_stale = stale_from_error or bool(
+                source_datetime is not None
+                and current_time - source_datetime > stale_after
+            )
+            if is_stale:
+                quality["stale_items"] += 1
+
+            raw_unit = poecurrency_raw_unit(item)
+            if not raw_unit:
+                quality["missing_unit_items"] += 1
 
             api_id = poecurrency_api_id(name)
             unit = poecurrency_item_unit(item)
+            if not unit:
+                quality["unknown_unit_items"] += 1
+                quality["skipped_unknown_unit"] += 1
+                unknown_units.add(raw_unit)
+                continue
             explicit_exalted, explicit_field = poecurrency_explicit_exalted_price(item)
             if explicit_exalted > 0:
                 price = explicit_exalted
@@ -2052,10 +2451,24 @@ def collect_poecurrency_observations(
             else:
                 price, price_field = poecurrency_item_price(item)
             if price <= 0:
+                quality["skipped_no_price"] += 1
                 continue
 
             if api_id == "divine" and unit == "e":
                 divine_exalted = max(divine_exalted, price)
+
+            quality_flags: list[str] = []
+            if item_has_error:
+                quality_flags.append("error")
+            if anomaly_count:
+                quality_flags.append("anomaly")
+            if is_stale:
+                quality_flags.append("stale")
+            if not raw_unit:
+                quality_flags.append("unit_defaulted")
+            if "yesterday" in price_field:
+                quality["yesterday_fallback_items"] += 1
+                quality_flags.append("yesterday_fallback")
 
             candidates.append(
                 {
@@ -2065,8 +2478,27 @@ def collect_poecurrency_observations(
                     "price": price,
                     "price_field": price_field,
                     "unit": unit,
+                    "english_name": english_name,
+                    "source_timestamp": latest_datetime_raw or previous_datetime_raw,
+                    "quality_flags": tuple(quality_flags),
+                    "source_metadata": poecurrency_item_metadata(item),
                 }
             )
+            quality["valid_price_items"] += 1
+
+    quality["categories"] = category_labels
+    quality["category_stats"] = category_stats
+    quality["empty_categories"] = empty_category_labels
+    quality["field_set"] = sorted(schema_fields)
+    quality["unknown_units"] = sorted(unit for unit in unknown_units if unit)
+    for prefix, values in (
+        ("latest_datetime", latest_times),
+        ("prev_buy1_datetime", previous_times),
+        ("source_timestamp", source_times),
+    ):
+        if values:
+            quality[f"{prefix}_min"] = min(values).isoformat(timespec="seconds")
+            quality[f"{prefix}_max"] = max(values).isoformat(timespec="seconds")
 
     best: dict[str, PriceObservation] = {}
     for candidate in candidates:
@@ -2077,6 +2509,7 @@ def collect_poecurrency_observations(
         if api_id == "divine" and unit == "d" and divine_exalted > 0:
             price_exalted = divine_exalted
         if price_exalted <= 0:
+            quality["skipped_missing_divine_ratio"] += 1
             continue
 
         unit_note = unit
@@ -2092,6 +2525,10 @@ def collect_poecurrency_observations(
                 f"poecurrency.top/{candidate['category_label']}/"
                 f"{candidate['price_field']}/{unit_note}"
             ),
+            english_name=candidate["english_name"],
+            source_timestamp=candidate["source_timestamp"],
+            quality_flags=candidate["quality_flags"],
+            source_metadata=candidate["source_metadata"],
         )
         old = best.get(api_id)
         if old is None or obs.price_exalted > old.price_exalted:
@@ -2106,7 +2543,16 @@ def collect_poecurrency_observations(
             value_traded=Decimal("0"),
             source_pair="poecurrency.top/divine/e",
         )
-    return best
+    quality["candidate_count"] = len(candidates)
+    quality["observation_count"] = len(best)
+    return best, quality
+
+
+def collect_poecurrency_observations(
+    summary: Any,
+) -> dict[str, PriceObservation]:
+    observations, _quality = collect_poecurrency_observations_with_quality(summary)
+    return observations
 
 
 def collect_price_observations(snapshot_pairs: list[dict[str, Any]]) -> dict[str, list[PriceObservation]]:
@@ -2352,47 +2798,74 @@ def match_prices_to_base_items(
 def match_cn_prices_to_base_items(
     prices: dict[str, PriceObservation],
     base_pairs: list[BaseItemPair],
+    quality: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     by_tc: dict[str, BaseItemPair] = {}
+    by_en: dict[str, BaseItemPair] = {}
     for pair in base_pairs:
         for name in {pair.tc_name, strip_existing_price(pair.tc_name)}:
             normalized = normalize_market_name(name)
             if normalized and normalized not in by_tc:
                 by_tc[normalized] = pair
+        for name in {pair.en_name, strip_existing_price(pair.en_name)}:
+            normalized = normalize_market_name(name)
+            if normalized and normalized not in by_en:
+                by_en[normalized] = pair
 
-    matched: list[dict[str, str]] = []
+    matched: list[tuple[dict[str, str], str]] = []
     missing: list[dict[str, str]] = []
     for obs in prices.values():
         if obs.price_exalted < Decimal("1") or not obs.display_price:
             continue
         pair = by_tc.get(normalize_market_name(obs.en_name))
+        match_method = "localized_name"
+        if pair is None and obs.english_name:
+            pair = by_en.get(normalize_market_name(obs.english_name))
+            match_method = "english_alias"
         if pair:
             matched.append(
-                {
-                    "metadata_path": pair.metadata_path,
-                    "name": pair.tc_name,
-                    "price": obs.display_price,
-                    "new_name": "",
-                    "en_name": "",
-                    "api_id": obs.api_id,
-                    "price_exalted": str(obs.price_exalted),
-                    "source_pair": obs.source_pair,
-                }
+                (
+                    {
+                        "metadata_path": pair.metadata_path,
+                        "name": pair.tc_name,
+                        "price": obs.display_price,
+                        "new_name": "",
+                        "en_name": obs.english_name or obs.en_name,
+                        "api_id": obs.api_id,
+                        "price_exalted": str(obs.price_exalted),
+                        "source_pair": obs.source_pair,
+                    },
+                    match_method,
+                )
             )
         else:
             missing.append(
                 {
                     "api_id": obs.api_id,
                     "en_name": obs.en_name,
-                    "reason": "not found in local Simplified Chinese BaseItemTypes",
+                    "reason": (
+                        "not found by localized name or poecurrency engname in local BaseItemTypes"
+                        if obs.english_name
+                        else "not found in local Simplified Chinese BaseItemTypes"
+                    ),
                 }
             )
 
     dedup: dict[str, dict[str, str]] = {}
-    for row in matched:
+    match_methods: dict[str, str] = {}
+    for row, match_method in matched:
         old = dedup.get(row["metadata_path"])
         if old is None or Decimal(row["price_exalted"]) > Decimal(old["price_exalted"]):
             dedup[row["metadata_path"]] = row
+            match_methods[row["metadata_path"]] = match_method
+    if quality is not None:
+        quality["localized_name_matches"] = sum(
+            method == "localized_name" for method in match_methods.values()
+        )
+        quality["english_alias_matches"] = sum(
+            method == "english_alias" for method in match_methods.values()
+        )
+        quality["unmatched_observations"] = len(missing)
     return sorted(dedup.values(), key=lambda r: r["name"]), missing
 
 
@@ -2567,7 +3040,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--poe-ninja-currency-url", default=DEFAULT_POE_NINJA_CURRENCY_URL)
     parser.add_argument("--poe-ninja-api-url", default=DEFAULT_POE_NINJA_API_URL)
     parser.add_argument("--poe-ninja-item-api-url", default=DEFAULT_POE_NINJA_ITEM_API_URL)
-    parser.add_argument("--poe-ninja-league", default=DEFAULT_POE_NINJA_LEAGUE)
+    parser.add_argument(
+        "--poe-ninja-league",
+        default=None,
+        help=(
+            "poe.ninja league name. By default the current softcore league is "
+            "discovered from poe2scout, with a known-good fallback."
+        ),
+    )
     parser.add_argument("--poe2db-economy-us-url", default=DEFAULT_POE2DB_ECONOMY_US_URL)
     parser.add_argument("--poe2db-economy-cn-url", default=DEFAULT_POE2DB_ECONOMY_CN_URL)
     parser.add_argument(
@@ -2587,7 +3067,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "The configured fallback-price-sources are tried after it."
         ),
     )
-    parser.add_argument("--league", default=DEFAULT_LEAGUE)
+    parser.add_argument(
+        "--league",
+        default=None,
+        help=(
+            "poe2scout league short name. By default the current softcore league "
+            "is discovered automatically, with a known-good fallback."
+        ),
+    )
     parser.add_argument("--en-baseitems", type=Path, default=DEFAULT_EN_BASEITEMS)
     parser.add_argument("--tc-baseitems", type=Path, default=DEFAULT_TC_BASEITEMS)
     parser.add_argument("--en-words", type=Path, default=DEFAULT_EN_WORDS)
@@ -2711,6 +3198,39 @@ def main(argv: list[str]) -> int:
         timeout=max(1.0, args.timeout),
         total_timeout=max(1.0, args.request_time_budget),
     )
+    league_selection_source = "not-required"
+    league_discovery_url = ""
+    league_warnings: list[str] = []
+    league_sources = {args.price_source, *fallback_price_sources}
+    if args.price_source == "poecurrency-cn":
+        league_sources.add(args.cn_reference_source)
+    needs_market_league = fetch_prices and bool(
+        league_sources.intersection({"poe2scout", "poe-ninja"})
+    )
+    if needs_market_league:
+        selection = resolve_current_leagues(
+            client,
+            args.api_base,
+            explicit_scout=args.league,
+            explicit_ninja=args.poe_ninja_league,
+            fallback_scout=DEFAULT_LEAGUE,
+            fallback_ninja=DEFAULT_POE_NINJA_LEAGUE,
+        )
+        args.league = selection.scout
+        args.poe_ninja_league = selection.poe_ninja
+        league_selection_source = selection.source
+        league_discovery_url = selection.discovery_url
+        league_warnings = list(selection.warnings)
+        progress(
+            "当前软核赛季："
+            f"poe2scout={args.league}, poe.ninja={args.poe_ninja_league} "
+            f"({league_selection_source})"
+        )
+        for warning in league_warnings:
+            print(f"[警告] {warning}", file=sys.stderr, flush=True)
+    else:
+        args.league = args.league or DEFAULT_LEAGUE
+        args.poe_ninja_league = args.poe_ninja_league or DEFAULT_POE_NINJA_LEAGUE
     fallback_labels = ", ".join(
         price_source_label(source) for source in fallback_price_sources
     ) or "none"
@@ -2749,6 +3269,20 @@ def main(argv: list[str]) -> int:
     fallback_divine_by_source: dict[str, Decimal] = {}
     primary_source_status = "ok"
     primary_source_warning = ""
+    poecurrency_quality: dict[str, Any] = {}
+    source_health_reports: dict[str, dict[str, Any]] = {}
+    if not fetch_prices:
+        source_health_reports = {
+            source: skipped_source_health(
+                source, f"price fetching disabled by patch-scope={args.patch_scope}"
+            ).to_dict()
+            for source in (
+                "poe2scout",
+                "poe-ninja",
+                "poe2db-economy",
+                "poecurrency-cn",
+            )
+        }
     merged_price_sources: set[str] = set()
     best: dict[str, PriceObservation] = {}
     rows: list[dict[str, str]] = []
@@ -2764,15 +3298,65 @@ def main(argv: list[str]) -> int:
             (args.out_dir / "poecurrency_cn_raw.json").write_text(
                 json.dumps(summary_data, ensure_ascii=False, indent=2), encoding="utf-8"
             )
-            best = collect_poecurrency_observations(summary_data)
-            progress(f"国服主数据源 poecurrency.top：获取成功 ({len(best)} 条价格)")
-            source_base_currency = "崇高石"
+            best, poecurrency_quality = collect_poecurrency_observations_with_quality(
+                summary_data
+            )
             source_item_count = sum(
                 len(category.get("items") or [])
                 for category in summary_data
                 if isinstance(category, dict)
             )
+            poecurrency_health = evaluate_source_health(
+                "poecurrency-cn",
+                summary_data,
+                expected_root="array",
+                item_count=source_item_count,
+                match_count=len(best),
+                item_names=price_source_health_item_names(best),
+                required_references=("Divine Orb",),
+                discovered_categories=poecurrency_quality.get("categories") or [],
+                enabled_categories=poecurrency_quality.get("categories") or [],
+                succeeded_categories=[
+                    category
+                    for category in poecurrency_quality.get("categories") or []
+                    if category
+                    not in set(poecurrency_quality.get("empty_categories") or [])
+                ],
+                failed_categories=poecurrency_quality.get("empty_categories") or [],
+                freshness_timestamp=(
+                    poecurrency_quality.get("latest_datetime_max") or None
+                ),
+                max_age_seconds=48 * 60 * 60,
+                key_fields=(
+                    "item_name",
+                    "engname",
+                    "currency_unit",
+                    "latest_datetime",
+                    "latest_buy1",
+                    "latest_sell1",
+                    "buy_avg",
+                    "sell_avg",
+                    "anomaly_count",
+                ),
+            )
+            source_health_reports["poecurrency-cn"] = poecurrency_health.to_dict()
+            poecurrency_quality["health_state"] = poecurrency_health.state
+            poecurrency_quality["health"] = poecurrency_health.to_dict()
+            if poecurrency_health.is_failure:
+                raise ValueError(
+                    "poecurrency-cn health validation failed: "
+                    + "; ".join(issue.message for issue in poecurrency_health.issues)
+                )
+            if poecurrency_health.state in {"partial", "stale"}:
+                primary_source_status = "partial"
+                primary_source_warning = (
+                    "poecurrency-cn data is usable but health is "
+                    f"{poecurrency_health.state}"
+                )
+            progress(f"国服主数据源 poecurrency.top：获取成功 ({len(best)} 条价格)")
+            source_base_currency = "崇高石"
         except Exception as exc:
+            best = {}
             primary_source_status = "failed"
             primary_source_warning = (
                 "primary price source poecurrency-cn failed; "
@@ -2792,6 +3376,10 @@ def main(argv: list[str]) -> int:
                 ),
                 encoding="utf-8",
             )
+            source_health_reports.setdefault(
+                "poecurrency-cn",
+                failed_source_health("poecurrency-cn", exc).to_dict(),
+            )
 
         reference_chain = build_cn_reference_chain(
             args.cn_reference_source, fallback_price_sources
@@ -2805,15 +3393,18 @@ def main(argv: list[str]) -> int:
                 include_uniques=effective_patch_unique_words and source == "poe2scout",
                 out_dir=args.out_dir,
             )
+            source_health_reports[source] = result.health
             fallback_status[source] = result.status
             if result.warning:
                 cn_reference_warnings.append(result.warning)
                 fallback_warnings.append(result.warning)
-            if result.status == "ok" and result.prices:
+            if price_source_result_is_usable(result):
                 fallback_results.append(result)
                 unique_categories = result.unique_categories or unique_categories
                 unique_items = result.unique_items or unique_items
-                if cn_reference_status == "failed":
+                if result.status == "partial":
+                    cn_reference_status = "degraded"
+                elif cn_reference_status == "failed":
                     cn_reference_status = "ok"
         if cn_reference_status == "ok" and cn_reference_warnings:
             cn_reference_status = "degraded"
@@ -2826,10 +3417,11 @@ def main(argv: list[str]) -> int:
             out_dir=args.out_dir,
             primary=True,
         )
+        source_health_reports["poe2scout"] = primary_result.health
         primary_source_status = primary_result.status
         primary_source_warning = primary_result.warning
         preferred_results: list[PriceSourceResult] = []
-        if primary_result.status == "ok" and primary_result.prices:
+        if price_source_result_is_usable(primary_result):
             preferred_results.append(primary_result)
             unique_categories = primary_result.unique_categories or []
             unique_items = primary_result.unique_items or []
@@ -2840,6 +3432,9 @@ def main(argv: list[str]) -> int:
 
         for source in fallback_price_sources:
             if source == "poe2db-economy" and preferred_results:
+                source_health_reports[source] = skipped_source_health(
+                    source, "earlier configured international sources were usable"
+                ).to_dict()
                 continue
 
             result = try_fetch_price_source(
@@ -2849,10 +3444,11 @@ def main(argv: list[str]) -> int:
                 include_uniques=False,
                 out_dir=args.out_dir,
             )
+            source_health_reports[source] = result.health
             fallback_status[source] = result.status
             if result.warning:
                 fallback_warnings.append(result.warning)
-            if result.status == "ok" and result.prices:
+            if price_source_result_is_usable(result):
                 fallback_results.append(result)
                 if result.source == "poe-ninja":
                     preferred_results.append(result)
@@ -2876,7 +3472,11 @@ def main(argv: list[str]) -> int:
             divine_exalted = divine_price_exalted(best)
             apply_display_prices(best, divine_exalted)
             if args.price_source == "poecurrency-cn":
-                rows, missing = match_cn_prices_to_base_items(best, base_pairs)
+                rows, missing = match_cn_prices_to_base_items(
+                    best,
+                    base_pairs,
+                    quality=poecurrency_quality,
+                )
             else:
                 rows, missing = match_prices_to_base_items(
                     best,
@@ -3032,6 +3632,10 @@ def main(argv: list[str]) -> int:
             else "poe2scout relative price"
         ),
         "league": args.league,
+        "poe_ninja_league": args.poe_ninja_league,
+        "league_selection_source": league_selection_source,
+        "league_discovery_url": league_discovery_url,
+        "league_warnings": league_warnings,
         "snapshot_epoch": source_snapshot_epoch,
         "base_currency": source_base_currency,
         "price_items": len(best),
@@ -3072,6 +3676,10 @@ def main(argv: list[str]) -> int:
         "cn_reference_status": cn_reference_status,
         "cn_reference_warnings": cn_reference_warnings,
         "poe2db_fallback": bool(args.poe2db_fallback),
+        "poecurrency_quality": poecurrency_quality,
+        "source_health": source_health_reports,
+        "http_request_count": len(client.request_metrics()),
+        "http_requests": client.request_metrics(),
     }
 
     if not args.no_build_patch:

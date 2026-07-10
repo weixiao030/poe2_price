@@ -26,6 +26,9 @@ PAYLOAD_FILES = [
     "BundleExtractor/BundleExtractor.exe",
     "BundleExtractor/oo2core.dll",
     "BundleExtractor/vcruntime140.dll",
+] + [
+    path.relative_to(TOOLS).as_posix()
+    for path in sorted((TOOLS / "price_sources").rglob("*.py"))
 ]
 
 

@@ -8,6 +8,7 @@ import zipfile
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -17,6 +18,7 @@ SCRIPT_PATH = (
     / "tools"
     / "build_poe2scout_price_patch.py"
 )
+FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 def load_price_module():
@@ -32,6 +34,23 @@ class PoecurrencyPricingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.price_patch = load_price_module()
+
+    def setUp(self):
+        # Main-flow tests are offline. Dynamic league discovery has dedicated
+        # deterministic coverage in test_league_discovery.py.
+        league_patcher = patch.object(
+            self.price_patch,
+            "resolve_current_leagues",
+            return_value=SimpleNamespace(
+                scout="runes",
+                poe_ninja="Runes of Aldur",
+                source="test",
+                warnings=(),
+                discovery_url="https://api.poe2scout.com/poe2/Leagues",
+            ),
+        )
+        league_patcher.start()
+        self.addCleanup(league_patcher.stop)
 
     def minimal_price_map(self):
         return {
@@ -78,6 +97,33 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertTrue(worker_started.is_set())
         self.assertEqual(attempts, ["https://example.invalid/slow"])
         self.assertLess(time.monotonic() - started, 0.5)
+        metrics = client.request_metrics()
+        self.assertEqual(len(metrics), 1)
+        self.assertEqual(metrics[0]["attempts"], 1)
+        self.assertIn("RequestDeadlineExceeded", metrics[0]["error"])
+
+    def test_http_metrics_capture_content_type_size_and_final_url(self):
+        client = self.price_patch.RetryingRequests(
+            max_retries=0,
+            backoff=0,
+            timeout=1,
+            total_timeout=1,
+        )
+        response = self.price_patch.HttpResponse(
+            url="https://cdn.example.invalid/final",
+            status_code=200,
+            reason="OK",
+            content=b'{"ok":true}',
+            content_type="application/json; charset=utf-8",
+        )
+        with patch.object(client, "_get_once", return_value=response):
+            self.assertIs(client.get("https://example.invalid/start"), response)
+
+        metrics = client.request_metrics()
+        self.assertEqual(metrics[0]["final_url"], response.url)
+        self.assertEqual(metrics[0]["status_code"], 200)
+        self.assertEqual(metrics[0]["content_type"], "application/json; charset=utf-8")
+        self.assertEqual(metrics[0]["content_bytes"], len(response.content))
 
     def test_latest_buy_price_wins_over_avg_price(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -602,6 +648,53 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(best["poe2db:mirror"].en_name, "卡兰德的魔镜")
         self.assertEqual(best["poe2db:mirror"].price_exalted, Decimal("1829808"))
 
+    def test_parse_poe2db_current_cn_single_link_rows(self):
+        fixture = (FIXTURES_DIR / "poe2db_cn_single_link_rows.html").read_text(
+            encoding="utf-8"
+        )
+
+        rows = self.price_patch.parse_poe2db_economy_rows(fixture)
+
+        self.assertEqual(
+            set(rows),
+            {
+                "liquid-verisium",
+                "kopecs-orb-of-sacrifice",
+                "yuguls-orb-of-sacrifice",
+                "kamasas-orb-of-sacrifice",
+                "yaomacs-orb-of-sacrifice",
+            },
+        )
+        self.assertEqual(rows["liquid-verisium"].left_key, "divine")
+        self.assertEqual(rows["liquid-verisium"].left_qty, Decimal("1"))
+        self.assertEqual(rows["liquid-verisium"].right_qty, Decimal("12.9"))
+        self.assertEqual(rows["kopecs-orb-of-sacrifice"].left_key, "divine")
+        self.assertEqual(rows["yuguls-orb-of-sacrifice"].left_key, "exalted")
+        self.assertEqual(rows["yuguls-orb-of-sacrifice"].left_qty, Decimal("16.6"))
+        self.assertEqual(rows["kamasas-orb-of-sacrifice"].left_qty, Decimal("62.5"))
+        self.assertEqual(rows["yaomacs-orb-of-sacrifice"].left_qty, Decimal("35.4"))
+
+    def test_poe2db_single_link_rows_reject_ambiguous_values(self):
+        invalid_value_cells = {
+            "non_reference_link": '1 <a href="Economy_chaos"></a> 2 sample-item',
+            "zero_quantity": '0 <a href="Economy_divine"></a> 2 sample-item',
+            "negative_quantity": '-1 <a href="Economy_divine"></a> 2 sample-item',
+            "extra_quantity": '1 <a href="Economy_divine"></a> 2 sample-item 3',
+            "mismatched_slug": '1 <a href="Economy_divine"></a> 2 another-item',
+        }
+        for label, value_cell in invalid_value_cells.items():
+            with self.subTest(label=label):
+                fixture = f"""
+                <table><tbody><tr>
+                <td><a href="Economy_sample-item">Sample Item</a></td>
+                <td>{value_cell}</td><td></td><td>10</td>
+                </tr></tbody></table>
+                """
+                self.assertEqual(
+                    self.price_patch.parse_poe2db_economy_rows(fixture),
+                    {},
+                )
+
     def test_poe2db_economy_prices_fetch_all_category_pages(self):
         nav = """
         <nav>
@@ -661,7 +754,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(best["poe2db:ritual-audience"].en_name, "CN Audience")
         self.assertEqual(best["poe2db:ritual-audience"].price_exalted, Decimal("1965"))
 
-    def test_poe2db_economy_prices_fail_when_category_page_is_missing(self):
+    def test_poe2db_economy_prices_keep_healthy_rows_when_optional_category_fails(self):
         nav = """
         <nav>
         <a href="Economy_Currency">Currency</a>
@@ -683,7 +776,54 @@ class PoecurrencyPricingTests(unittest.TestCase):
                     return type("Response", (), {"text": currency_html})()
                 raise RuntimeError("blocked")
 
-        with self.assertRaisesRegex(ValueError, "Economy_Fragments"):
+        args = type(
+            "Args",
+            (),
+            {
+                "poe2db_economy_us_url": "https://poe2db.tw/Economy",
+                "poe2db_economy_cn_url": "https://poe2db.tw/cn/Economy",
+            },
+        )()
+        result = self.price_patch.fetch_price_source(
+            "poe2db-economy", FakeClient(), args, include_uniques=False
+        )
+
+        self.assertEqual(result.status, "partial")
+        self.assertIn("Economy_Fragments", result.warning)
+        self.assertIn("divine", result.prices)
+        self.assertIn("exalted", result.prices)
+        self.assertEqual(result.raw["health_state"], "partial")
+        self.assertEqual(
+            result.raw["discovered_categories"],
+            ["Economy_Currency", "Economy_Fragments"],
+        )
+        self.assertEqual(
+            result.raw["enabled_categories"],
+            ["Economy_Currency", "Economy_Fragments"],
+        )
+        self.assertEqual(result.raw["failed_categories"], ["Economy_Fragments"])
+
+    def test_poe2db_economy_prices_fail_when_currency_category_is_empty(self):
+        nav_only = """
+        <nav>
+        <a href="Economy_Currency">Currency</a>
+        <a href="Economy_Fragments">Fragments</a>
+        </nav>
+        <table><tbody></tbody></table>
+        """
+        fragments_html = """
+        <table><tbody>
+        <tr><td><a href="Economy_ritual-audience">An Audience with the King</a></td>
+        <td>5 <a href="Economy_divine"></a> 1 <a href="Economy_ritual-audience"></a></td><td></td><td>10</td></tr>
+        </tbody></table>
+        """
+
+        class FakeClient:
+            def get(self, url):
+                text = nav_only if url.endswith("/Economy") else fragments_html
+                return type("Response", (), {"text": text})()
+
+        with self.assertRaisesRegex(ValueError, "core category Economy_Currency"):
             self.price_patch.build_poe2db_economy_prices(
                 FakeClient(),
                 "https://poe2db.tw/Economy",
@@ -759,6 +899,83 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertTrue(any("type=Runes" in url for url in client.urls))
         self.assertTrue(any("type=UniqueWeapons" in url for url in client.urls))
 
+    def test_poe_ninja_keeps_core_prices_when_optional_category_fails(self):
+        class FakeClient:
+            def get_json(self, url):
+                if "type=Currency" in url:
+                    return {
+                        "core": {
+                            "items": [
+                                {"id": "divine", "name": "Divine Orb"},
+                                {"id": "exalted", "name": "Exalted Orb"},
+                            ],
+                            "rates": {"exalted": 400},
+                        },
+                        "lines": [{"id": "divine", "primaryValue": 1}],
+                    }
+                raise RuntimeError("optional endpoint blocked")
+
+        with patch.object(
+            self.price_patch, "POE_NINJA_EXCHANGE_TYPES", ("Currency", "Runes")
+        ), patch.object(self.price_patch, "POE_NINJA_ITEM_TYPES", ()):
+            raw, best = self.price_patch.build_poe_ninja_currency_prices(
+                FakeClient(),
+                "https://poe.ninja/poe2/economy/runesofaldur/currency",
+                "https://poe.ninja/poe2/api/economy/exchange/current/overview",
+                "Runes of Aldur",
+            )
+
+        self.assertEqual(raw["status"], "partial")
+        self.assertEqual(raw["failed_categories"], ["exchange:Runes"])
+        self.assertEqual(raw["healthy_categories"], ["exchange:Currency"])
+        self.assertEqual(best["divine"].price_exalted, Decimal("400"))
+
+    def test_poe_ninja_core_category_failure_is_fatal(self):
+        class FakeClient:
+            def get_json(self, _url):
+                raise RuntimeError("core endpoint blocked")
+
+        with patch.object(
+            self.price_patch, "POE_NINJA_EXCHANGE_TYPES", ("Currency",)
+        ), patch.object(self.price_patch, "POE_NINJA_ITEM_TYPES", ()):
+            with self.assertRaisesRegex(ValueError, "core category Currency"):
+                self.price_patch.build_poe_ninja_currency_prices(
+                    FakeClient(),
+                    "https://poe.ninja/poe2/economy/runesofaldur/currency",
+                    "https://poe.ninja/poe2/api/economy/exchange/current/overview",
+                    "Runes of Aldur",
+                )
+
+    def test_poe_ninja_malformed_optional_rows_are_partial(self):
+        class FakeClient:
+            def get_json(self, url):
+                if "type=Currency" in url:
+                    return {
+                        "core": {
+                            "items": [
+                                {"id": "divine", "name": "Divine Orb"},
+                                {"id": "exalted", "name": "Exalted Orb"},
+                            ],
+                            "rates": {"exalted": 400},
+                        },
+                        "lines": [{"id": "divine", "primaryValue": 1}],
+                    }
+                return {"core": {}, "lines": ["bad-row"], "items": []}
+
+        with patch.object(
+            self.price_patch, "POE_NINJA_EXCHANGE_TYPES", ("Currency", "Runes")
+        ), patch.object(self.price_patch, "POE_NINJA_ITEM_TYPES", ()):
+            raw, best = self.price_patch.build_poe_ninja_currency_prices(
+                FakeClient(),
+                "https://poe.ninja/poe2/economy/runesofaldur/currency",
+                "https://poe.ninja/poe2/api/economy/exchange/current/overview",
+                "Runes of Aldur",
+            )
+
+        self.assertEqual(raw["status"], "partial")
+        self.assertEqual(raw["failed_categories"], ["exchange:Runes"])
+        self.assertIn("divine", best)
+
     def test_fetch_unique_category_items_reads_all_pages(self):
         class FakeClient:
             def __init__(self):
@@ -784,6 +1001,58 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual([item["Name"] for item in items], ["one", "two"])
         self.assertTrue(any("Page=1" in url for url in client.urls))
         self.assertTrue(any("Page=2" in url for url in client.urls))
+
+    def test_scout_unique_category_failure_keeps_other_categories(self):
+        categories = [
+            {"ApiId": "armour", "Label": "Armour", "_fetch_status": "ok"},
+            {
+                "ApiId": "weapon",
+                "Label": "Weapon",
+                "_fetch_status": "failed",
+                "_fetch_error": "RuntimeError: blocked",
+            },
+        ]
+        scout_payload = {
+            "exchange_snapshot": {"Epoch": 1783656000},
+            "reference_currencies": [
+                {"ApiId": "divine", "Text": "Divine Orb", "RelativePrice": 400},
+                {"ApiId": "exalted", "Text": "Exalted Orb", "RelativePrice": 1},
+            ],
+            "snapshot_pairs": [],
+        }
+        with patch.object(
+            self.price_patch, "fetch_scout_data", return_value=scout_payload
+        ), patch.object(
+            self.price_patch,
+            "fetch_unique_items",
+            return_value=(categories, []),
+        ):
+            raw, best, returned_categories, _items = self.price_patch.build_scout_prices(
+                object(),
+                "https://api.poe2scout.com",
+                "runes",
+                include_uniques=True,
+                max_workers=2,
+            )
+
+        self.assertEqual(raw["status"], "partial")
+        self.assertEqual(raw["failed_unique_categories"], ["weapon"])
+        self.assertEqual(raw["healthy_unique_categories"], ["armour"])
+        self.assertEqual(returned_categories, categories)
+        self.assertIn("divine", best)
+
+    def test_scout_unique_category_rejects_non_object_items(self):
+        class FakeClient:
+            def get_json(self, _url):
+                return {"Items": {"unexpected": "object"}, "Pages": 1}
+
+        with self.assertRaisesRegex(ValueError, "array of objects"):
+            self.price_patch.fetch_unique_category_items(
+                FakeClient(),
+                "https://api.poe2scout.com",
+                "runes",
+                "armour",
+            )
 
     def test_poecurrency_cn_can_use_localized_baseitems_without_english_pairs(self):
         pairs = [

@@ -1,0 +1,2 @@
+const groups=[{name:"General",pages:[{availableViews:["exchange"],hideFromSidebar:!1,icon:"currency.png",landingPage:!1,title:"Currency",type:"Currency",url:"currency"},{availableViews:["exchange"],hideFromSidebar:!1,icon:"fragments.png",landingPage:!1,title:"Fragments",type:"Fragments",url:"fragments"}]},{name:"Equipment",pages:[{availableViews:["stash"],config:{tooltip:!0},hideFromSidebar:!1,icon:"weapon.png",landingPage:!1,title:"Unique Weapons",type:"UniqueWeapons",url:"unique-weapons"}]}];
+export{groups as economyViews};

@@ -6,3 +6,5 @@ update_price_patch.ps1 text eol=lf
 build_poe2scout_price_patch.py text eol=lf
 poe2_name_price_patch.py text eol=lf
 poe2_island_rumour_patch.py text eol=lf
+物价补丁/tools/price_sources/** text eol=lf
+build/payload/price_sources/** text eol=lf

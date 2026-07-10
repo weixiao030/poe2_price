@@ -1,0 +1,44 @@
+name: Audit Live Data Sources
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-data-source-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Read-only live contract audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Audit all live sources
+        run: >-
+          python "物价补丁/tools/audit_price_sources.py"
+          --output "data-source-audit.json"
+          --baseline "物价补丁/tools/data_source_contract_baseline.json"
+          --total-timeout 90
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-data-source-audit-${{ github.run_number }}
+          path: data-source-audit.json
+          if-no-files-found: error
+          retention-days: 30
