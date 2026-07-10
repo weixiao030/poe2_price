@@ -25,7 +25,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.4.9"
+$script:PatchVersion = "v0.4.9.1"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 
 if ([string]::IsNullOrWhiteSpace($Poe2Dir)) {
@@ -680,42 +680,40 @@ function Get-BaseItemsMetadataSignature {
     param([string]$SourceDat)
 
     Assert-File $SourceDat "BaseItemTypes.datc64"
-    $TempCsv = Join-Path $env:TEMP ([string]::Concat("poe2_baseitems_sig_", [Guid]::NewGuid().ToString("N"), ".csv"))
+    $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+    $SignatureScript = Join-Path $CodeToolsRoot "poe2_name_price_patch.py"
+    $SignatureResult = Invoke-Poe2Python -Python $Python -ArgumentList @(
+        $SignatureScript,
+        "signature",
+        "--source", $SourceDat
+    ) -Quiet
+    if ($SignatureResult.ExitCode -ne 0) {
+        throw "生成 BaseItemTypes 结构签名失败。退出码：$($SignatureResult.ExitCode)`n$($SignatureResult.Text)"
+    }
+
     try {
-        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
-        $ExportScript = Join-Path $CodeToolsRoot "poe2_name_price_patch.py"
-        $ExportResult = Invoke-Poe2Python -Python $Python -ArgumentList @(
-            $ExportScript,
-            "export",
-            "--source", $SourceDat,
-            "--output", $TempCsv
-        ) -Quiet
-        if ($ExportResult.ExitCode -ne 0) {
-            throw "导出 BaseItemTypes 元数据签名失败。退出码：$($ExportResult.ExitCode)`n$($ExportResult.Text)"
-        }
+        $Signature = $SignatureResult.Text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "解析 BaseItemTypes 结构签名失败：$($_.Exception.Message)"
+    }
 
-        $Rows = Import-Csv -LiteralPath $TempCsv -Encoding UTF8
-        $Paths = @($Rows | ForEach-Object { $_.metadata_path } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $Joined = [string]::Join("`n", $Paths)
-        $Sha = [System.Security.Cryptography.SHA256]::Create()
-        try {
-            $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Joined)
-            $Hash = [System.BitConverter]::ToString($Sha.ComputeHash($Bytes)).Replace("-", "")
-        }
-        finally {
-            $Sha.Dispose()
-        }
-
-        return [pscustomobject]@{
-            Count = $Paths.Count
-            Hash  = $Hash
+    $RequiredFields = @(
+        "signature_version",
+        "row_count",
+        "row_size",
+        "metadata_paths_sha256",
+        "fixed_rows_sha256",
+        "compatibility_sha256"
+    )
+    foreach ($Field in $RequiredFields) {
+        $Property = $Signature.PSObject.Properties[$Field]
+        if ($null -eq $Property -or [string]::IsNullOrWhiteSpace([string]$Property.Value)) {
+            throw "BaseItemTypes 结构签名缺少字段或字段为空：$Field"
         }
     }
-    finally {
-        if (Test-Path -LiteralPath $TempCsv -PathType Leaf) {
-            Remove-Item -LiteralPath $TempCsv -Force
-        }
-    }
+
+    return $Signature
 }
 
 function Test-BaseItemsCompatible {
@@ -727,7 +725,14 @@ function Test-BaseItemsCompatible {
     try {
         $Left = Get-BaseItemsMetadataSignature $LeftDat
         $Right = Get-BaseItemsMetadataSignature $RightDat
-        return ($Left.Count -eq $Right.Count -and $Left.Hash -eq $Right.Hash)
+        return (
+            [string]$Left.signature_version -ceq [string]$Right.signature_version -and
+            [string]$Left.row_count -ceq [string]$Right.row_count -and
+            [string]$Left.row_size -ceq [string]$Right.row_size -and
+            [string]$Left.metadata_paths_sha256 -ceq [string]$Right.metadata_paths_sha256 -and
+            [string]$Left.fixed_rows_sha256 -ceq [string]$Right.fixed_rows_sha256 -and
+            [string]$Left.compatibility_sha256 -ceq [string]$Right.compatibility_sha256
+        )
     }
     catch {
         Write-Warning "BaseItemTypes 兼容性检查失败：$($_.Exception.Message)"
@@ -832,46 +837,14 @@ function Test-PhysicalRestoreZipUsable {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
         return $false
     }
-
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
     try {
-        $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        Assert-Poe2PhysicalRestoreZip -Path $Path -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo | Out-Null
+        $script:LastPhysicalRestoreZipError = ""
+        return $true
     }
     catch {
+        $script:LastPhysicalRestoreZipError = $_.Exception.Message
         return $false
-    }
-    try {
-        $ManifestEntry = $Archive.GetEntry("manifest.json")
-        if ($null -eq $ManifestEntry) {
-            return $false
-        }
-
-        $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
-        try {
-            $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json
-        }
-        catch {
-            return $false
-        }
-        finally {
-            $Reader.Dispose()
-        }
-        if ([string]$Manifest.kind -ne "poe2-price-patch-physical-restore") {
-            return $false
-        }
-        if ([string]$Manifest.install_kind -ne [string]$InstallInfo.InstallKind) {
-            return $false
-        }
-        if (-not [string]::IsNullOrWhiteSpace([string]$Manifest.target_path) -and [string]$Manifest.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
-            return $false
-        }
-
-        $Entry = $Archive.GetEntry("Bundles2/_.index.bin")
-        return ($null -ne $Entry -and $Entry.Length -gt 1048576)
-    }
-    finally {
-        $Archive.Dispose()
     }
 }
 
@@ -1166,6 +1139,9 @@ function Merge-ExistingBundlePatchEntries {
     Resolve-BundleExtractor
     $TempDir = Join-Path $env:TEMP ([string]::Concat("poe2_preserve_bundle_patch_", [Guid]::NewGuid().ToString("N")))
     $ListPath = Join-Path $TempDir "libggpk3-files.tsv"
+    $RequestListPath = Join-Path $TempDir "preserve-files.txt"
+    $ExtractDir = Join-Path $TempDir "extracted"
+    $ListLog = Join-Path $TempDir "list.log"
     $ExtractLog = Join-Path $TempDir "extract.log"
     $Exclude = @{}
     foreach ($Entry in $ExcludeEntries) {
@@ -1176,14 +1152,29 @@ function Merge-ExistingBundlePatchEntries {
 
     try {
         New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
-        & $BundledBundleExtractorExe --list $Bundles2Paths.IndexBin $ListPath "LibGGPK3/" *> $ExtractLog
+        Write-Host "正在扫描已有 Bundles2 增量补丁（大型索引通常需要 15-30 秒）..." -ForegroundColor Yellow
+        & $BundledBundleExtractorExe --list $Bundles2Paths.IndexBin $ListPath "LibGGPK3/" *> $ListLog
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $ListPath -PathType Leaf)) {
-            Write-Warning "列出现有 Bundles2 增量补丁失败，将只写入本次物价文件。日志：$ExtractLog"
-            return
+            throw "列出现有 Bundles2 增量补丁失败。为避免覆盖并丢失其它补丁，本次已中止。日志：$ListLog"
         }
 
-        $Rows = Import-Csv -LiteralPath $ListPath -Delimiter "`t" -Encoding UTF8
-        $Merged = 0
+        Add-Type -AssemblyName System.IO.Compression
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $ExistingZipEntries = @{}
+        if (Test-Path -LiteralPath $ZipPath -PathType Leaf) {
+            $ReadArchive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+            try {
+                foreach ($ZipEntry in $ReadArchive.Entries) {
+                    $ExistingZipEntries[$ZipEntry.FullName.Replace("\", "/").ToLowerInvariant()] = $true
+                }
+            }
+            finally {
+                $ReadArchive.Dispose()
+            }
+        }
+
+        $Rows = @(Import-Csv -LiteralPath $ListPath -Delimiter "`t" -Encoding UTF8)
+        $EntriesToPreserve = New-Object System.Collections.Generic.List[string]
         foreach ($Row in $Rows) {
             $EntryName = ([string]$Row.path).Replace("\", "/")
             if ([string]::IsNullOrWhiteSpace($EntryName)) {
@@ -1192,25 +1183,173 @@ function Merge-ExistingBundlePatchEntries {
             if ($Exclude.ContainsKey($EntryName.ToLowerInvariant())) {
                 continue
             }
-            if (Test-ZipEntryExists -ZipPath $ZipPath -EntryName $EntryName) {
+            if ($ExistingZipEntries.ContainsKey($EntryName.ToLowerInvariant())) {
                 continue
             }
 
-            $SafeName = $EntryName -replace '[\\/:*?"<>| ]', '_'
-            $OutFile = Join-Path $TempDir ([string]::Concat("entry_", $Merged, "_", $SafeName))
-            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $EntryName $OutFile *> $ExtractLog
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $OutFile -PathType Leaf)) {
-                Write-Warning "保留现有 Bundles2 增量文件失败，已跳过：$EntryName；日志：$ExtractLog"
-                continue
-            }
+            $EntriesToPreserve.Add($EntryName)
+        }
 
-            Update-ZipEntryFromFile -ZipPath $ZipPath -SourceDat $OutFile -EntryName $EntryName
-            $Merged += 1
+        if ($EntriesToPreserve.Count -eq 0) {
+            Write-Host "没有需要合并的其它 Bundles2 增量补丁。" -ForegroundColor DarkGray
+            return
+        }
+
+        New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
+        [System.IO.File]::WriteAllLines(
+            $RequestListPath,
+            $EntriesToPreserve.ToArray(),
+            (New-Object System.Text.UTF8Encoding($false))
+        )
+        Write-Host "发现 $($EntriesToPreserve.Count) 个其它增量文件，正在批量读取（索引只加载一次）..." -ForegroundColor Yellow
+        & $BundledBundleExtractorExe --extract-list $Bundles2Paths.IndexBin $RequestListPath $ExtractDir *> $ExtractLog
+        $BatchExitCode = $LASTEXITCODE
+        if ($BatchExitCode -ne 0) {
+            throw "批量读取已有 Bundles2 增量文件失败。为避免覆盖并丢失其它补丁，本次已中止。退出码：$BatchExitCode；日志：$ExtractLog"
+        }
+        $MissingExtractedEntries = New-Object System.Collections.Generic.List[string]
+        for ($Index = 0; $Index -lt $EntriesToPreserve.Count; $Index++) {
+            $OutFile = Join-Path $ExtractDir ([string]::Format("{0:D6}.bin", $Index))
+            if (-not (Test-Path -LiteralPath $OutFile -PathType Leaf)) {
+                $MissingExtractedEntries.Add($EntriesToPreserve[$Index])
+            }
+        }
+        if ($MissingExtractedEntries.Count -gt 0) {
+            throw "批量读取已有 Bundles2 增量文件不完整，缺少 $($MissingExtractedEntries.Count) 个文件。为避免覆盖并丢失其它补丁，本次已中止。日志：$ExtractLog"
+        }
+
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ZipPath) | Out-Null
+        $ZipMode = if (Test-Path -LiteralPath $ZipPath -PathType Leaf) {
+            [System.IO.Compression.ZipArchiveMode]::Update
+        }
+        else {
+            [System.IO.Compression.ZipArchiveMode]::Create
+        }
+        $PatchArchive = [System.IO.Compression.ZipFile]::Open($ZipPath, $ZipMode)
+        $Merged = 0
+        try {
+            for ($Index = 0; $Index -lt $EntriesToPreserve.Count; $Index++) {
+                $EntryName = $EntriesToPreserve[$Index]
+                $OutFile = Join-Path $ExtractDir ([string]::Format("{0:D6}.bin", $Index))
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $PatchArchive,
+                    $OutFile,
+                    $EntryName,
+                    [System.IO.Compression.CompressionLevel]::Optimal
+                ) | Out-Null
+                $Merged += 1
+                if (($Merged % 25) -eq 0 -or $Index -eq ($EntriesToPreserve.Count - 1)) {
+                    Write-Host "合并已有增量补丁：$Merged/$($EntriesToPreserve.Count)" -ForegroundColor DarkGray
+                }
+            }
+        }
+        finally {
+            $PatchArchive.Dispose()
         }
 
         if ($Merged -gt 0) {
             Write-Host "已合并保留现有 Bundles2 增量补丁文件 $Merged 个。" -ForegroundColor Green
         }
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempDir -PathType Container) {
+            Remove-Item -LiteralPath $TempDir -Recurse -Force
+        }
+    }
+}
+
+function Assert-Bundles2PatchApplied {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string[]]$EntryNames
+    )
+
+    Resolve-BundleExtractor
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $EntriesToVerify = New-Object System.Collections.Generic.List[string]
+    $Seen = @{}
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        foreach ($Name in $EntryNames) {
+            if ([string]::IsNullOrWhiteSpace($Name)) {
+                continue
+            }
+            $Normalized = $Name.Replace("\", "/")
+            $Key = $Normalized.ToLowerInvariant()
+            if ($Seen.ContainsKey($Key)) {
+                continue
+            }
+            if ($null -ne $Archive.GetEntry($Normalized)) {
+                $Seen[$Key] = $true
+                $EntriesToVerify.Add($Normalized)
+            }
+        }
+    }
+    finally {
+        $Archive.Dispose()
+    }
+
+    if ($EntriesToVerify.Count -eq 0) {
+        throw "Bundles2 patch verification failed. No target entries were found in patch zip: $ZipPath"
+    }
+
+    $TempDir = Join-Path $env:TEMP ([string]::Concat("poe2_verify_bundle_patch_", [Guid]::NewGuid().ToString("N")))
+    $RequestListPath = Join-Path $TempDir "verify-files.txt"
+    $ExtractDir = Join-Path $TempDir "extracted"
+    $VerifyLog = Join-Path $TempDir "verify.log"
+    try {
+        New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
+        [System.IO.File]::WriteAllLines(
+            $RequestListPath,
+            $EntriesToVerify.ToArray(),
+            (New-Object System.Text.UTF8Encoding($false))
+        )
+        & $BundledBundleExtractorExe --extract-list $Bundles2Paths.IndexBin $RequestListPath $ExtractDir *> $VerifyLog
+        $VerifyExitCode = $LASTEXITCODE
+        if ($VerifyExitCode -ne 0) {
+            throw "Bundles2 patch verification failed. Extractor exit code: $VerifyExitCode. Log: $VerifyLog"
+        }
+
+        $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        try {
+            for ($Index = 0; $Index -lt $EntriesToVerify.Count; $Index++) {
+                $EntryName = $EntriesToVerify[$Index]
+                $ActualPath = Join-Path $ExtractDir ([string]::Format("{0:D6}.bin", $Index))
+                if (-not (Test-Path -LiteralPath $ActualPath -PathType Leaf)) {
+                    throw "Bundles2 patch verification failed. Extracted target is missing: $EntryName. Log: $VerifyLog"
+                }
+
+                $ZipEntry = $Archive.GetEntry($EntryName)
+                if ($null -eq $ZipEntry) {
+                    throw "Bundles2 patch verification failed. Patch entry disappeared: $EntryName"
+                }
+                $ActualInfo = Get-Item -LiteralPath $ActualPath
+                if ($ActualInfo.Length -ne $ZipEntry.Length) {
+                    throw "Bundles2 patch verification failed. Size mismatch: $EntryName"
+                }
+
+                $Sha = [System.Security.Cryptography.SHA256]::Create()
+                $EntryStream = $ZipEntry.Open()
+                try {
+                    $ExpectedHash = [System.BitConverter]::ToString($Sha.ComputeHash($EntryStream)).Replace("-", "")
+                }
+                finally {
+                    $EntryStream.Dispose()
+                    $Sha.Dispose()
+                }
+                $ActualHash = (Get-FileHash -LiteralPath $ActualPath -Algorithm SHA256).Hash
+                if ($ActualHash -ne $ExpectedHash) {
+                    throw "Bundles2 patch verification failed. Content mismatch: $EntryName"
+                }
+            }
+        }
+        finally {
+            $Archive.Dispose()
+        }
+
+        Write-Host "已校验 Bundles2 中的 $($EntriesToVerify.Count) 个补丁文件。" -ForegroundColor Green
     }
     finally {
         if (Test-Path -LiteralPath $TempDir -PathType Container) {
@@ -1372,70 +1511,139 @@ function New-PhysicalRestoreZip {
         return $null
     }
 
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputZip) | Out-Null
-    if (Test-Path -LiteralPath $OutputZip -PathType Leaf) {
-        Remove-Item -LiteralPath $OutputZip -Force
+    # Extraction/building can take minutes; close the race with the earlier preflight.
+    Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
+
+    $OutputZip = [System.IO.Path]::GetFullPath($OutputZip)
+    $OutputDir = Split-Path -Parent $OutputZip
+    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+    $TempZip = Join-Path $OutputDir ([string]::Concat(".", (Split-Path -Leaf $OutputZip), ".new-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+
+    $BackupSources = New-Object System.Collections.Generic.List[object]
+    foreach ($Relative in @(
+        "_.index.bin",
+        "_.index.high.bin",
+        "_.index.low.bin",
+        ".index.dbg"
+    )) {
+        $Source = Join-Path $Bundles2Paths.Bundles2Dir $Relative
+        if (Test-Path -LiteralPath $Source -PathType Leaf) {
+            $BackupSources.Add([pscustomobject]@{
+                    Source = $Source
+                    Entry = "Bundles2/" + ($Relative -replace '\\', '/')
+                })
+        }
+    }
+    if (-not ($BackupSources | Where-Object { $_.Entry -eq "Bundles2/_.index.bin" } | Select-Object -First 1)) {
+        throw "无法创建真实还原包：Bundles2/_.index.bin 不存在。"
     }
 
+    $LibDir = Join-Path $Bundles2Paths.Bundles2Dir "LibGGPK3"
+    if (Test-Path -LiteralPath $LibDir -PathType Container) {
+        $Bundles2Prefix = [System.IO.Path]::GetFullPath($Bundles2Paths.Bundles2Dir).TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar
+        ) + [System.IO.Path]::DirectorySeparatorChar
+        foreach ($File in @(Get-ChildItem -LiteralPath $LibDir -Recurse -File -ErrorAction Stop | Sort-Object FullName)) {
+            $Relative = $File.FullName.Substring($Bundles2Prefix.Length).Replace("\", "/")
+            $BackupSources.Add([pscustomobject]@{
+                    Source = $File.FullName
+                    Entry = "Bundles2/" + $Relative
+                })
+        }
+    }
+
+    $BaseFingerprint = Get-Poe2PhysicalBaseFingerprint -Poe2Dir $Poe2Dir
+    $RestoreFiles = New-Object System.Collections.Generic.List[object]
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $Archive = [System.IO.Compression.ZipFile]::Open($OutputZip, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
-        $Manifest = [ordered]@{
-            kind = "poe2-price-patch-physical-restore"
-            version = 1
-            created_at = (Get-Date).ToString("o")
-            install_kind = $InstallInfo.InstallKind
-            target_path = $InstallInfo.TcBaseItemsPath
-            mode = $GameMode
-            note = "Restore these physical Bundles2 files to return to the state before this price patch was installed."
-        }
-        $ManifestJson = $Manifest | ConvertTo-Json -Depth 5
-        $ManifestEntry = $Archive.CreateEntry("manifest.json", [System.IO.Compression.CompressionLevel]::Optimal)
-        $Writer = New-Object System.IO.StreamWriter($ManifestEntry.Open(), [System.Text.UTF8Encoding]::new($false))
+        $Archive = [System.IO.Compression.ZipFile]::Open($TempZip, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
-            $Writer.Write($ManifestJson)
+            foreach ($Item in $BackupSources) {
+                $SourceInfo = Get-Item -LiteralPath $Item.Source -ErrorAction Stop
+                $Sha256 = Get-Poe2Sha256Hex -Path $SourceInfo.FullName
+                $Crc32 = Get-Poe2FileCrc32Hex -Path $SourceInfo.FullName
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $Archive,
+                    $SourceInfo.FullName,
+                    [string]$Item.Entry,
+                    [System.IO.Compression.CompressionLevel]::Optimal
+                ) | Out-Null
+                $RestoreFiles.Add([pscustomobject][ordered]@{
+                        path = [string]$Item.Entry
+                        length = [long]$SourceInfo.Length
+                        sha256 = $Sha256
+                        crc32 = $Crc32
+                    })
+            }
+
+            $Manifest = [ordered]@{
+                kind = "poe2-price-patch-physical-restore"
+                version = 2
+                created_at = (Get-Date).ToUniversalTime().ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+                install_kind = $InstallInfo.InstallKind
+                target_path = $InstallInfo.TcBaseItemsPath
+                mode = $GameMode
+                base_fingerprint = $BaseFingerprint
+                restore_files = $RestoreFiles.ToArray()
+                note = "Restore these physical Bundles2 files only while the official base fingerprint still matches."
+            }
+            $ManifestJson = $Manifest | ConvertTo-Json -Depth 8
+            $ManifestEntry = $Archive.CreateEntry("manifest.json", [System.IO.Compression.CompressionLevel]::Optimal)
+            $Writer = New-Object System.IO.StreamWriter($ManifestEntry.Open(), [System.Text.UTF8Encoding]::new($false))
+            try {
+                $Writer.Write($ManifestJson)
+            }
+            finally {
+                $Writer.Dispose()
+            }
         }
         finally {
-            $Writer.Dispose()
+            $Archive.Dispose()
         }
 
-        foreach ($Relative in @(
-            "_.index.bin",
-            "_.index.high.bin",
-            "_.index.low.bin",
-            ".index.dbg"
-        )) {
-            $Source = Join-Path $Bundles2Paths.Bundles2Dir $Relative
-            if (Test-Path -LiteralPath $Source -PathType Leaf) {
-                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                    $Archive,
-                    $Source,
-                    ("Bundles2/" + ($Relative -replace '\\', '/')),
-                    [System.IO.Compression.CompressionLevel]::Optimal
-                ) | Out-Null
-            }
+        Assert-Poe2PhysicalRestoreZip -Path $TempZip -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo | Out-Null
+        if ($env:POE2_PATCH_TEST_FAIL_PHYSICAL_ZIP -eq "before-replace") {
+            throw "Injected physical restore ZIP generation failure before atomic replace."
         }
-
-        $LibDir = Join-Path $Bundles2Paths.Bundles2Dir "LibGGPK3"
-        if (Test-Path -LiteralPath $LibDir -PathType Container) {
-            $Bundles2Prefix = $Bundles2Paths.Bundles2Dir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-            Get-ChildItem -LiteralPath $LibDir -Recurse -File | ForEach-Object {
-                $Relative = $_.FullName.Substring($Bundles2Prefix.Length).Replace("\", "/")
-                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                    $Archive,
-                    $_.FullName,
-                    ("Bundles2/" + $Relative),
-                    [System.IO.Compression.CompressionLevel]::Optimal
-                ) | Out-Null
-            }
-        }
+        Move-Poe2FileAtomically -Source $TempZip -Destination $OutputZip | Out-Null
     }
     finally {
-        $Archive.Dispose()
+        if (Test-Path -LiteralPath $TempZip -PathType Leaf) {
+            Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+        }
     }
 
     return (Resolve-Path -LiteralPath $OutputZip).Path
+}
+
+function Copy-PhysicalRestoreZipAtomically {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $SourceFull = (Resolve-Path -LiteralPath $Source).Path
+    $DestinationFull = [System.IO.Path]::GetFullPath($Destination)
+    if ($SourceFull.Equals($DestinationFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $SourceFull
+    }
+
+    $DestinationDir = Split-Path -Parent $DestinationFull
+    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    $TempCopy = Join-Path $DestinationDir ([string]::Concat(".", (Split-Path -Leaf $DestinationFull), ".copy-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+    try {
+        [System.IO.File]::Copy($SourceFull, $TempCopy, $false)
+        Assert-Poe2PhysicalRestoreZip -Path $TempCopy -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo | Out-Null
+        Move-Poe2FileAtomically -Source $TempCopy -Destination $DestinationFull | Out-Null
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempCopy -PathType Leaf) {
+            Remove-Item -LiteralPath $TempCopy -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return (Resolve-Path -LiteralPath $DestinationFull).Path
 }
 
 function Ensure-PhysicalRestoreZip {
@@ -1452,24 +1660,21 @@ function Ensure-PhysicalRestoreZip {
             throw "创建真实还原包失败：$PhysicalRestoreOutZip"
         }
 
-        if ($Created -ne $PhysicalRestorePatchFolderZip) {
-            Copy-Item -LiteralPath $Created -Destination $PhysicalRestorePatchFolderZip -Force
-        }
-        return (Resolve-Path -LiteralPath $PhysicalRestorePatchFolderZip).Path
+        return Copy-PhysicalRestoreZipAtomically -Source $Created -Destination $PhysicalRestorePatchFolderZip
     }
 
     foreach ($Candidate in (Get-PhysicalRestoreZipCandidates)) {
         if (Test-PhysicalRestoreZipUsable $Candidate) {
             $ResolvedCandidate = (Resolve-Path -LiteralPath $Candidate).Path
             if ($ResolvedCandidate -ne $PhysicalRestorePatchFolderZip) {
-                Copy-Item -LiteralPath $ResolvedCandidate -Destination $PhysicalRestorePatchFolderZip -Force
-                return (Resolve-Path -LiteralPath $PhysicalRestorePatchFolderZip).Path
+                return Copy-PhysicalRestoreZipAtomically -Source $ResolvedCandidate -Destination $PhysicalRestorePatchFolderZip
             }
             return $ResolvedCandidate
         }
     }
 
-    throw "缺少真实还原包，而且当前 Bundles2 已经包含物价补丁标记。请先运行一键还原；如果没有真实还原包，请让 Steam/Epic/WeGame 验证或修复一次游戏文件后，先打需要共存的功能补丁，再运行一键更新。"
+    $Reason = if ([string]::IsNullOrWhiteSpace($script:LastPhysicalRestoreZipError)) { "未找到可用文件" } else { $script:LastPhysicalRestoreZipError }
+    throw "缺少与当前官方底板匹配的安全真实还原包（$Reason），而且当前 Bundles2 已经包含物价补丁标记。请先运行一键还原；如果没有可用真实还原包，请让 Steam/Epic/WeGame 验证或修复一次游戏文件后，先打需要共存的功能补丁，再运行一键更新。"
 }
 
 function Ensure-RestoreZip {
@@ -1693,6 +1898,10 @@ Assert-File (Join-Path $CodeToolsRoot "poe2_name_price_patch.py") "patch build s
 if ($PatchIslandRumourHintsEnabled) {
     Assert-File (Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py") "island rumour patch script"
 }
+if ($GameMode -eq "Bundles2" -and -not $NoInstall -and -not $NoOpenTool) {
+    # Fail before extraction/backup so a running game cannot produce a mixed-state restore package.
+    Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
+}
 $Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
 Stop-LegacyInstallerProcesses
 Remove-LegacyFiles
@@ -1908,15 +2117,14 @@ try {
 catch {
     Write-Warning "刷新逻辑还原包失败，将继续更新补丁；如需完全恢复原版，请使用一键还原或官方修复。原因：$($_.Exception.Message)"
 }
-if ($GameMode -eq "Bundles2") {
-    try {
-        $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched ($SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched)
-        Write-Host "真实还原包：" -ForegroundColor Green
-        Write-Host "  $PhysicalRestoreZip"
-    }
-    catch {
-        Write-Warning "刷新真实还原包失败，将继续更新补丁；现有 A 大补丁/旧增量会尽量保留。原因：$($_.Exception.Message)"
-    }
+if ($GameMode -eq "Bundles2" -and -not $NoInstall -and -not $NoOpenTool) {
+    # A physical write without a verified rollback package is never safe.
+    $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched ($SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched)
+    Write-Host "真实还原包：" -ForegroundColor Green
+    Write-Host "  $PhysicalRestoreZip"
+}
+elseif ($GameMode -eq "Bundles2") {
+    Write-Host "本次不会写入游戏，已跳过真实还原包的创建与替换。" -ForegroundColor Yellow
 }
 
 if ($BuildPatchScope -in @("all", "currency", "uniques")) {
@@ -2063,6 +2271,7 @@ if (-not $NoInstall) {
     }
     else {
         Write-Step "使用 PatchBundle3 写入补丁到 Bundles2"
+        Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
 
         $UsePatchBundleDll = Test-Path -LiteralPath $BundledBundlePatchDll -PathType Leaf
         if (-not $UsePatchBundleDll -and -not (Test-Path -LiteralPath $BundledBundlePatchExe -PathType Leaf)) {
@@ -2079,6 +2288,15 @@ if (-not $NoInstall) {
             $InstallInfo.TcEndgameMapsPath
         )
 
+        if ([string]::IsNullOrWhiteSpace($PhysicalRestoreZip) -or -not (Test-Path -LiteralPath $PhysicalRestoreZip -PathType Leaf)) {
+            throw "写入 Bundles2 前找不到已验证的真实还原包，已安全中止。"
+        }
+        Write-Host "写入前正在复验真实还原包与当前官方底板..." -ForegroundColor Yellow
+        Assert-Poe2PhysicalRestoreZip -Path $PhysicalRestoreZip -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo | Out-Null
+        # The merge and full backup verification can both take time.  Re-check the
+        # game process and exclusive index access immediately before PatchBundle3.
+        Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
+
         if ($UsePatchBundleDll) {
             Write-Host "Bundle3 工具：$($BundledBundlePatchDll)"
         }
@@ -2091,7 +2309,7 @@ if (-not $NoInstall) {
         Push-Location -LiteralPath $BundledInstallerDir
         try {
             if ($UsePatchBundleDll) {
-                $BundlePatchResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $TempPatchZip) -Quiet
+                $BundlePatchResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $TempPatchZip) -InputText "" -Quiet
                 $BundlePatchOutput = $BundlePatchResult.Lines
                 $BundlePatchExitCode = $BundlePatchResult.ExitCode
             }
@@ -2111,6 +2329,12 @@ if (-not $NoInstall) {
             throw "PatchBundle3 failed. Exit code: $BundlePatchExitCode"
         }
 
+        Write-Host "正在校验 Bundles2 写入结果..." -ForegroundColor Yellow
+        Assert-Bundles2PatchApplied -ZipPath $TempPatchZip -EntryNames @(
+            $InstallInfo.TcBaseItemsPath,
+            $TcWordsPath,
+            $InstallInfo.TcEndgameMapsPath
+        )
         Remove-Item -LiteralPath $TempPatchZip -Force -ErrorAction SilentlyContinue
         Write-Host "补丁已写入 Bundles2。" -ForegroundColor Green
     }

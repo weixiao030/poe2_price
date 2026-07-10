@@ -501,7 +501,7 @@ function Build-Payload {
     # Fix #10: include Bundles2 extractor in the launcher payload fallback.
     $PayloadBundleExtractorDir = Join-Path $PayloadDir "BundleExtractor"
     New-DirectorySafe -Path $PayloadBundleExtractorDir -RootPath $Root | Out-Null
-    foreach ($FileName in @("BundleExtractor.exe", "oo2core.dll")) {
+    foreach ($FileName in @("BundleExtractor.exe", "oo2core.dll", "vcruntime140.dll")) {
         $Source = Join-Path $SourceToolsDir (Join-Path "BundleExtractor" $FileName)
         Assert-File -Path $Source -Name "BundleExtractor\$FileName"
         Copy-Item -LiteralPath $Source -Destination (Join-Path $PayloadBundleExtractorDir $FileName) -Force
@@ -565,6 +565,13 @@ function Publish-Launcher {
         "-p:DebugSymbols=false",
         "-o", $PublishDir
     )
+
+    $LauncherExe = Join-Path $PublishDir "Poe2PatchLauncher.exe"
+    Assert-File -Path $LauncherExe -Name "published launcher"
+    # Keep the executables committed under the source distribution in sync with
+    # the encrypted payload and file-version metadata produced by this build.
+    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $PatchSourceDir "一键更新物价补丁.exe") -Force
+    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $PatchSourceDir "一键还原物价补丁.exe") -Force
 }
 
 function Publish-BundleExtractor {

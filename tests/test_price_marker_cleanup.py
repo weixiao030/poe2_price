@@ -1,6 +1,7 @@
 import importlib.util
 import sys
 import unittest
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -58,6 +59,39 @@ class PriceMarkerCleanupTests(unittest.TestCase):
         self.assertEqual(by_row[0], "卡兰德的魔镜=15D")
         self.assertEqual(by_row[1], "过期物品")
         self.assertNotIn(2, by_row)
+
+    def test_zero_replacements_remove_stale_patch_zip(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "baseitemtypes.datc64"
+            prices = root / "prices.csv"
+            output_zip = root / "物价补丁.zip"
+            patched_dat = root / "baseitemtypes.patched.datc64"
+            report = root / "report.json"
+            source.write_bytes(b"current clean dat")
+            prices.write_text("metadata_path,name,price\n", encoding="utf-8")
+            with zipfile.ZipFile(output_zip, "w") as archive:
+                archive.writestr(
+                    "data/balance/baseitemtypes.datc64",
+                    b"stale priced dat from the previous run",
+                )
+
+            with patch.object(self.name_patch, "scan_base_item_names", return_value=[]):
+                self.name_patch.build_patch(
+                    source=source,
+                    prices=prices,
+                    output_zip=output_zip,
+                    patched_dat=patched_dat,
+                    game_path="data/balance/baseitemtypes.datc64",
+                    separator="=",
+                    keep_existing_price=True,
+                    mode="append",
+                    patch_same_name_duplicates=True,
+                    report=report,
+                )
+
+            self.assertFalse(output_zip.exists())
+            self.assertEqual(patched_dat.read_bytes(), source.read_bytes())
 
     def test_unique_price_cleanup_accepts_all_generated_forms(self):
         strip = self.price_patch.strip_existing_price

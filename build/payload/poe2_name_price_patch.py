@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import re
 import struct
@@ -37,6 +38,7 @@ DEFAULT_SOURCE = (
 )
 DEFAULT_GAME_PATH = "data/balance/simplified chinese/baseitemtypes.datc64"
 DISPLAY_NAME_FIELD_INDEX = 8
+STRUCTURE_SIGNATURE_VERSION = 1
 
 
 @dataclass
@@ -181,6 +183,66 @@ def scan_base_item_names(data: bytes) -> list[BaseItemName]:
             )
 
     return entries
+
+
+def build_structure_signature(data: bytes) -> dict[str, int | str]:
+    """Return a compatibility signature for a BaseItemTypes.datc64 table.
+
+    Display-name pointers are deliberately excluded from the fixed-row digest,
+    and the variable-length string table is not hashed as a whole.  Price
+    patches may therefore repoint display names to strings appended to the end
+    of the file without making the underlying table look incompatible.
+    """
+    layout = detect_base_item_layout(data)
+    metadata_hasher = hashlib.sha256()
+    fixed_rows_hasher = hashlib.sha256()
+    display_name_offset = DISPLAY_NAME_FIELD_INDEX * 4
+
+    for row_index in range(layout.row_count):
+        row_start = 4 + row_index * layout.row_size
+        row_end = row_start + layout.row_size
+        name_pointer_pos = row_start + display_name_offset
+        metadata_offset = struct.unpack_from("<I", data, row_start)[0]
+        metadata_path, _metadata_start, _metadata_end = read_string_offset(
+            data, layout, metadata_offset
+        )
+        if not metadata_path.lower().startswith("metadata/items/"):
+            raise ValueError(
+                f"unexpected BaseItemTypes metadata path in row {row_index}: "
+                f"{metadata_path!r}"
+            )
+
+        encoded_path = metadata_path.encode("utf-8")
+        metadata_hasher.update(struct.pack("<I", len(encoded_path)))
+        metadata_hasher.update(encoded_path)
+        fixed_rows_hasher.update(data[row_start:name_pointer_pos])
+        fixed_rows_hasher.update(data[name_pointer_pos + 4 : row_end])
+
+    metadata_paths_sha256 = metadata_hasher.hexdigest()
+    fixed_rows_sha256 = fixed_rows_hasher.hexdigest()
+    compatibility_source = "\n".join(
+        (
+            str(STRUCTURE_SIGNATURE_VERSION),
+            str(layout.row_count),
+            str(layout.row_size),
+            metadata_paths_sha256,
+            fixed_rows_sha256,
+        )
+    ).encode("ascii")
+
+    return {
+        "signature_version": STRUCTURE_SIGNATURE_VERSION,
+        "row_count": layout.row_count,
+        "row_size": layout.row_size,
+        "metadata_paths_sha256": metadata_paths_sha256,
+        "fixed_rows_sha256": fixed_rows_sha256,
+        "compatibility_sha256": hashlib.sha256(compatibility_source).hexdigest(),
+    }
+
+
+def print_structure_signature(source: Path) -> None:
+    signature = build_structure_signature(source.read_bytes())
+    print(json.dumps(signature, ensure_ascii=False, sort_keys=True))
 
 
 def load_price_rows(path: Path) -> list[dict[str, str]]:
@@ -529,6 +591,12 @@ def build_patch(
     patch_same_name_duplicates: bool,
     report: Path | None,
 ) -> None:
+    # Every invocation builds a complete patch for the current selection.  Reusing
+    # a zip from a previous run can silently reinstall stale BaseItemTypes entries
+    # when this run has no replacements (for example, switching from "all" to
+    # "uniques only").  Remove it before doing any work so later Words/island
+    # upserts always start from this run's output.
+    output_zip.unlink(missing_ok=True)
     data = source.read_bytes()
     entries = scan_base_item_names(data)
     rows = load_price_rows(prices)
@@ -644,6 +712,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     export.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     export.add_argument("--output", type=Path, default=Path("baseitem_names_tc.csv"))
 
+    signature = sub.add_parser(
+        "signature", help="print BaseItemTypes structure compatibility JSON"
+    )
+    signature.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
+
     build = sub.add_parser("build", help="build patch zip from prices csv")
     build.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
     build.add_argument("--prices", type=Path, default=Path("prices.csv"))
@@ -675,6 +748,8 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
     if args.cmd == "export":
         export_names(args.source, args.output)
+    elif args.cmd == "signature":
+        print_structure_signature(args.source)
     elif args.cmd == "build":
         build_patch(
             source=args.source,

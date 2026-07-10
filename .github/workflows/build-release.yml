@@ -7,6 +7,15 @@ on:
         description: "Release tag. Leave empty to use build-<run-number>."
         required: false
         default: ""
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-release.yml"
+      - "build/**"
+      - "物价补丁/**"
+      - "restore-seeds/**"
+      - "tests/**"
   push:
     branches:
       - main
@@ -17,6 +26,7 @@ on:
       - "build/**"
       - "物价补丁/**"
       - "restore-seeds/**"
+      - "tests/**"
 
 permissions:
   contents: write
@@ -35,10 +45,30 @@ jobs:
         with:
           dotnet-version: "8.x"
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install test dependencies
+        shell: powershell
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+
+      - name: Verify committed release assets
+        shell: powershell
+        run: |
+          python -m pytest -q tests/test_release_payload_sync.py
+
       - name: Build release folder
         shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File .\build\make_release.ps1 -SkipDoc
+
+      - name: Run tests
+        shell: powershell
+        run: |
+          python -m pytest -q
 
       - name: Pack release zip
         shell: pwsh

@@ -14,10 +14,12 @@ import csv
 import html
 import json
 import math
+import queue
 import re
 import struct
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -55,6 +57,9 @@ DEFAULT_POE_NINJA_LEAGUE = "Runes of Aldur"
 DEFAULT_POE2DB_ECONOMY_US_URL = "https://poe2db.tw/Economy"
 DEFAULT_POE2DB_ECONOMY_CN_URL = "https://poe2db.tw/cn/Economy"
 DEFAULT_LEAGUE = "runes"
+DEFAULT_REQUEST_TIME_BUDGET = 45.0
+HTTP_READ_CHUNK_SIZE = 64 * 1024
+MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
 PRICE_SOURCES = ("poe2scout", "poecurrency-cn")
 FALLBACK_PRICE_SOURCES = ("poe-ninja", "poe2db-economy")
 CN_REFERENCE_SOURCES = ("poe2scout", "poe-ninja", "poe2db-economy", "none")
@@ -219,21 +224,27 @@ class PriceSourceResult:
     warning: str = ""
 
 
+class RequestDeadlineExceeded(TimeoutError):
+    """A wall-clock deadline expired while an HTTP worker was still active."""
+
+
 class RetryingRequests:
     def __init__(
         self,
         max_retries: int = 4,
         backoff: float = 0.8,
         timeout: float = 25.0,
+        total_timeout: float = DEFAULT_REQUEST_TIME_BUDGET,
         user_agent: str = (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36 poe2-price-patch/1.0"
         ),
     ) -> None:
-        self.max_retries = max_retries
-        self.backoff = backoff
-        self.timeout = timeout
+        self.max_retries = max(0, int(max_retries))
+        self.backoff = max(0.0, float(backoff))
+        self.timeout = max(0.1, float(timeout))
+        self.total_timeout = max(0.1, float(total_timeout))
         self.user_agent = user_agent
         self.retry_statuses = {429, 500, 502, 503, 504}
 
@@ -263,40 +274,164 @@ class RetryingRequests:
             encoding=encoding,
         )
 
-    def _get_once(self, url: str) -> HttpResponse:
+    @staticmethod
+    def _set_response_socket_timeout(response: Any, timeout: float) -> None:
+        """Best-effort update of urllib's socket timeout for the next body read."""
+
+        fp = getattr(response, "fp", None)
+        raw = getattr(fp, "raw", None)
+        sock = getattr(raw, "_sock", None)
+        settimeout = getattr(sock, "settimeout", None)
+        if callable(settimeout):
+            settimeout(max(0.1, timeout))
+
+    def _read_response_content(
+        self,
+        response: Any,
+        url: str,
+        deadline: float,
+        cancel_event: threading.Event,
+    ) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        read_chunk = getattr(response, "read1", None)
+        if not callable(read_chunk):
+            read_chunk = response.read
+
+        while True:
+            if cancel_event.is_set():
+                raise RequestDeadlineExceeded(f"request cancelled after deadline: {url}")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RequestDeadlineExceeded(f"response body exceeded deadline: {url}")
+            self._set_response_socket_timeout(response, min(self.timeout, remaining))
+            chunk = read_chunk(HTTP_READ_CHUNK_SIZE)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_HTTP_RESPONSE_BYTES:
+                raise RuntimeError(
+                    f"response exceeded {MAX_HTTP_RESPONSE_BYTES} byte safety limit: {url}"
+                )
+
+    def _get_once(
+        self,
+        url: str,
+        timeout: float,
+        cancel_event: threading.Event | None = None,
+    ) -> HttpResponse:
+        cancel_event = cancel_event or threading.Event()
+        deadline = time.monotonic() + timeout
         request = urllib.request.Request(url, headers=self._headers(), method="GET")
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                content = self._read_response_content(
+                    response,
+                    url,
+                    deadline,
+                    cancel_event,
+                )
                 return self._decode_response(
                     url=response.geturl(),
                     status_code=response.status,
                     reason=response.reason,
                     headers=response.headers,
-                    content=response.read(),
+                    content=content,
                 )
         except urllib.error.HTTPError as exc:
-            return self._decode_response(
-                url=exc.url,
-                status_code=exc.code,
-                reason=exc.reason,
-                headers=exc.headers,
-                content=exc.read(),
+            try:
+                content = self._read_response_content(
+                    exc,
+                    url,
+                    deadline,
+                    cancel_event,
+                )
+                return self._decode_response(
+                    url=exc.url,
+                    status_code=exc.code,
+                    reason=exc.reason,
+                    headers=exc.headers,
+                    content=content,
+                )
+            finally:
+                exc.close()
+
+    def _get_once_with_deadline(self, url: str, timeout: float) -> HttpResponse:
+        """Run one urllib request behind a real wall-clock deadline.
+
+        ``urlopen(timeout=...)`` only limits individual blocking socket operations.
+        A large response that keeps delivering a few bytes can therefore make
+        an unbounded body read run forever.  A daemon worker lets the caller move
+        on to fallback/error handling even when DNS, TLS, or a trickling response
+        ignores that socket-level timeout.
+        """
+
+        result: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
+        cancel_event = threading.Event()
+
+        def request_worker() -> None:
+            try:
+                result.put((True, self._get_once(url, timeout, cancel_event)))
+            except BaseException as exc:
+                result.put((False, exc))
+
+        worker = threading.Thread(
+            target=request_worker,
+            name="poe2-price-http",
+            daemon=True,
+        )
+        worker.start()
+        worker.join(timeout)
+        if worker.is_alive():
+            cancel_event.set()
+            raise RequestDeadlineExceeded(
+                f"request attempt exceeded {timeout:.1f}s wall-clock deadline: {url}"
             )
+
+        succeeded, value = result.get_nowait()
+        if succeeded:
+            return value
+        raise value
 
     def get(self, url: str, **kwargs: Any) -> HttpResponse:
         last_error: Exception | None = None
+        request_started = time.monotonic()
+        request_deadline = request_started + self.total_timeout
         for attempt in range(self.max_retries + 1):
+            remaining = request_deadline - time.monotonic()
+            if remaining <= 0:
+                last_error = TimeoutError(
+                    f"request exceeded {self.total_timeout:.1f}s total time budget: {url}"
+                )
+                break
             try:
-                response = self._get_once(url)
+                response = self._get_once_with_deadline(
+                    url,
+                    min(self.timeout, remaining),
+                )
                 if response.status_code < 400:
                     return response
                 if response.status_code not in self.retry_statuses:
                     return response
                 last_error = RuntimeError(f"{response.status_code} {response.reason}: {url}")
+            except RequestDeadlineExceeded as exc:
+                # The daemon may still be unwinding a blocked DNS/TLS/socket call.
+                # Do not create another worker for this URL; fallback sources can
+                # proceed immediately and this leaves at most one orphan thread.
+                last_error = exc
+                break
             except Exception as exc:
                 last_error = exc
             if attempt < self.max_retries:
                 delay = self.backoff * (2**attempt)
+                remaining = request_deadline - time.monotonic()
+                if remaining <= 0:
+                    last_error = TimeoutError(
+                        f"request exceeded {self.total_timeout:.1f}s total time budget: {url}"
+                    )
+                    break
+                delay = min(delay, remaining)
                 print(
                     "[进度] 请求失败，"
                     f"{delay:.1f}s 后重试 {attempt + 1}/{self.max_retries}: "
@@ -1307,6 +1442,10 @@ def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> di
         "snapshot_pairs": "全量价格对",
     }
     progress("poe2scout：开始抓取主价格接口")
+    progress(
+        "poe2scout：全量价格对接口数据较大；"
+        f"单个接口最多等待 {client.total_timeout:g} 秒（含重试）"
+    )
     results: dict[str, Any] = {}
     with ThreadPoolExecutor(max_workers=3) as pool:
         future_to_name = {
@@ -2462,7 +2601,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--timeout",
         type=float,
         default=12.0,
-        help="HTTP request timeout in seconds for price sources.",
+        help="Wall-clock timeout in seconds for each HTTP attempt.",
+    )
+    parser.add_argument(
+        "--request-time-budget",
+        type=float,
+        default=DEFAULT_REQUEST_TIME_BUDGET,
+        help="Maximum wall-clock seconds per URL, including retries and backoff.",
     )
     parser.add_argument("--poe2db-fallback", action="store_true")
     parser.add_argument("--no-uniques", action="store_true")
@@ -2564,6 +2709,7 @@ def main(argv: list[str]) -> int:
         max_retries=args.retries,
         backoff=args.backoff,
         timeout=max(1.0, args.timeout),
+        total_timeout=max(1.0, args.request_time_budget),
     )
     fallback_labels = ", ".join(
         price_source_label(source) for source in fallback_price_sources

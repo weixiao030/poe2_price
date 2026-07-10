@@ -439,6 +439,657 @@ function Get-Bundles2Paths {
     }
 }
 
+function Get-Poe2Sha256Hex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $Stream = [System.IO.File]::Open(
+        $Path,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::Read
+    )
+    $Sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [System.BitConverter]::ToString($Sha.ComputeHash($Stream)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $Sha.Dispose()
+        $Stream.Dispose()
+    }
+}
+
+function Get-Poe2TextSha256Hex {
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    $Sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+        return [System.BitConverter]::ToString($Sha.ComputeHash($Bytes)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $Sha.Dispose()
+    }
+}
+
+function Initialize-Poe2ZipIntegrityType {
+    if ($null -ne ("Poe2ZipIntegrity" -as [type])) {
+        return
+    }
+
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+
+public static class Poe2ZipIntegrity
+{
+    private const uint CentralDirectorySignature = 0x02014b50u;
+    private const uint EndOfCentralDirectorySignature = 0x06054b50u;
+    private const uint Zip64EndOfCentralDirectorySignature = 0x06064b50u;
+    private const uint Zip64LocatorSignature = 0x07064b50u;
+    private static readonly uint[] CrcTable = BuildCrcTable();
+
+    private static uint[] BuildCrcTable()
+    {
+        uint[] table = new uint[256];
+        for (uint i = 0; i < table.Length; i++)
+        {
+            uint value = i;
+            for (int bit = 0; bit < 8; bit++)
+                value = (value & 1u) != 0u ? 0xedb88320u ^ (value >> 1) : value >> 1;
+            table[i] = value;
+        }
+        return table;
+    }
+
+    public static string ComputeFileCrc32(string path)
+    {
+        uint crc = 0xffffffffu;
+        byte[] buffer = new byte[1024 * 1024];
+        using (FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (int i = 0; i < read; i++)
+                    crc = CrcTable[(crc ^ buffer[i]) & 0xffu] ^ (crc >> 8);
+            }
+        }
+        return (~crc).ToString("x8");
+    }
+
+    public static string ComputeStreamIntegrity(Stream stream)
+    {
+        uint crc = 0xffffffffu;
+        long length = 0;
+        byte[] buffer = new byte[1024 * 1024];
+        using (SHA256 sha = SHA256.Create())
+        {
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                sha.TransformBlock(buffer, 0, read, buffer, 0);
+                for (int i = 0; i < read; i++)
+                    crc = CrcTable[(crc ^ buffer[i]) & 0xffu] ^ (crc >> 8);
+                length += read;
+            }
+            sha.TransformFinalBlock(new byte[0], 0, 0);
+            string hash = BitConverter.ToString(sha.Hash).Replace("-", "").ToLowerInvariant();
+            return (~crc).ToString("x8") + "|" + hash + "|" + length.ToString();
+        }
+    }
+
+    public static Dictionary<string, string> ReadCentralDirectoryCrc32(string zipPath)
+    {
+        using (FileStream stream = new FileStream(zipPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        using (BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, true))
+        {
+            long eocdOffset = FindEndOfCentralDirectory(stream);
+            stream.Position = eocdOffset + 4;
+            ushort diskNumber = reader.ReadUInt16();
+            ushort centralDirectoryDisk = reader.ReadUInt16();
+            reader.ReadUInt16();
+            ulong entryCount = reader.ReadUInt16();
+            uint centralDirectorySize32 = reader.ReadUInt32();
+            ulong centralDirectoryOffset = reader.ReadUInt32();
+            if (diskNumber != 0 || centralDirectoryDisk != 0)
+                throw new InvalidDataException("Multi-disk ZIP archives are not supported.");
+
+            if (entryCount == ushort.MaxValue || centralDirectorySize32 == uint.MaxValue || centralDirectoryOffset == uint.MaxValue)
+            {
+                if (eocdOffset < 20)
+                    throw new InvalidDataException("ZIP64 locator is missing.");
+                stream.Position = eocdOffset - 20;
+                if (reader.ReadUInt32() != Zip64LocatorSignature)
+                    throw new InvalidDataException("ZIP64 locator is invalid.");
+                uint zip64Disk = reader.ReadUInt32();
+                long zip64Offset = reader.ReadInt64();
+                uint totalDisks = reader.ReadUInt32();
+                if (zip64Disk != 0 || totalDisks != 1 || zip64Offset < 0)
+                    throw new InvalidDataException("Multi-disk ZIP64 archives are not supported.");
+
+                stream.Position = zip64Offset;
+                if (reader.ReadUInt32() != Zip64EndOfCentralDirectorySignature)
+                    throw new InvalidDataException("ZIP64 end-of-central-directory record is invalid.");
+                reader.ReadUInt64();
+                reader.ReadUInt16();
+                reader.ReadUInt16();
+                uint zip64DiskNumber = reader.ReadUInt32();
+                uint zip64CentralDisk = reader.ReadUInt32();
+                reader.ReadUInt64();
+                entryCount = reader.ReadUInt64();
+                reader.ReadUInt64();
+                centralDirectoryOffset = reader.ReadUInt64();
+                if (zip64DiskNumber != 0 || zip64CentralDisk != 0)
+                    throw new InvalidDataException("Multi-disk ZIP64 archives are not supported.");
+            }
+
+            if (centralDirectoryOffset > (ulong)stream.Length || entryCount > int.MaxValue)
+                throw new InvalidDataException("ZIP central directory points outside the archive.");
+            stream.Position = (long)centralDirectoryOffset;
+            Dictionary<string, string> result = new Dictionary<string, string>(StringComparer.Ordinal);
+            for (ulong index = 0; index < entryCount; index++)
+            {
+                if (reader.ReadUInt32() != CentralDirectorySignature)
+                    throw new InvalidDataException("ZIP central directory entry is invalid.");
+                reader.ReadUInt16();
+                reader.ReadUInt16();
+                ushort flags = reader.ReadUInt16();
+                reader.ReadUInt16();
+                reader.ReadUInt16();
+                reader.ReadUInt16();
+                uint crc = reader.ReadUInt32();
+                reader.ReadUInt32();
+                reader.ReadUInt32();
+                ushort nameLength = reader.ReadUInt16();
+                ushort extraLength = reader.ReadUInt16();
+                ushort commentLength = reader.ReadUInt16();
+                reader.ReadUInt16();
+                reader.ReadUInt16();
+                reader.ReadUInt32();
+                reader.ReadUInt32();
+                byte[] nameBytes = reader.ReadBytes(nameLength);
+                if (nameBytes.Length != nameLength)
+                    throw new EndOfStreamException("ZIP entry name is truncated.");
+                string name = ((flags & 0x0800) != 0 ? Encoding.UTF8 : Encoding.ASCII).GetString(nameBytes);
+                if (result.ContainsKey(name))
+                    throw new InvalidDataException("ZIP contains a duplicate entry: " + name);
+                result.Add(name, crc.ToString("x8"));
+                if (stream.Seek((long)extraLength + commentLength, SeekOrigin.Current) < 0)
+                    throw new InvalidDataException("ZIP central directory entry is truncated.");
+            }
+            return result;
+        }
+    }
+
+    private static long FindEndOfCentralDirectory(FileStream stream)
+    {
+        int searchLength = (int)Math.Min(stream.Length, 65557L);
+        byte[] tail = new byte[searchLength];
+        stream.Position = stream.Length - searchLength;
+        int offset = 0;
+        while (offset < tail.Length)
+        {
+            int read = stream.Read(tail, offset, tail.Length - offset);
+            if (read == 0)
+                throw new EndOfStreamException("ZIP end-of-central-directory search was truncated.");
+            offset += read;
+        }
+        for (int i = tail.Length - 22; i >= 0; i--)
+        {
+            if (tail[i] == 0x50 && tail[i + 1] == 0x4b && tail[i + 2] == 0x05 && tail[i + 3] == 0x06)
+                return stream.Length - searchLength + i;
+        }
+        throw new InvalidDataException("ZIP end-of-central-directory record was not found.");
+    }
+}
+'@
+}
+
+function Get-Poe2ZipEntryCrc32Map {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-Poe2ZipIntegrityType
+    return ,([Poe2ZipIntegrity]::ReadCentralDirectoryCrc32($Path))
+}
+
+function Get-Poe2FileCrc32Hex {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Initialize-Poe2ZipIntegrityType
+    return [Poe2ZipIntegrity]::ComputeFileCrc32($Path)
+}
+
+function Get-Poe2ZipEntryStreamIntegrity {
+    param([Parameter(Mandatory = $true)]$Entry)
+
+    Initialize-Poe2ZipIntegrityType
+    $Stream = $Entry.Open()
+    try {
+        $Parts = [Poe2ZipIntegrity]::ComputeStreamIntegrity($Stream).Split('|')
+    }
+    finally {
+        $Stream.Dispose()
+    }
+    if ($Parts.Count -ne 3) {
+        throw "无法计算 ZIP 条目完整性：$($Entry.FullName)"
+    }
+    return [pscustomobject]@{
+        Crc32 = $Parts[0]
+        Sha256 = $Parts[1]
+        Length = [long]$Parts[2]
+    }
+}
+
+function Get-Poe2PhysicalBaseFingerprint {
+    param([Parameter(Mandatory = $true)][string]$Poe2Dir)
+
+    $GameRoot = (Resolve-Path -LiteralPath $Poe2Dir).Path
+    $Bundles2Root = Join-Path $GameRoot "Bundles2"
+    if (-not (Test-Path -LiteralPath $Bundles2Root -PathType Container)) {
+        throw "无法读取 Bundles2 官方底板：目录不存在：$Bundles2Root"
+    }
+
+    $Executables = @(Get-ChildItem -LiteralPath $GameRoot -Filter "PathOfExile*.exe" -File -ErrorAction Stop | Sort-Object Name)
+    $TopLevelBundles = @(Get-ChildItem -LiteralPath $Bundles2Root -Filter "*.bundle.bin" -File -ErrorAction Stop | Sort-Object Name)
+    if ($Executables.Count -eq 0) {
+        throw "无法确认官方底板：游戏根目录没有 PathOfExile*.exe。"
+    }
+    if ($TopLevelBundles.Count -eq 0) {
+        throw "无法确认官方底板：Bundles2 顶层没有 *.bundle.bin。"
+    }
+
+    $Records = New-Object System.Collections.Generic.List[object]
+    foreach ($File in $Executables) {
+        $Records.Add([pscustomobject][ordered]@{
+                path = $File.Name
+                length = [long]$File.Length
+                last_write_time_utc = $File.LastWriteTimeUtc.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+            })
+    }
+    foreach ($File in $TopLevelBundles) {
+        $Records.Add([pscustomobject][ordered]@{
+                path = "Bundles2/$($File.Name)"
+                length = [long]$File.Length
+                last_write_time_utc = $File.LastWriteTimeUtc.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+            })
+    }
+
+    $SortedRecords = @($Records | Sort-Object @{ Expression = { ([string]$_.path).ToLowerInvariant() } })
+    $CanonicalLines = @($SortedRecords | ForEach-Object {
+            "{0}|{1}|{2}" -f ([string]$_.path).ToLowerInvariant(), [long]$_.length, [string]$_.last_write_time_utc
+        })
+    $Canonical = [string]::Join("`n", $CanonicalLines)
+
+    return [pscustomobject][ordered]@{
+        version = 1
+        algorithm = "path-length-last-write-time-utc-v1"
+        files = $SortedRecords
+        inventory_sha256 = Get-Poe2TextSha256Hex -Text $Canonical
+    }
+}
+
+function ConvertTo-Poe2UtcDateTimeOffset {
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [string]$Name = "timestamp"
+    )
+
+    [System.DateTimeOffset]$Parsed = [System.DateTimeOffset]::MinValue
+    $Ok = [System.DateTimeOffset]::TryParse(
+        $Text,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [System.Globalization.DateTimeStyles]::RoundtripKind,
+        [ref]$Parsed
+    )
+    if (-not $Ok) {
+        throw "无法解析真实还原包的 $Name：$Text"
+    }
+    return $Parsed.ToUniversalTime()
+}
+
+function Assert-Poe2PhysicalRestoreManifestCurrent {
+    param(
+        [Parameter(Mandatory = $true)]$Manifest,
+        [Parameter(Mandatory = $true)][string]$Poe2Dir,
+        [int]$LegacyClockToleranceSeconds = 5
+    )
+
+    if ([string]$Manifest.kind -ne "poe2-price-patch-physical-restore") {
+        throw "真实还原包 manifest kind 无效。"
+    }
+
+    try {
+        $ManifestVersion = [int]$Manifest.version
+    }
+    catch {
+        throw "真实还原包 manifest version 无法解析。"
+    }
+    $Current = Get-Poe2PhysicalBaseFingerprint -Poe2Dir $Poe2Dir
+
+    if ($ManifestVersion -eq 2) {
+        $Expected = $Manifest.base_fingerprint
+        if ($null -eq $Expected -or [int]$Expected.version -ne 1) {
+            throw "真实还原包 v2 缺少可识别的官方底板指纹。"
+        }
+
+        $ExpectedFiles = @($Expected.files)
+        $CurrentFiles = @($Current.files)
+        if ($ExpectedFiles.Count -ne $CurrentFiles.Count) {
+            throw "真实还原包已过期：官方底板文件数量已变化（备份 $($ExpectedFiles.Count)，当前 $($CurrentFiles.Count)）。"
+        }
+
+        $CurrentByPath = @{}
+        foreach ($File in $CurrentFiles) {
+            $CurrentByPath[([string]$File.path).ToLowerInvariant()] = $File
+        }
+        $Seen = @{}
+        foreach ($File in $ExpectedFiles) {
+            $Relative = [string]$File.path
+            if ([string]::IsNullOrWhiteSpace($Relative)) {
+                throw "真实还原包 v2 的官方底板指纹包含空路径。"
+            }
+            $Key = $Relative.ToLowerInvariant()
+            if ($Seen.ContainsKey($Key)) {
+                throw "真实还原包 v2 的官方底板指纹包含重复路径：$Relative"
+            }
+            $Seen[$Key] = $true
+            if (-not $CurrentByPath.ContainsKey($Key)) {
+                throw "真实还原包已过期：官方底板文件已删除或改名：$Relative"
+            }
+
+            $CurrentFile = $CurrentByPath[$Key]
+            try {
+                $ExpectedLength = [long]$File.length
+            }
+            catch {
+                throw "真实还原包 v2 的文件长度无法解析：$Relative"
+            }
+            if ($ExpectedLength -ne [long]$CurrentFile.length) {
+                throw "真实还原包已过期：官方底板文件长度已变化：$Relative"
+            }
+
+            $ExpectedTime = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$File.last_write_time_utc) -Name "$Relative LastWriteTimeUtc"
+            $CurrentTime = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$CurrentFile.last_write_time_utc) -Name "$Relative current LastWriteTimeUtc"
+            if ($ExpectedTime.UtcDateTime.Ticks -ne $CurrentTime.UtcDateTime.Ticks) {
+                throw "真实还原包已过期：官方底板文件时间已变化：$Relative"
+            }
+        }
+
+        $ExpectedInventory = [string]$Expected.inventory_sha256
+        if ($ExpectedInventory -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "真实还原包 v2 的官方底板组合指纹无效。"
+        }
+        if (-not $ExpectedInventory.Equals([string]$Current.inventory_sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "真实还原包已过期：官方底板组合指纹与当前游戏不一致。"
+        }
+        return $Current
+    }
+
+    if ($ManifestVersion -eq 1) {
+        $CreatedAt = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$Manifest.created_at) -Name "created_at"
+        if ($CreatedAt -gt [System.DateTimeOffset]::UtcNow.AddMinutes(5)) {
+            throw "旧版真实还原包的 created_at 晚于当前时间，无法安全确认兼容性：$($CreatedAt.ToString('o'))。"
+        }
+        $LatestAllowed = $CreatedAt.AddSeconds([Math]::Max(0, $LegacyClockToleranceSeconds))
+        foreach ($File in @($Current.files)) {
+            $CurrentTime = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$File.last_write_time_utc) -Name "$($File.path) current LastWriteTimeUtc"
+            if ($CurrentTime -gt $LatestAllowed) {
+                throw "旧版真实还原包已过期：$($File.path) 的修改时间 $($CurrentTime.ToString('o')) 晚于备份创建时间 $($CreatedAt.ToString('o'))。"
+            }
+        }
+        return $Current
+    }
+
+    throw "不支持的真实还原包 manifest version：$ManifestVersion"
+}
+
+function Assert-Poe2PhysicalRestoreZip {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Poe2Dir,
+        [Parameter(Mandatory = $true)]$InstallInfo
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "真实还原包不存在：$Path"
+    }
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $CrcByName = Get-Poe2ZipEntryCrc32Map -Path $Path
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+    try {
+        $ManifestEntry = $Archive.GetEntry("manifest.json")
+        if ($null -eq $ManifestEntry) {
+            throw "真实还原包缺少 manifest.json。"
+        }
+
+        $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
+        try {
+            $ManifestText = $Reader.ReadToEnd()
+        }
+        finally {
+            $Reader.Dispose()
+        }
+        try {
+            $Manifest = $ManifestText | ConvertFrom-Json
+        }
+        catch {
+            throw "真实还原包 manifest.json 无法解析：$($_.Exception.Message)"
+        }
+
+        if ([string]$Manifest.install_kind -ne [string]$InstallInfo.InstallKind) {
+            throw "真实还原包属于 $($Manifest.install_kind)，当前安装为 $($InstallInfo.InstallKind)。"
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$Manifest.target_path) -and [string]$Manifest.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
+            throw "真实还原包目标为 $($Manifest.target_path)，当前目标为 $($InstallInfo.TcBaseItemsPath)。"
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$Manifest.mode) -and [string]$Manifest.mode -ne "Bundles2") {
+            throw "真实还原包模式无效：$($Manifest.mode)"
+        }
+
+        Assert-Poe2PhysicalRestoreManifestCurrent -Manifest $Manifest -Poe2Dir $Poe2Dir | Out-Null
+
+        $PhysicalEntries = @($Archive.Entries | Where-Object { -not [string]::IsNullOrEmpty($_.Name) -and $_.FullName -like "Bundles2/*" })
+        $IndexEntry = @($PhysicalEntries | Where-Object { $_.FullName -eq "Bundles2/_.index.bin" })
+        if ($IndexEntry.Count -ne 1 -or $IndexEntry[0].Length -le 1048576) {
+            throw "真实还原包没有有效的 Bundles2/_.index.bin。"
+        }
+
+        $SeenEntries = @{}
+        foreach ($Entry in $Archive.Entries) {
+            if ([string]::IsNullOrEmpty($Entry.Name)) {
+                continue
+            }
+            $Name = [string]$Entry.FullName
+            if ($Name -ne "manifest.json" -and $Name -notmatch '^Bundles2/(?:_\.index\.bin|_\.index\.(?:high|low)\.bin|\.index\.dbg|LibGGPK3/.+)$') {
+                throw "真实还原包包含不允许写入的条目：$Name"
+            }
+            $Key = $Name.ToLowerInvariant()
+            if ($SeenEntries.ContainsKey($Key)) {
+                throw "真实还原包包含重复条目：$Name"
+            }
+            $SeenEntries[$Key] = $true
+            if (-not $CrcByName.ContainsKey($Name)) {
+                throw "ZIP 中央目录缺少条目 CRC：$Name"
+            }
+        }
+
+        try {
+            $ManifestVersion = [int]$Manifest.version
+        }
+        catch {
+            throw "真实还原包 manifest version 无法解析。"
+        }
+        $RestoreFileByPath = @{}
+        if ($ManifestVersion -eq 2) {
+            foreach ($Descriptor in @($Manifest.restore_files)) {
+                $DescriptorPath = [string]$Descriptor.path
+                if ([string]::IsNullOrWhiteSpace($DescriptorPath)) {
+                    throw "真实还原包 v2 的 restore_files 包含空路径。"
+                }
+                $DescriptorKey = $DescriptorPath.ToLowerInvariant()
+                if ($RestoreFileByPath.ContainsKey($DescriptorKey)) {
+                    throw "真实还原包 v2 的 restore_files 包含重复路径：$DescriptorPath"
+                }
+                $RestoreFileByPath[$DescriptorKey] = $Descriptor
+            }
+            if ($RestoreFileByPath.Count -ne $PhysicalEntries.Count) {
+                throw "真实还原包 v2 的 restore_files 与 ZIP 条目数量不一致。"
+            }
+        }
+
+        foreach ($Entry in @($ManifestEntry) + $PhysicalEntries) {
+            $Integrity = Get-Poe2ZipEntryStreamIntegrity -Entry $Entry
+            $ExpectedCrc = [string]$CrcByName[[string]$Entry.FullName]
+            if (-not $Integrity.Crc32.Equals($ExpectedCrc, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "真实还原包 CRC 校验失败：$($Entry.FullName)"
+            }
+            if ($Integrity.Length -ne [long]$Entry.Length) {
+                throw "真实还原包解压长度校验失败：$($Entry.FullName)"
+            }
+
+            if ($ManifestVersion -eq 2 -and $Entry.FullName -ne "manifest.json") {
+                $DescriptorKey = ([string]$Entry.FullName).ToLowerInvariant()
+                if (-not $RestoreFileByPath.ContainsKey($DescriptorKey)) {
+                    throw "真实还原包 v2 缺少条目描述：$($Entry.FullName)"
+                }
+                $Descriptor = $RestoreFileByPath[$DescriptorKey]
+                try {
+                    $ExpectedLength = [long]$Descriptor.length
+                }
+                catch {
+                    throw "真实还原包 v2 的条目长度无法解析：$($Entry.FullName)"
+                }
+                if ($ExpectedLength -ne $Integrity.Length) {
+                    throw "真实还原包 v2 的条目长度不匹配：$($Entry.FullName)"
+                }
+                $ExpectedSha = [string]$Descriptor.sha256
+                if ($ExpectedSha -notmatch '^[0-9a-fA-F]{64}$' -or -not $Integrity.Sha256.Equals($ExpectedSha, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "真实还原包 v2 的条目 SHA256 校验失败：$($Entry.FullName)"
+                }
+                $DescriptorCrc = [string]$Descriptor.crc32
+                if ($DescriptorCrc -notmatch '^[0-9a-fA-F]{8}$' -or -not $Integrity.Crc32.Equals($DescriptorCrc, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "真实还原包 v2 的条目 CRC32 校验失败：$($Entry.FullName)"
+                }
+            }
+        }
+
+        return $Manifest
+    }
+    finally {
+        $Archive.Dispose()
+    }
+}
+
+function Move-Poe2FileAtomically {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $SourceFull = [System.IO.Path]::GetFullPath($Source)
+    $DestinationFull = [System.IO.Path]::GetFullPath($Destination)
+    $DestinationDir = Split-Path -Parent $DestinationFull
+    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+
+    if (-not (Test-Path -LiteralPath $DestinationFull -PathType Leaf)) {
+        [System.IO.File]::Move($SourceFull, $DestinationFull)
+        return $DestinationFull
+    }
+
+    $SafetyBackup = Join-Path $DestinationDir ([string]::Concat(".", (Split-Path -Leaf $DestinationFull), ".replace-backup-", [Guid]::NewGuid().ToString("N")))
+    $FailedReplacement = Join-Path $DestinationDir ([string]::Concat(".", (Split-Path -Leaf $DestinationFull), ".failed-replacement-", [Guid]::NewGuid().ToString("N")))
+    $ReplaceSucceeded = $false
+    $RollbackSucceeded = $false
+    try {
+        [System.IO.File]::Replace($SourceFull, $DestinationFull, $SafetyBackup, $true)
+        $ReplaceSucceeded = $true
+    }
+    catch {
+        $OriginalError = $_
+        if (Test-Path -LiteralPath $SafetyBackup -PathType Leaf) {
+            try {
+                if (Test-Path -LiteralPath $DestinationFull -PathType Leaf) {
+                    [System.IO.File]::Replace($SafetyBackup, $DestinationFull, $FailedReplacement, $true)
+                }
+                else {
+                    [System.IO.File]::Move($SafetyBackup, $DestinationFull)
+                }
+                $RollbackSucceeded = $true
+            }
+            catch {
+                throw "原子替换失败，自动恢复旧文件也失败。旧文件备份已保留：$SafetyBackup；目标：$DestinationFull；原始错误：$($OriginalError.Exception.Message)；恢复错误：$($_.Exception.Message)"
+            }
+        }
+        elseif (-not (Test-Path -LiteralPath $DestinationFull -PathType Leaf)) {
+            throw "原子替换失败，目标和安全备份均不存在。目标：$DestinationFull；原始错误：$($OriginalError.Exception.Message)"
+        }
+        throw $OriginalError
+    }
+    finally {
+        if ($ReplaceSucceeded -or $RollbackSucceeded) {
+            if (Test-Path -LiteralPath $SafetyBackup -PathType Leaf) {
+                Remove-Item -LiteralPath $SafetyBackup -Force -ErrorAction SilentlyContinue
+            }
+            if (Test-Path -LiteralPath $FailedReplacement -PathType Leaf) {
+                Remove-Item -LiteralPath $FailedReplacement -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    return $DestinationFull
+}
+
+function Assert-Poe2GameFilesAvailable {
+    param(
+        [Parameter(Mandatory = $true)][string]$Poe2Dir,
+        [Parameter(Mandatory = $true)][string]$IndexPath
+    )
+
+    $RunningGames = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.ProcessName -like "PathOfExile*"
+        })
+    if ($RunningGames.Count -gt 0) {
+        $Names = [string]::Join(", ", @($RunningGames | ForEach-Object { "$($_.ProcessName) (PID $($_.Id))" }))
+        throw "检测到 POE2 游戏仍在运行，请完全关闭游戏后重试。进程：$Names"
+    }
+
+    $Stream = $null
+    try {
+        $Stream = [System.IO.File]::Open(
+            $IndexPath,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
+    }
+    catch {
+        throw "Bundles2 索引文件被占用或不可写，请关闭游戏并等待游戏平台更新完成后重试。路径：$IndexPath。$($_.Exception.Message)"
+    }
+    finally {
+        if ($null -ne $Stream) {
+            $Stream.Dispose()
+        }
+    }
+
+    $LauncherNames = if (Test-Poe2ChinaClient -Poe2Dir $Poe2Dir) {
+        @("wegame", "rail")
+    }
+    else {
+        @("steam", "EpicGamesLauncher")
+    }
+    $RunningLaunchers = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.ProcessName -in $LauncherNames
+        } | Select-Object -ExpandProperty ProcessName -Unique)
+    if ($RunningLaunchers.Count -gt 0) {
+        Write-Warning "检测到游戏平台仍在运行：$([string]::Join(', ', $RunningLaunchers))。如果平台正在更新或校验游戏，请先完全退出平台后再继续。"
+    }
+}
+
 function Test-Poe2ReleaseMode {
     return ($env:POE2_PATCH_RELEASE -eq "1")
 }

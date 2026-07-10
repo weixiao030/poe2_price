@@ -8,6 +8,10 @@ __pycache__/
 *.tmp
 *.log
 
+# .NET 本地编译缓存（已跟踪的历史文件不受此规则影响）
+**/bin/
+**/obj/
+
 # 本地编辑器配置
 .vscode/
 .idea/

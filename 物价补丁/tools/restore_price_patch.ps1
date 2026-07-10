@@ -77,42 +77,40 @@ function Get-BaseItemsMetadataSignature {
     param([string]$SourceDat)
 
     Assert-File $SourceDat "BaseItemTypes.datc64"
-    $TempCsv = Join-Path $env:TEMP ([string]::Concat("poe2_baseitems_sig_", [Guid]::NewGuid().ToString("N"), ".csv"))
+    $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+    $SignatureScript = Join-Path $CodeToolsRoot "poe2_name_price_patch.py"
+    $SignatureResult = Invoke-Poe2Python -Python $Python -ArgumentList @(
+        $SignatureScript,
+        "signature",
+        "--source", $SourceDat
+    ) -Quiet
+    if ($SignatureResult.ExitCode -ne 0) {
+        throw "Failed to build BaseItemTypes structure signature. Exit code: $($SignatureResult.ExitCode)`n$($SignatureResult.Text)"
+    }
+
     try {
-        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
-        $ExportScript = Join-Path $CodeToolsRoot "poe2_name_price_patch.py"
-        $ExportResult = Invoke-Poe2Python -Python $Python -ArgumentList @(
-            $ExportScript,
-            "export",
-            "--source", $SourceDat,
-            "--output", $TempCsv
-        ) -Quiet
-        if ($ExportResult.ExitCode -ne 0) {
-            throw "Failed to export BaseItemTypes metadata signature. Exit code: $($ExportResult.ExitCode)`n$($ExportResult.Text)"
-        }
+        $Signature = $SignatureResult.Text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "Failed to parse BaseItemTypes structure signature: $($_.Exception.Message)"
+    }
 
-        $Rows = Import-Csv -LiteralPath $TempCsv -Encoding UTF8
-        $Paths = @($Rows | ForEach-Object { $_.metadata_path } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $Joined = [string]::Join("`n", $Paths)
-        $Sha = [System.Security.Cryptography.SHA256]::Create()
-        try {
-            $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Joined)
-            $Hash = [System.BitConverter]::ToString($Sha.ComputeHash($Bytes)).Replace("-", "")
-        }
-        finally {
-            $Sha.Dispose()
-        }
-
-        return [pscustomobject]@{
-            Count = $Paths.Count
-            Hash  = $Hash
+    $RequiredFields = @(
+        "signature_version",
+        "row_count",
+        "row_size",
+        "metadata_paths_sha256",
+        "fixed_rows_sha256",
+        "compatibility_sha256"
+    )
+    foreach ($Field in $RequiredFields) {
+        $Property = $Signature.PSObject.Properties[$Field]
+        if ($null -eq $Property -or [string]::IsNullOrWhiteSpace([string]$Property.Value)) {
+            throw "BaseItemTypes structure signature is missing or has an empty field: $Field"
         }
     }
-    finally {
-        if (Test-Path -LiteralPath $TempCsv -PathType Leaf) {
-            Remove-Item -LiteralPath $TempCsv -Force
-        }
-    }
+
+    return $Signature
 }
 
 function Test-BaseItemsCompatible {
@@ -124,7 +122,14 @@ function Test-BaseItemsCompatible {
     try {
         $Left = Get-BaseItemsMetadataSignature $LeftDat
         $Right = Get-BaseItemsMetadataSignature $RightDat
-        return ($Left.Count -eq $Right.Count -and $Left.Hash -eq $Right.Hash)
+        return (
+            [string]$Left.signature_version -ceq [string]$Right.signature_version -and
+            [string]$Left.row_count -ceq [string]$Right.row_count -and
+            [string]$Left.row_size -ceq [string]$Right.row_size -and
+            [string]$Left.metadata_paths_sha256 -ceq [string]$Right.metadata_paths_sha256 -and
+            [string]$Left.fixed_rows_sha256 -ceq [string]$Right.fixed_rows_sha256 -and
+            [string]$Left.compatibility_sha256 -ceq [string]$Right.compatibility_sha256
+        )
     }
     catch {
         Write-Warning "BaseItemTypes compatibility check failed: $($_.Exception.Message)"
@@ -467,82 +472,303 @@ function Get-PhysicalRestoreZipCandidates {
 function Assert-PhysicalRestoreZip {
     param([string]$Path)
 
-    Assert-File $Path "physical restore zip"
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
-    try {
-        $ManifestEntry = $Archive.GetEntry("manifest.json")
-        if ($null -eq $ManifestEntry) {
-            throw "Physical restore zip is missing manifest.json"
-        }
-
-        $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
-        try {
-            $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json
-        }
-        finally {
-            $Reader.Dispose()
-        }
-        if ([string]$Manifest.kind -ne "poe2-price-patch-physical-restore") {
-            throw "Physical restore zip manifest kind is invalid"
-        }
-        if ([string]$Manifest.install_kind -ne [string]$InstallInfo.InstallKind) {
-            throw "Physical restore zip is for $($Manifest.install_kind), current install is $($InstallInfo.InstallKind)"
-        }
-        if (-not [string]::IsNullOrWhiteSpace([string]$Manifest.target_path) -and [string]$Manifest.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
-            throw "Physical restore zip is for $($Manifest.target_path), current target is $($InstallInfo.TcBaseItemsPath)"
-        }
-
-        $Entry = $Archive.GetEntry("Bundles2/_.index.bin")
-        if ($null -eq $Entry -or $Entry.Length -le 1048576) {
-            throw "Physical restore zip does not contain a valid Bundles2/_.index.bin"
-        }
-    }
-    finally {
-        $Archive.Dispose()
-    }
+    Assert-Poe2PhysicalRestoreZip -Path $Path -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo | Out-Null
 }
 
 function Restore-PhysicalBundles2 {
     param([string]$Path)
 
-    Assert-PhysicalRestoreZip $Path
-
+    $Manifest = Assert-Poe2PhysicalRestoreZip -Path $Path -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo
     $Bundles2Root = (Resolve-Path -LiteralPath $Bundles2Paths.Bundles2Dir).Path
     $GameRoot = (Resolve-Path -LiteralPath $Poe2Dir).Path
     Assert-Poe2PathInside -Path $Bundles2Root -Root $GameRoot -Message "Refusing to restore outside game folder" | Out-Null
 
+    $TransactionId = [Guid]::NewGuid().ToString("N")
+    $StageRoot = Join-Path $Bundles2Root (".poe2-physical-restore-stage-" + $TransactionId)
+    $StageData = Join-Path $StageRoot "data"
+    $RollbackRoot = Join-Path $Bundles2Root (".poe2-physical-restore-rollback-" + $TransactionId)
+    $RollbackFiles = Join-Path $RollbackRoot "files"
+    $RollbackLib = Join-Path $RollbackRoot "LibGGPK3"
+    Assert-Poe2PathInside -Path $StageRoot -Root $Bundles2Root -Message "Refusing unsafe restore staging path" | Out-Null
+    Assert-Poe2PathInside -Path $RollbackRoot -Root $Bundles2Root -Message "Refusing unsafe restore rollback path" | Out-Null
+
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+    $CrcByName = Get-Poe2ZipEntryCrc32Map -Path $Path
+    $RestoreFileByPath = @{}
+    if ([int]$Manifest.version -eq 2) {
+        foreach ($Descriptor in @($Manifest.restore_files)) {
+            $RestoreFileByPath[([string]$Descriptor.path).ToLowerInvariant()] = $Descriptor
+        }
+    }
+
+    $Entries = @()
+    $TopLevelEntries = @()
+    $OriginalTopLevel = @{}
+    $MutatedTopLevel = @{}
+    $LibMovedToRollback = $false
+    $StagedLibInstalled = $false
+    $MutationStarted = $false
+    $PreserveRollback = $false
     try {
-        $Entries = @($Archive.Entries | Where-Object { $_.FullName -like "Bundles2/*" -and -not [string]::IsNullOrEmpty($_.Name) })
-        if (-not ($Entries | Where-Object { $_.FullName -eq "Bundles2/_.index.bin" } | Select-Object -First 1)) {
-            throw "Physical restore zip does not contain Bundles2/_.index.bin"
+        New-Item -ItemType Directory -Force -Path $StageData | Out-Null
+        $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        try {
+            $Entries = @($Archive.Entries | Where-Object { $_.FullName -like "Bundles2/*" -and -not [string]::IsNullOrEmpty($_.Name) })
+            $TopLevelEntries = @($Entries | Where-Object { $_.FullName -notlike "Bundles2/LibGGPK3/*" })
+            foreach ($Entry in $Entries) {
+                $Relative = $Entry.FullName.Substring("Bundles2/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+                $StagedFile = [System.IO.Path]::GetFullPath((Join-Path $StageData $Relative))
+                Assert-Poe2PathInside -Path $StagedFile -Root $StageData -Message "Refusing to stage path outside restore transaction" | Out-Null
+                $StagedDir = Split-Path -Parent $StagedFile
+                New-Item -ItemType Directory -Force -Path $StagedDir | Out-Null
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $StagedFile, $false)
+
+                $StagedInfo = Get-Item -LiteralPath $StagedFile -ErrorAction Stop
+                if ([long]$StagedInfo.Length -ne [long]$Entry.Length) {
+                    throw "Physical restore staging length check failed: $($Entry.FullName)"
+                }
+                $ActualCrc = Get-Poe2FileCrc32Hex -Path $StagedFile
+                $ExpectedCrc = [string]$CrcByName[[string]$Entry.FullName]
+                if (-not $ActualCrc.Equals($ExpectedCrc, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Physical restore staging CRC check failed: $($Entry.FullName)"
+                }
+                if ([int]$Manifest.version -eq 2) {
+                    $Descriptor = $RestoreFileByPath[([string]$Entry.FullName).ToLowerInvariant()]
+                    $ActualSha = Get-Poe2Sha256Hex -Path $StagedFile
+                    if ($null -eq $Descriptor -or -not $ActualSha.Equals([string]$Descriptor.sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        throw "Physical restore staging SHA256 check failed: $($Entry.FullName)"
+                    }
+                }
+            }
+        }
+        finally {
+            $Archive.Dispose()
         }
 
-        $HasLibBackup = [bool]($Entries | Where-Object { $_.FullName -like "Bundles2/LibGGPK3/*" } | Select-Object -First 1)
+        # Snapshot every file that can be replaced before the first target mutation.
+        New-Item -ItemType Directory -Force -Path $RollbackFiles | Out-Null
+        foreach ($Entry in $TopLevelEntries) {
+            $Relative = $Entry.FullName.Substring("Bundles2/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+            $Target = [System.IO.Path]::GetFullPath((Join-Path $Bundles2Root $Relative))
+            Assert-Poe2PathInside -Path $Target -Root $Bundles2Root -Message "Refusing to back up path outside Bundles2" | Out-Null
+            $Key = $Relative.ToLowerInvariant()
+            $Existed = Test-Path -LiteralPath $Target -PathType Leaf
+            $Backup = Join-Path $RollbackFiles $Relative
+            $SnapshotLength = [long]0
+            $SnapshotSha256 = ""
+            if ($Existed) {
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Backup) | Out-Null
+                [System.IO.File]::Copy($Target, $Backup, $false)
+                $OriginalInfo = Get-Item -LiteralPath $Target
+                $BackupInfo = Get-Item -LiteralPath $Backup
+                $SnapshotLength = [long]$OriginalInfo.Length
+                $SnapshotSha256 = Get-Poe2Sha256Hex -Path $Target
+                if ($OriginalInfo.Length -ne $BackupInfo.Length -or $SnapshotSha256 -ne (Get-Poe2Sha256Hex -Path $Backup)) {
+                    throw "Physical restore rollback backup verification failed: $Relative"
+                }
+            }
+            $OriginalTopLevel[$Key] = [pscustomobject]@{
+                EntryName = [string]$Entry.FullName
+                Relative = $Relative
+                Target = $Target
+                Existed = $Existed
+                Backup = $Backup
+                SnapshotLength = $SnapshotLength
+                SnapshotSha256 = $SnapshotSha256
+            }
+        }
+
+        # Re-check after the potentially long staging/backup phase, before changing the game.
+        Assert-Poe2PhysicalRestoreManifestCurrent -Manifest $Manifest -Poe2Dir $Poe2Dir | Out-Null
+        Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
+
+        if ($env:POE2_PATCH_TEST_MUTATE_TOP_LEVEL_BEFORE_WRITE -eq "1" -and $TopLevelEntries.Count -gt 0) {
+            $TestRelative = $TopLevelEntries[0].FullName.Substring("Bundles2/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+            [System.IO.File]::WriteAllText((Join-Path $Bundles2Root $TestRelative), "EXTERNAL-TOP-LEVEL")
+        }
+
         $LibDir = Join-Path $Bundles2Root "LibGGPK3"
         if (Test-Path -LiteralPath $LibDir -PathType Container) {
             $ResolvedLibDir = (Resolve-Path -LiteralPath $LibDir).Path
-            Assert-Poe2PathInside -Path $ResolvedLibDir -Root $Bundles2Root -Message "Refusing to remove unexpected LibGGPK3 path" | Out-Null
-            # Restore the exact backed-up LibGGPK3 state; otherwise stale increment files can survive.
-            Remove-Item -LiteralPath $ResolvedLibDir -Recurse -Force
+            Assert-Poe2PathInside -Path $ResolvedLibDir -Root $Bundles2Root -Message "Refusing to move unexpected LibGGPK3 path" | Out-Null
+            New-Item -ItemType Directory -Force -Path $RollbackRoot | Out-Null
+            [System.IO.Directory]::Move($ResolvedLibDir, $RollbackLib)
+            $LibMovedToRollback = $true
+        }
+        $MutationStarted = $true
+
+        if ($env:POE2_PATCH_TEST_RESTORE_FAILURE -eq "after-lib-backup") {
+            throw "Injected physical restore failure after LibGGPK3 rollback backup."
+        }
+
+        if ($env:POE2_PATCH_TEST_CREATE_CONCURRENT_LIB -eq "1") {
+            New-Item -ItemType Directory -Force -Path $LibDir | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $LibDir "external.bundle.bin"), "EXTERNAL-LIB")
+        }
+
+        $StagedLib = Join-Path $StageData "LibGGPK3"
+        if (Test-Path -LiteralPath $StagedLib -PathType Container) {
+            [System.IO.Directory]::Move($StagedLib, $LibDir)
+            $StagedLibInstalled = $true
+        }
+
+        $ReplacedCount = 0
+        foreach ($Entry in $TopLevelEntries) {
+            $Relative = $Entry.FullName.Substring("Bundles2/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+            $StagedFile = Join-Path $StageData $Relative
+            $Target = [System.IO.Path]::GetFullPath((Join-Path $Bundles2Root $Relative))
+            Assert-Poe2PathInside -Path $Target -Root $Bundles2Root -Message "Refusing to restore path outside Bundles2" | Out-Null
+            $Snapshot = $OriginalTopLevel[$Relative.ToLowerInvariant()]
+            $TargetExistsNow = Test-Path -LiteralPath $Target -PathType Leaf
+            if ([bool]$Snapshot.Existed) {
+                if (-not $TargetExistsNow) {
+                    throw "Physical restore target disappeared after its rollback snapshot was created: $Relative"
+                }
+                $CurrentInfo = Get-Item -LiteralPath $Target -ErrorAction Stop
+                if ([long]$CurrentInfo.Length -ne [long]$Snapshot.SnapshotLength -or
+                    (Get-Poe2Sha256Hex -Path $Target) -ne [string]$Snapshot.SnapshotSha256) {
+                    throw "Physical restore target changed after its rollback snapshot was created: $Relative"
+                }
+            }
+            elseif ($TargetExistsNow) {
+                throw "Physical restore target appeared after its rollback snapshot was created: $Relative"
+            }
+            Move-Poe2FileAtomically -Source $StagedFile -Destination $Target | Out-Null
+            $MutatedTopLevel[$Relative.ToLowerInvariant()] = $true
+            $ReplacedCount += 1
+            if ($ReplacedCount -eq 1 -and $env:POE2_PATCH_TEST_RESTORE_FAILURE -eq "after-first-file") {
+                throw "Injected physical restore failure after the first file replacement."
+            }
         }
 
         foreach ($Entry in $Entries) {
             $Relative = $Entry.FullName.Substring("Bundles2/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
             $Target = [System.IO.Path]::GetFullPath((Join-Path $Bundles2Root $Relative))
-            Assert-Poe2PathInside -Path $Target -Root $Bundles2Root -Message "Refusing to restore path outside Bundles2" | Out-Null
-
-            $TargetDir = Split-Path -Parent $Target
-            New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $Target, $true)
+            Assert-Poe2PathInside -Path $Target -Root $Bundles2Root -Message "Refusing to verify path outside Bundles2" | Out-Null
+            if (-not (Test-Path -LiteralPath $Target -PathType Leaf)) {
+                throw "Physical restore write verification found a missing file: $($Entry.FullName)"
+            }
+            $TargetInfo = Get-Item -LiteralPath $Target
+            $ActualCrc = Get-Poe2FileCrc32Hex -Path $Target
+            if ($TargetInfo.Length -ne $Entry.Length -or -not $ActualCrc.Equals([string]$CrcByName[[string]$Entry.FullName], [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Physical restore write CRC verification failed: $($Entry.FullName)"
+            }
+            if ([int]$Manifest.version -eq 2) {
+                $Descriptor = $RestoreFileByPath[([string]$Entry.FullName).ToLowerInvariant()]
+                if ((Get-Poe2Sha256Hex -Path $Target) -ne [string]$Descriptor.sha256) {
+                    throw "Physical restore write SHA256 verification failed: $($Entry.FullName)"
+                }
+            }
         }
     }
+    catch {
+        $OriginalError = $_
+        if ($MutationStarted) {
+            $RollbackErrors = New-Object System.Collections.Generic.List[string]
+            foreach ($State in $OriginalTopLevel.Values) {
+                if (-not $MutatedTopLevel.ContainsKey(([string]$State.Relative).ToLowerInvariant())) {
+                    continue
+                }
+                try {
+                    if (-not (Test-Path -LiteralPath ([string]$State.Target) -PathType Leaf)) {
+                        if ([bool]$State.Existed) {
+                            $RollbackErrors.Add("$($State.Relative): target disappeared after this transaction changed it; original is preserved at $($State.Backup)")
+                        }
+                        continue
+                    }
+                    $CurrentCrc = Get-Poe2FileCrc32Hex -Path ([string]$State.Target)
+                    $AppliedCrc = [string]$CrcByName[[string]$State.EntryName]
+                    if (-not $CurrentCrc.Equals($AppliedCrc, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $RollbackErrors.Add("$($State.Relative): target changed concurrently; current file was left untouched and original is preserved at $($State.Backup)")
+                        continue
+                    }
+                    if ([bool]$State.Existed) {
+                        $RestoreTemp = Join-Path $Bundles2Root ([string]::Concat(".", (Split-Path -Leaf $State.Target), ".rollback-", [Guid]::NewGuid().ToString("N")))
+                        [System.IO.File]::Copy([string]$State.Backup, $RestoreTemp, $false)
+                        Move-Poe2FileAtomically -Source $RestoreTemp -Destination ([string]$State.Target) | Out-Null
+                    }
+                    elseif (Test-Path -LiteralPath ([string]$State.Target) -PathType Leaf) {
+                        $FailedFilesDir = Join-Path $RollbackRoot "failed-files"
+                        New-Item -ItemType Directory -Force -Path $FailedFilesDir | Out-Null
+                        $FailedTarget = Join-Path $FailedFilesDir ([string]$State.Relative)
+                        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $FailedTarget) | Out-Null
+                        [System.IO.File]::Move([string]$State.Target, $FailedTarget)
+                    }
+                }
+                catch {
+                    $RollbackErrors.Add("$($State.Relative): $($_.Exception.Message)")
+                }
+            }
+
+            try {
+                $InstalledLibOwnedByTransaction = $StagedLibInstalled
+                if ($StagedLibInstalled -and (Test-Path -LiteralPath $LibDir -PathType Container)) {
+                    $ExpectedLibEntries = @($Entries | Where-Object { $_.FullName -like "Bundles2/LibGGPK3/*" })
+                    $CurrentLibFiles = @(Get-ChildItem -LiteralPath $LibDir -Recurse -File -ErrorAction Stop)
+                    if ($CurrentLibFiles.Count -ne $ExpectedLibEntries.Count) {
+                        $InstalledLibOwnedByTransaction = $false
+                    }
+                    if ($InstalledLibOwnedByTransaction) {
+                        foreach ($ExpectedEntry in $ExpectedLibEntries) {
+                            $LibRelative = $ExpectedEntry.FullName.Substring("Bundles2/LibGGPK3/".Length).Replace("/", [System.IO.Path]::DirectorySeparatorChar)
+                            $CurrentLibFile = [System.IO.Path]::GetFullPath((Join-Path $LibDir $LibRelative))
+                            Assert-Poe2PathInside -Path $CurrentLibFile -Root $LibDir -Message "Refusing unsafe LibGGPK3 rollback verification path" | Out-Null
+                            if (-not (Test-Path -LiteralPath $CurrentLibFile -PathType Leaf)) {
+                                $InstalledLibOwnedByTransaction = $false
+                                break
+                            }
+                            $CurrentLibCrc = Get-Poe2FileCrc32Hex -Path $CurrentLibFile
+                            $ExpectedLibCrc = [string]$CrcByName[[string]$ExpectedEntry.FullName]
+                            if (-not $CurrentLibCrc.Equals($ExpectedLibCrc, [System.StringComparison]::OrdinalIgnoreCase)) {
+                                $InstalledLibOwnedByTransaction = $false
+                                break
+                            }
+                        }
+                    }
+                    if (-not $InstalledLibOwnedByTransaction) {
+                        $RollbackErrors.Add("LibGGPK3: directory changed concurrently; current data was left untouched and the original is preserved at $RollbackLib")
+                    }
+                }
+                elseif ($StagedLibInstalled -and $LibMovedToRollback) {
+                    $InstalledLibOwnedByTransaction = $false
+                    $RollbackErrors.Add("LibGGPK3: installed directory disappeared concurrently; original is preserved at $RollbackLib")
+                }
+
+                if ($InstalledLibOwnedByTransaction -and (Test-Path -LiteralPath $LibDir -PathType Container)) {
+                    $FailedLib = Join-Path $RollbackRoot "failed-LibGGPK3"
+                    if (Test-Path -LiteralPath $FailedLib) {
+                        Remove-Item -LiteralPath $FailedLib -Recurse -Force
+                    }
+                    [System.IO.Directory]::Move($LibDir, $FailedLib)
+                }
+                if ($LibMovedToRollback -and (Test-Path -LiteralPath $RollbackLib -PathType Container)) {
+                    if (Test-Path -LiteralPath $LibDir -PathType Container) {
+                        $RollbackErrors.Add("LibGGPK3: target appeared concurrently; original is preserved at $RollbackLib")
+                    }
+                    else {
+                        [System.IO.Directory]::Move($RollbackLib, $LibDir)
+                    }
+                }
+            }
+            catch {
+                $RollbackErrors.Add("LibGGPK3: $($_.Exception.Message)")
+            }
+
+            if ($RollbackErrors.Count -gt 0) {
+                $PreserveRollback = $true
+                throw "Physical restore failed and rollback was incomplete. Original error: $($OriginalError.Exception.Message). Rollback errors: $([string]::Join('; ', $RollbackErrors))"
+            }
+        }
+        throw $OriginalError
+    }
     finally {
-        $Archive.Dispose()
+        if (Test-Path -LiteralPath $StageRoot -PathType Container) {
+            Remove-Item -LiteralPath $StageRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (-not $PreserveRollback -and (Test-Path -LiteralPath $RollbackRoot -PathType Container)) {
+            Remove-Item -LiteralPath $RollbackRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -671,6 +897,10 @@ else {
 }
 $Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
 
+if ($GameMode -eq "Bundles2" -and -not $NoInstall) {
+    Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
+}
+
 if ($GameMode -eq "Bundles2") {
     $PhysicalRestoreZip = ""
     foreach ($Candidate in (Get-PhysicalRestoreZipCandidates)) {
@@ -730,7 +960,7 @@ function Ensure-CleanBaseItemForRestore {
     }
 
     if (Test-BaseItemsLookPatched $CleanDat) {
-        Write-Warning "Extracted BaseItemTypes already contains price markers; restore zip compatibility cannot be checked against current patched data."
+        Write-Host "Extracted BaseItemTypes contains price markers; compatibility will use the structure signature that ignores display-name pointers." -ForegroundColor Yellow
     }
 
     return $CleanDat
@@ -772,15 +1002,11 @@ try {
     }
     elseif ($GameMode -eq "Bundles2") {
         $CleanDatForCheck = Ensure-CleanBaseItemForRestore
-        if (-not (Test-BaseItemsLookPatched $CleanDatForCheck)) {
-            $RestoreEntryTemp = Get-ZipBaseItemsEntryAsTempFile -ZipPath $RestoreZip -EntryName $InstallInfo.TcBaseItemsPath
-            if (-not (Test-BaseItemsCompatible $RestoreEntryTemp $CleanDatForCheck)) {
-                throw "Restore zip is outdated for the current game files. Run the official launcher until the game is clean, then run one-key update to refresh restore packages."
-            }
+        $RestoreEntryTemp = Get-ZipBaseItemsEntryAsTempFile -ZipPath $RestoreZip -EntryName $InstallInfo.TcBaseItemsPath
+        if (-not (Test-BaseItemsCompatible $RestoreEntryTemp $CleanDatForCheck)) {
+            throw "Restore zip is outdated for the current game files. Run the official launcher until the game is clean, then run one-key update to refresh restore packages."
         }
-        else {
-            Write-Warning "Current BaseItemTypes already contains price markers; skipping compatibility check against patched game data and using the clean restore package."
-        }
+        Write-Host "Restore package structure matches current game data." -ForegroundColor Green
     }
 }
 finally {
@@ -855,7 +1081,7 @@ else {
     Push-Location -LiteralPath $BundledInstallerDir
     try {
         if ($UsePatchBundleDll) {
-            $BundlePatchResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $InstallRestoreZip) -Quiet
+            $BundlePatchResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $InstallRestoreZip) -InputText "" -Quiet
             $BundlePatchOutput = $BundlePatchResult.Lines
             $BundlePatchExitCode = $BundlePatchResult.ExitCode
         }

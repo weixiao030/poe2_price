@@ -31,51 +31,77 @@ internal static class Program
 
             var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var patchRoot = appDir;
-            var tempRoot = Path.Combine(Path.GetTempPath(), "poe2_price_patch_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempRoot);
+            var mutexScopeRoot = ResolveMutexScopeRoot(patchRoot, scriptArgs);
+            using var instanceMutex = new Mutex(false, CreateInstanceMutexName(mutexScopeRoot));
+            if (!TryTakeInstanceMutex(instanceMutex))
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("同一游戏目录的物价补丁正在运行，请等待当前更新或还原完成后再试。");
+                Console.ResetColor();
+                WaitForEnter();
+                return 2;
+            }
+            var instanceMutexHeld = true;
 
             try
             {
-                ExtractPayload(tempRoot);
-                var scriptPath = Path.Combine(tempRoot, scriptName);
-                if (!File.Exists(scriptPath))
-                {
-                    throw new FileNotFoundException("内置脚本不存在。", scriptPath);
-                }
+                var tempRoot = Path.Combine(Path.GetTempPath(), "poe2_price_patch_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempRoot);
 
-                var startInfo = new ProcessStartInfo
+                try
                 {
-                    FileName = "powershell.exe",
-                    UseShellExecute = false,
-                    CreateNoWindow = false,
-                    WorkingDirectory = patchRoot
-                };
-                startInfo.ArgumentList.Add("-NoProfile");
-                startInfo.ArgumentList.Add("-ExecutionPolicy");
-                startInfo.ArgumentList.Add("Bypass");
-                startInfo.ArgumentList.Add("-File");
-                startInfo.ArgumentList.Add(scriptPath);
-                foreach (var scriptArg in scriptArgs)
-                {
-                    startInfo.ArgumentList.Add(scriptArg);
-                }
+                    ExtractPayload(tempRoot);
+                    var scriptPath = Path.Combine(tempRoot, scriptName);
+                    if (!File.Exists(scriptPath))
+                    {
+                        throw new FileNotFoundException("内置脚本不存在。", scriptPath);
+                    }
 
-                startInfo.Environment["POE2_PATCH_ROOT"] = patchRoot;
-                startInfo.Environment["POE2_PATCH_RELEASE"] = "1";
+                    var startInfo = new ProcessStartInfo
+                    {
+                        FileName = "powershell.exe",
+                        UseShellExecute = false,
+                        CreateNoWindow = false,
+                        WorkingDirectory = patchRoot
+                    };
+                    startInfo.ArgumentList.Add("-NoProfile");
+                    startInfo.ArgumentList.Add("-ExecutionPolicy");
+                    startInfo.ArgumentList.Add("Bypass");
+                    startInfo.ArgumentList.Add("-File");
+                    startInfo.ArgumentList.Add(scriptPath);
+                    foreach (var scriptArg in scriptArgs)
+                    {
+                        startInfo.ArgumentList.Add(scriptArg);
+                    }
 
-                using var process = Process.Start(startInfo);
-                if (process == null)
-                {
-                    throw new InvalidOperationException("无法启动 powershell.exe。");
+                    startInfo.Environment["POE2_PATCH_ROOT"] = patchRoot;
+                    startInfo.Environment["POE2_PATCH_RELEASE"] = "1";
+
+                    using var process = Process.Start(startInfo);
+                    if (process == null)
+                    {
+                        throw new InvalidOperationException("无法启动 powershell.exe。");
+                    }
+                    process.WaitForExit();
+                    PrintCompletion(mode, process.ExitCode);
+                    // The update/restore process is finished.  Do not keep blocking a
+                    // new run merely because this result window is waiting for Enter.
+                    instanceMutex.ReleaseMutex();
+                    instanceMutexHeld = false;
+                    WaitForEnter();
+                    return process.ExitCode;
                 }
-                process.WaitForExit();
-                PrintCompletion(mode, process.ExitCode);
-                WaitForEnter();
-                return process.ExitCode;
+                finally
+                {
+                    TryDeleteDirectory(tempRoot);
+                }
             }
             finally
             {
-                TryDeleteDirectory(tempRoot);
+                if (instanceMutexHeld)
+                {
+                    instanceMutex.ReleaseMutex();
+                }
             }
         }
         catch (Exception ex)
@@ -85,6 +111,51 @@ internal static class Program
             Console.ResetColor();
             WaitForEnter();
             return 1;
+        }
+    }
+
+    private static string CreateInstanceMutexName(string patchRoot)
+    {
+        var normalizedRoot = Path.GetFullPath(patchRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .ToUpperInvariant();
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedRoot));
+        return "Local\\Poe2PricePatch-" + Convert.ToHexString(digest);
+    }
+
+    private static string ResolveMutexScopeRoot(string patchRoot, string[] scriptArgs)
+    {
+        for (var i = 0; i < scriptArgs.Length; i++)
+        {
+            if (string.Equals(scriptArgs[i], "-Poe2Dir", StringComparison.OrdinalIgnoreCase) &&
+                i + 1 < scriptArgs.Length &&
+                !string.IsNullOrWhiteSpace(scriptArgs[i + 1]))
+            {
+                return Path.GetFullPath(scriptArgs[i + 1], patchRoot);
+            }
+
+            const string prefix = "-Poe2Dir=";
+            if (scriptArgs[i].StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                scriptArgs[i].Length > prefix.Length)
+            {
+                return Path.GetFullPath(scriptArgs[i][prefix.Length..], patchRoot);
+            }
+        }
+
+        // A release is normally placed in <game>\物价补丁, so sibling copies
+        // must share the same mutex even when their patch-folder names differ.
+        return Directory.GetParent(patchRoot)?.FullName ?? patchRoot;
+    }
+
+    private static bool TryTakeInstanceMutex(Mutex instanceMutex)
+    {
+        try
+        {
+            return instanceMutex.WaitOne(0);
+        }
+        catch (AbandonedMutexException)
+        {
+            return true;
         }
     }
 

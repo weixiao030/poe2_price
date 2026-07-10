@@ -1,5 +1,7 @@
 import subprocess
 import zipfile
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -9,6 +11,10 @@ PAYLOAD = ROOT / "build" / "payload"
 PAYLOAD_ZIP = ROOT / "build" / "payload.zip"
 PAYLOAD_ENC = ROOT / "build" / "Poe2PatchLauncher" / "payload.enc"
 PACKER_PROJECT = ROOT / "build" / "PayloadPacker" / "PayloadPacker.csproj"
+PUBLISHED_LAUNCHER = ROOT / "build" / "publish-self" / "Poe2PatchLauncher.exe"
+SOURCE_UPDATE_LAUNCHER = ROOT / "物价补丁" / "一键更新物价补丁.exe"
+SOURCE_RESTORE_LAUNCHER = ROOT / "物价补丁" / "一键还原物价补丁.exe"
+LAUNCHER_PROJECT = ROOT / "build" / "Poe2PatchLauncher" / "Poe2PatchLauncher.csproj"
 
 PAYLOAD_FILES = [
     "poe2_patch_common.ps1",
@@ -17,7 +23,6 @@ PAYLOAD_FILES = [
     "poe2_name_price_patch.py",
     "poe2_island_rumour_patch.py",
     "build_poe2scout_price_patch.py",
-    "GGPKExtractor/vcruntime140.dll",
     "BundleExtractor/BundleExtractor.exe",
     "BundleExtractor/oo2core.dll",
     "BundleExtractor/vcruntime140.dll",
@@ -66,3 +71,29 @@ def test_encrypted_payload_matches_payload_zip():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_source_launchers_match_published_launcher():
+    assert PUBLISHED_LAUNCHER.exists(), "missing published launcher"
+    expected = PUBLISHED_LAUNCHER.read_bytes()
+    assert SOURCE_UPDATE_LAUNCHER.read_bytes() == expected, "stale update launcher"
+    assert SOURCE_RESTORE_LAUNCHER.read_bytes() == expected, "stale restore launcher"
+
+
+def test_declared_version_is_consistent():
+    update_script = (TOOLS / "update_price_patch.ps1").read_text(encoding="utf-8-sig")
+    match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
+    assert match, "missing PatchVersion"
+    version = match.group(1)
+
+    project = ET.parse(LAUNCHER_PROJECT).getroot()
+    properties = {node.tag: (node.text or "").strip() for node in project.iter()}
+    assert properties["Version"] == version
+    assert properties["AssemblyVersion"] == version
+    assert properties["FileVersion"] == version
+    assert properties["InformationalVersion"] == version
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8-sig")
+    changelog = (ROOT / "更新日志.md").read_text(encoding="utf-8-sig")
+    assert f"POE2 物价补丁 v{version}" in readme
+    assert f"（v{version}）" in changelog

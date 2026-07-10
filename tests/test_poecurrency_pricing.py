@@ -1,6 +1,8 @@
 import importlib.util
 import json
 import sys
+import threading
+import time
 import unittest
 import zipfile
 from decimal import Decimal
@@ -42,6 +44,40 @@ class PoecurrencyPricingTests(unittest.TestCase):
                 source_pair="test",
             )
         }
+
+    def test_http_attempt_has_hard_deadline_without_spawning_retry_workers(self):
+        client = self.price_patch.RetryingRequests(
+            max_retries=20,
+            backoff=0,
+            timeout=0.05,
+            total_timeout=2.0,
+        )
+        release_worker = threading.Event()
+        worker_started = threading.Event()
+        attempts = []
+
+        def blocked_get_once(_url, _timeout, _cancel_event):
+            attempts.append(_url)
+            worker_started.set()
+            release_worker.wait(timeout=2.0)
+            return self.price_patch.HttpResponse(
+                url="https://example.invalid/slow",
+                status_code=200,
+                reason="OK",
+                content=b"{}",
+            )
+
+        started = time.monotonic()
+        try:
+            with patch.object(client, "_get_once", side_effect=blocked_get_once):
+                with self.assertRaisesRegex(TimeoutError, "wall-clock deadline"):
+                    client.get("https://example.invalid/slow")
+        finally:
+            release_worker.set()
+
+        self.assertTrue(worker_started.is_set())
+        self.assertEqual(attempts, ["https://example.invalid/slow"])
+        self.assertLess(time.monotonic() - started, 0.5)
 
     def test_latest_buy_price_wins_over_avg_price(self):
         price, field = self.price_patch.poecurrency_item_price(
