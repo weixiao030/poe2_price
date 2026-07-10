@@ -88,5 +88,8 @@ def test_bundles2_write_preflight_checks_game_and_exclusive_index_access():
     assert 'ProcessName -like "PathOfExile*"' in preflight
     assert "[System.IO.FileAccess]::ReadWrite" in preflight
     assert "[System.IO.FileShare]::None" in preflight
+    assert "LauncherNames" not in preflight
+    assert '"wegame", "rail"' not in preflight
+    assert "检测到游戏平台" not in preflight
     assert update.count("Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir") >= 4
     assert '$GameMode -eq "Bundles2" -and -not $NoInstall -and -not $NoOpenTool' in update

@@ -1076,18 +1076,6 @@ function Assert-Poe2GameFilesAvailable {
         }
     }
 
-    $LauncherNames = if (Test-Poe2ChinaClient -Poe2Dir $Poe2Dir) {
-        @("wegame", "rail")
-    }
-    else {
-        @("steam", "EpicGamesLauncher")
-    }
-    $RunningLaunchers = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-            $_.ProcessName -in $LauncherNames
-        } | Select-Object -ExpandProperty ProcessName -Unique)
-    if ($RunningLaunchers.Count -gt 0) {
-        Write-Warning "检测到游戏平台仍在运行：$([string]::Join(', ', $RunningLaunchers))。如果平台正在更新或校验游戏，请先完全退出平台后再继续。"
-    }
 }
 
 function Test-Poe2ReleaseMode {
@@ -1527,4 +1515,3 @@ function Ensure-PythonRequests {
     Write-Host "==> Prepare local Python runtime" -ForegroundColor Cyan
     return Install-LocalPythonRuntime -RepoRoot $RepoRoot
 }
-
