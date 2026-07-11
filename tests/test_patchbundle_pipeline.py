@@ -42,22 +42,12 @@ def test_published_bundle_extractor_exposes_batch_mode():
     assert "--extract-list" in result.stdout
 
 
-def test_update_preserves_existing_entries_with_one_batch_extract():
+def test_update_does_not_repack_untouched_libggpk3_entries():
     script = read(UPDATE)
-    merge = powershell_function(
-        script,
-        "Merge-ExistingBundlePatchEntries",
-        "Assert-Bundles2PatchApplied",
-    )
-    assert merge.count("--extract-list") == 1
-    assert "--extract-list $Bundles2Paths.IndexBin $RequestListPath $ExtractDir" in merge
-    assert "$BundledBundleExtractorExe $Bundles2Paths.IndexBin $EntryName" not in merge
-    assert "Test-ZipEntryExists" not in merge
-    assert "Update-ZipEntryFromFile" not in merge
-    assert "$ExistingZipEntries" in merge
-    assert "CreateEntryFromFile" in merge
-    assert "为避免覆盖并丢失其它补丁，本次已中止" in merge
-    assert "MissingExtractedEntries" in merge
+    install = script[script.index('Write-Step "使用 PatchBundle3 写入补丁到 Bundles2"') :]
+    assert "Merge-ExistingBundlePatchEntries" not in install
+    assert "untouched" in install.lower()
+    assert "duplicated their bytes" in install
 
 
 def test_patchbundle_calls_close_stdin_and_update_verifies_hashes():

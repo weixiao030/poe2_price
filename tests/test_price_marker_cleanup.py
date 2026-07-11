@@ -1,4 +1,5 @@
 import importlib.util
+import struct
 import sys
 import unittest
 import zipfile
@@ -60,7 +61,58 @@ class PriceMarkerCleanupTests(unittest.TestCase):
         self.assertEqual(by_row[1], "过期物品")
         self.assertNotIn(2, by_row)
 
-    def test_zero_replacements_remove_stale_patch_zip(self):
+    def test_degraded_partial_match_preserves_unmatched_existing_prices(self):
+        BaseItemName = self.name_patch.BaseItemName
+        entries = [
+            BaseItemName(0, "Metadata/Items/A", "已命中=12D", 0, 100, 0, 20),
+            BaseItemName(1, "Metadata/Items/B", "未命中=3E", 20, 104, 20, 40),
+        ]
+        replacements, warnings = self.name_patch.build_replacements(
+            entries=entries,
+            price_rows=[{"metadata_path": "Metadata/Items/A", "price": "15D"}],
+            separator="=",
+            keep_existing_price=True,
+            mode="append",
+            patch_same_name_duplicates=True,
+            preserve_unmatched_existing_price=True,
+        )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(
+            {item.row_index: item.fitted_name for item in replacements},
+            {0: "已命中=15D"},
+        )
+
+    def test_metadata_paths_do_not_collapse_distinct_same_name_items(self):
+        BaseItemName = self.name_patch.BaseItemName
+        entries = [
+            BaseItemName(0, "Metadata/Items/A", "同名物品", 0, 100, 0, 20),
+            BaseItemName(1, "Metadata/Items/B", "同名物品", 20, 104, 20, 40),
+        ]
+        rows = [
+            {"metadata_path": "Metadata/Items/A", "price": "1D"},
+            {"metadata_path": "Metadata/Items/B", "price": "2D"},
+        ]
+
+        replacements, warnings = self.name_patch.build_replacements(
+            entries=entries,
+            price_rows=rows,
+            separator="=",
+            keep_existing_price=True,
+            mode="append",
+            patch_same_name_duplicates=True,
+        )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(
+            {item.metadata_path: item.fitted_name for item in replacements},
+            {
+                "Metadata/Items/A": "同名物品=1D",
+                "Metadata/Items/B": "同名物品=2D",
+            },
+        )
+
+    def test_zero_replacements_replace_stale_zip_with_clean_current_data(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "baseitemtypes.datc64"
@@ -90,7 +142,12 @@ class PriceMarkerCleanupTests(unittest.TestCase):
                     report=report,
                 )
 
-            self.assertFalse(output_zip.exists())
+            self.assertTrue(output_zip.exists())
+            with zipfile.ZipFile(output_zip) as archive:
+                self.assertEqual(
+                    archive.read("data/balance/baseitemtypes.datc64"),
+                    source.read_bytes(),
+                )
             self.assertEqual(patched_dat.read_bytes(), source.read_bytes())
 
     def test_unique_price_cleanup_accepts_all_generated_forms(self):
@@ -100,6 +157,7 @@ class PriceMarkerCleanupTests(unittest.TestCase):
         self.assertEqual(strip("传奇名\n[12.5D]"), "传奇名")
         self.assertEqual(strip("传奇名<<[<1D]>>"), "传奇名")
         self.assertEqual(strip("普通名=不是价格"), "普通名=不是价格")
+        self.assertEqual(strip(" 前导空格"), " 前导空格")
 
     def test_full_word_cleanup_does_not_need_unique_gold_prices(self):
         WordEntry = self.price_patch.WordEntry
@@ -125,6 +183,154 @@ class PriceMarkerCleanupTests(unittest.TestCase):
 
         self.assertEqual(captured, [(0, "传奇甲"), (1, "传奇乙")])
         self.assertEqual([row["status"] for row in rows], ["cleaned", "cleaned"])
+
+    def test_clean_word_noop_still_writes_a_complete_output(self):
+        module = self.price_patch
+        layout_base = 4 + module.WORDS_ROW_SIZE
+        data = bytearray(layout_base)
+        struct.pack_into("<I", data, 0, 1)
+
+        def append_string(text: str) -> int:
+            offset = len(data) - layout_base
+            data.extend(text.encode("utf-16-le"))
+            data.extend(b"\x00\x00\x00\x00")
+            return offset
+
+        en_offset = append_string("Unique A")
+        display_offset = append_string("传奇甲")
+        struct.pack_into("<I", data, 4 + module.WORDS_EN_NAME_OFFSET, en_offset)
+        struct.pack_into(
+            "<I", data, 4 + module.WORDS_DISPLAY_NAME_OFFSET, display_offset
+        )
+        with TemporaryDirectory() as tmp:
+            source = Path(tmp) / "words.datc64"
+            output = Path(tmp) / "words.clean.datc64"
+            source.write_bytes(data)
+
+            rows = module.clean_word_price_labels_file(source, output)
+
+            self.assertEqual(rows, [])
+            self.assertTrue(output.exists())
+            self.assertEqual(output.read_bytes(), source.read_bytes())
+
+    def test_words_game_path_derivation_is_case_insensitive(self):
+        self.assertEqual(
+            self.price_patch.derive_words_game_path(
+                "Data/Balance/Traditional Chinese/BaseItemTypes.datc64"
+            ),
+            "Data/Balance/Traditional Chinese/words.datc64",
+        )
+        self.assertEqual(
+            self.price_patch.derive_words_game_path("data/balance/not-base-items.datc64"),
+            "",
+        )
+
+    def test_zero_local_matches_are_rejected_but_small_partial_sets_degrade(self):
+        pair = self.price_patch.BaseItemPair("Metadata/Items/A", "A", "甲")
+        with self.assertRaisesRegex(ValueError, "zero matches"):
+            self.price_patch.evaluate_local_match_gate([], [pair], enabled=True)
+        result = self.price_patch.evaluate_local_match_gate(
+            [{"metadata_path": "Metadata/Items/A"}], [pair], enabled=True
+        )
+        self.assertEqual(result["state"], "degraded")
+        self.assertGreater(result["ratio"], 0)
+
+    def test_words_probe_ignores_orphaned_marker_bytes_after_cleanup(self):
+        module = self.price_patch
+        layout_base = 4 + module.WORDS_ROW_SIZE
+        data = bytearray(layout_base)
+        struct.pack_into("<I", data, 0, 1)
+
+        def append_string(text: str) -> int:
+            offset = len(data) - layout_base
+            data.extend(text.encode("utf-16-le"))
+            data.extend(b"\x00\x00\x00\x00")
+            return offset
+
+        en_offset = append_string("Unique A")
+        display_offset = append_string("[12D|传奇甲]")
+        struct.pack_into("<I", data, 4 + module.WORDS_EN_NAME_OFFSET, en_offset)
+        struct.pack_into(
+            "<I", data, 4 + module.WORDS_DISPLAY_NAME_OFFSET, display_offset
+        )
+        with TemporaryDirectory() as tmp:
+            source = Path(tmp) / "words.datc64"
+            cleaned = Path(tmp) / "words.clean.datc64"
+            source.write_bytes(data)
+
+            rows = module.clean_word_price_labels_file(source, cleaned)
+
+            self.assertEqual(len(rows), 1)
+            self.assertFalse(module.words_look_price_patched(cleaned))
+            self.assertIn(
+                "[12D|传奇甲]",
+                cleaned.read_bytes().decode("utf-16-le", errors="ignore"),
+            )
+
+    def test_words_probe_detects_legacy_equals_price_label(self):
+        module = self.price_patch
+        layout_base = 4 + module.WORDS_ROW_SIZE
+        data = bytearray(layout_base)
+        struct.pack_into("<I", data, 0, 1)
+
+        def append_string(text: str) -> int:
+            offset = len(data) - layout_base
+            data.extend(text.encode("utf-16-le"))
+            data.extend(b"\x00\x00\x00\x00")
+            return offset
+
+        en_offset = append_string("Unique A")
+        display_offset = append_string("传奇甲=12D")
+        struct.pack_into("<I", data, 4 + module.WORDS_EN_NAME_OFFSET, en_offset)
+        struct.pack_into(
+            "<I", data, 4 + module.WORDS_DISPLAY_NAME_OFFSET, display_offset
+        )
+
+        with TemporaryDirectory() as tmp:
+            source = Path(tmp) / "legacy-words.datc64"
+            source.write_bytes(data)
+            self.assertTrue(module.words_look_price_patched(source))
+
+    def test_words_probe_rejects_layout_with_no_readable_rows(self):
+        with TemporaryDirectory() as tmp:
+            broken = Path(tmp) / "broken-words.datc64"
+            data = bytearray(2048)
+            struct.pack_into("<I", data, 0, 1)
+            broken.write_bytes(data)
+
+            with self.assertRaisesRegex(ValueError, "live-row scan is incomplete"):
+                self.price_patch.words_look_price_patched(broken)
+
+    def test_words_probe_rejects_partially_readable_layout(self):
+        module = self.price_patch
+        layout_base = 4 + 2 * module.WORDS_ROW_SIZE
+        data = bytearray(layout_base)
+        struct.pack_into("<I", data, 0, 2)
+
+        def append_string(text: str) -> int:
+            offset = len(data) - layout_base
+            data.extend(text.encode("utf-16-le"))
+            data.extend(b"\x00\x00\x00\x00")
+            return offset
+
+        en_offset = append_string("Unique A")
+        display_offset = append_string("传奇甲")
+        struct.pack_into("<I", data, 4 + module.WORDS_EN_NAME_OFFSET, en_offset)
+        struct.pack_into(
+            "<I", data, 4 + module.WORDS_DISPLAY_NAME_OFFSET, display_offset
+        )
+        struct.pack_into(
+            "<I",
+            data,
+            4 + module.WORDS_ROW_SIZE + module.WORDS_EN_NAME_OFFSET,
+            0xFFFFFFF0,
+        )
+
+        with TemporaryDirectory() as tmp:
+            broken = Path(tmp) / "partially-readable-words.datc64"
+            broken.write_bytes(data)
+            with self.assertRaisesRegex(ValueError, "readable=1, minimum=2"):
+                module.words_look_price_patched(broken)
 
 
 if __name__ == "__main__":

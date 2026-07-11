@@ -104,14 +104,21 @@ class Program
                 // Keep the old fuzzy fallback for diagnostics, but only pay the full
                 // multi-million-path parsing cost when the exact hash lookup failed.
                 loaded.Index.ParsePaths();
-                foreach (var file in loaded.Index.Files.Values)
+                var similarFiles = loaded.Index.Files.Values
+                    .Where(file => IsSafeFuzzyPathMatch(file.Path, filePath))
+                    .Take(6)
+                    .ToArray();
+                if (similarFiles.Length == 1)
                 {
-                    if (file.Path?.Contains(filePath, StringComparison.OrdinalIgnoreCase) == true)
-                    {
-                        Console.WriteLine($"Found similar file: {file.Path}");
-                        targetFile = file;
-                        break;
-                    }
+                    Console.WriteLine($"Found unique similar file: {similarFiles[0].Path}");
+                    targetFile = similarFiles[0];
+                }
+                else if (similarFiles.Length > 1)
+                {
+                    Console.WriteLine($"Error: File path is ambiguous: {filePath}");
+                    foreach (var file in similarFiles.Take(5))
+                        Console.WriteLine($"  Candidate: {file.Path}");
+                    return 1;
                 }
             }
 
@@ -149,6 +156,19 @@ class Program
             PrintError(ex);
             return 1;
         }
+    }
+
+    static bool IsSafeFuzzyPathMatch(string? candidate, string requested)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(requested))
+            return false;
+
+        static string Normalize(string path) => path.Replace('\\', '/').Trim('/');
+        string normalizedCandidate = Normalize(candidate);
+        string normalizedRequested = Normalize(requested);
+        return normalizedCandidate.Equals(normalizedRequested, StringComparison.OrdinalIgnoreCase)
+            || normalizedCandidate.EndsWith('/' + normalizedRequested, StringComparison.OrdinalIgnoreCase)
+            || normalizedRequested.EndsWith('/' + normalizedCandidate, StringComparison.OrdinalIgnoreCase);
     }
 
     static int ExtractFiles(string indexPath, string inputListPath, string outputDirectory)

@@ -1,6 +1,7 @@
 ﻿param(
     [string]$Poe2Dir = "",
     [string]$RestoreZip = "",
+    [string]$PhysicalRestoreZip = "",
     [switch]$NoInstall
 )
 
@@ -51,7 +52,8 @@ function Test-BaseItemsLookPatched {
             "--output", $TempCsv
         ) -Quiet
         if ($ExportResult.ExitCode -ne 0) {
-            return $true
+            $Detail = ([string]$ExportResult.Text).Trim()
+            throw "无法判断 BaseItemTypes.datc64 是否包含物价补丁标记：检测工具退出码 $($ExportResult.ExitCode)。$Detail"
         }
         $Rows = Import-Csv -LiteralPath $TempCsv -Encoding UTF8
         return [bool]($Rows | Where-Object {
@@ -70,6 +72,32 @@ function Test-BaseItemsLookPatched {
         if (Test-Path -LiteralPath $TempCsv -PathType Leaf) {
             Remove-Item -LiteralPath $TempCsv -Force
         }
+    }
+}
+
+function Test-WordsLookPatched {
+    param([string]$SourceWords)
+
+    if (-not (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
+        return $false
+    }
+
+    $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+    $CheckScript = Join-Path $CodeToolsRoot "build_poe2scout_price_patch.py"
+    $Result = Invoke-Poe2Python -Python $Python -ArgumentList @(
+        $CheckScript,
+        "--check-words", $SourceWords
+    ) -Quiet
+    if ($Result.ExitCode -ne 0) {
+        $Detail = ([string]$Result.Text).Trim()
+        throw "无法判断 Words.datc64 是否包含物价补丁标记：检测工具退出码 $($Result.ExitCode)。$Detail"
+    }
+    try {
+        $Info = $Result.Text | ConvertFrom-Json
+        return ([int]$Info.patched_count -gt 0)
+    }
+    catch {
+        throw "无法判断 Words.datc64 是否包含物价补丁标记：检测结果无法解析。$($_.Exception.Message)"
     }
 }
 
@@ -194,14 +222,14 @@ function Test-EndgameMapsLookPatched {
             "--game-path", $InstallInfo.TcEndgameMapsPath
         ) -Quiet
         if ($Result.ExitCode -ne 0) {
-            return $true
+            $Detail = ([string]$Result.Text).Trim()
+            throw "无法判断 EndgameMaps.datc64 是否包含岛屿传言提示：检测工具退出码 $($Result.ExitCode)。$Detail"
         }
         $Info = $Result.Text | ConvertFrom-Json
         return ([int]$Info.patched_count -gt 0)
     }
     catch {
-        Write-Warning "检查 EndgameMaps.datc64 是否已打岛屿传言提示时失败：$($_.Exception.Message)"
-        return $true
+        throw "无法判断 EndgameMaps.datc64 是否包含岛屿传言提示：$($_.Exception.Message)"
     }
 }
 
@@ -234,6 +262,46 @@ function Copy-ZipEntry {
     return $true
 }
 
+function Update-ZipEntryFromFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string]$SourceFile,
+        [Parameter(Mandatory = $true)][string]$EntryName
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $ZipPath = [System.IO.Path]::GetFullPath($ZipPath)
+    $ZipDir = Split-Path -Parent $ZipPath
+    $TempZip = Join-Path $ZipDir ([string]::Concat(".", (Split-Path -Leaf $ZipPath), ".update-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+    try {
+        [System.IO.File]::Copy($ZipPath, $TempZip, $false)
+        $Archive = [System.IO.Compression.ZipFile]::Open($TempZip, [System.IO.Compression.ZipArchiveMode]::Update)
+        try {
+            $OldEntry = $Archive.GetEntry($EntryName)
+            if ($null -ne $OldEntry) {
+                $OldEntry.Delete()
+            }
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                $Archive,
+                $SourceFile,
+                $EntryName,
+                [System.IO.Compression.CompressionLevel]::Optimal
+            ) | Out-Null
+        }
+        finally {
+            $Archive.Dispose()
+        }
+        Get-Poe2ZipEntryCrc32Map -Path $TempZip | Out-Null
+        Move-Poe2FileAtomically -Source $TempZip -Destination $ZipPath | Out-Null
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempZip -PathType Leaf) {
+            Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function New-BaseItemRestoreZip {
     param(
         [string]$SourceDat,
@@ -247,44 +315,56 @@ function New-BaseItemRestoreZip {
         throw "Cached BaseItemTypes looks patched. Refusing to build a restore zip from it."
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($SourceWords) -and (Test-Path -LiteralPath $SourceWords -PathType Leaf) -and (Test-WordsLookPatched $SourceWords)) {
+        throw "Cached Words looks patched. Refusing to build a restore zip from it."
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SourceEndgameMaps) -and (Test-Path -LiteralPath $SourceEndgameMaps -PathType Leaf) -and (Test-EndgameMapsLookPatched $SourceEndgameMaps)) {
+        throw "Cached EndgameMaps looks patched. Refusing to build a restore zip from it."
+    }
+
+    $OutputZip = [System.IO.Path]::GetFullPath($OutputZip)
     $OutputDir = Split-Path -Parent $OutputZip
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-    if (Test-Path -LiteralPath $OutputZip -PathType Leaf) {
-        Remove-Item -LiteralPath $OutputZip -Force
-    }
+    $TempZip = Join-Path $OutputDir ([string]::Concat(".", (Split-Path -Leaf $OutputZip), ".new-", [Guid]::NewGuid().ToString("N"), ".tmp"))
 
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $Archive = [System.IO.Compression.ZipFile]::Open($OutputZip, [System.IO.Compression.ZipArchiveMode]::Create)
     try {
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-            $Archive,
-            $SourceDat,
-            $InstallInfo.TcBaseItemsPath,
-            [System.IO.Compression.CompressionLevel]::Optimal
-        ) | Out-Null
-        if (-not [string]::IsNullOrWhiteSpace($SourceWords) -and (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
+        $Archive = [System.IO.Compression.ZipFile]::Open($TempZip, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
             [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
                 $Archive,
-                $SourceWords,
-                $TcWordsPath,
+                $SourceDat,
+                $InstallInfo.TcBaseItemsPath,
                 [System.IO.Compression.CompressionLevel]::Optimal
             ) | Out-Null
-        }
-        if (-not [string]::IsNullOrWhiteSpace($SourceEndgameMaps) -and (Test-Path -LiteralPath $SourceEndgameMaps -PathType Leaf)) {
-            if (Test-EndgameMapsLookPatched $SourceEndgameMaps) {
-                throw "Cached EndgameMaps looks patched. Refusing to build a restore zip from it."
+            if (-not [string]::IsNullOrWhiteSpace($SourceWords) -and (Test-Path -LiteralPath $SourceWords -PathType Leaf)) {
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $Archive,
+                    $SourceWords,
+                    $TcWordsPath,
+                    [System.IO.Compression.CompressionLevel]::Optimal
+                ) | Out-Null
             }
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $Archive,
-                $SourceEndgameMaps,
-                $InstallInfo.TcEndgameMapsPath,
-                [System.IO.Compression.CompressionLevel]::Optimal
-            ) | Out-Null
+            if (-not [string]::IsNullOrWhiteSpace($SourceEndgameMaps) -and (Test-Path -LiteralPath $SourceEndgameMaps -PathType Leaf)) {
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $Archive,
+                    $SourceEndgameMaps,
+                    $InstallInfo.TcEndgameMapsPath,
+                    [System.IO.Compression.CompressionLevel]::Optimal
+                ) | Out-Null
+            }
         }
+        finally {
+            $Archive.Dispose()
+        }
+        Get-Poe2ZipEntryCrc32Map -Path $TempZip | Out-Null
+        Move-Poe2FileAtomically -Source $TempZip -Destination $OutputZip | Out-Null
     }
     finally {
-        $Archive.Dispose()
+        if (Test-Path -LiteralPath $TempZip -PathType Leaf) {
+            Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -303,8 +383,12 @@ function Assert-RestoreZip {
         if ($Entry.Length -le 1048576) {
             throw "Restore zip entry is too small to be a valid BaseItemTypes.datc64"
         }
-        if ($SupportsUniqueWords -and $null -eq $Archive.GetEntry($TcWordsPath)) {
+        $WordsEntry = $Archive.GetEntry($TcWordsPath)
+        if ($SupportsUniqueWords -and $null -eq $WordsEntry) {
             Write-Warning "还原包缺少 $TcWordsPath；将只还原 BaseItemTypes。请在游戏文件干净后运行一次一键更新，以刷新包含 Words 的新版还原包。"
+        }
+        elseif ($null -ne $WordsEntry -and $WordsEntry.Length -le 1024) {
+            throw "Restore zip Words entry is too small to be valid: $TcWordsPath"
         }
         $EndgameMapsEntry = $Archive.GetEntry($InstallInfo.TcEndgameMapsPath)
         if ($null -eq $EndgameMapsEntry) {
@@ -312,11 +396,18 @@ function Assert-RestoreZip {
         }
 
         $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_restore_assert_", [Guid]::NewGuid().ToString("N"), ".datc64"))
+        $TempWords = Join-Path $env:TEMP ([string]::Concat("poe2_restore_words_assert_", [Guid]::NewGuid().ToString("N"), ".datc64"))
         $TempEndgameMaps = Join-Path $env:TEMP ([string]::Concat("poe2_restore_endgamemaps_assert_", [Guid]::NewGuid().ToString("N"), ".datc64"))
         try {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $TempDat, $true)
             if (Test-BaseItemsLookPatched $TempDat) {
                 throw "Restore zip BaseItemTypes looks patched. Refusing to restore from a polluted backup."
+            }
+            if ($null -ne $WordsEntry) {
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($WordsEntry, $TempWords, $true)
+                if (Test-WordsLookPatched $TempWords) {
+                    throw "Restore zip Words contains active price markers. Refusing to restore from a polluted backup."
+                }
             }
             if ($null -ne $EndgameMapsEntry) {
                 [System.IO.Compression.ZipFileExtensions]::ExtractToFile($EndgameMapsEntry, $TempEndgameMaps, $true)
@@ -328,6 +419,9 @@ function Assert-RestoreZip {
         finally {
             if (Test-Path -LiteralPath $TempDat -PathType Leaf) {
                 Remove-Item -LiteralPath $TempDat -Force
+            }
+            if (Test-Path -LiteralPath $TempWords -PathType Leaf) {
+                Remove-Item -LiteralPath $TempWords -Force
             }
             if (Test-Path -LiteralPath $TempEndgameMaps -PathType Leaf) {
                 Remove-Item -LiteralPath $TempEndgameMaps -Force
@@ -346,35 +440,12 @@ function Test-RestoreZipUsable {
         return $false
     }
 
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
     try {
-        $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+        Assert-RestoreZip $Path
+        return $true
     }
     catch {
         return $false
-    }
-    try {
-        $Entry = $Archive.GetEntry($InstallInfo.TcBaseItemsPath)
-        if ($null -eq $Entry -or $Entry.Length -le 1048576) {
-            return $false
-        }
-        $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_restore_validate_", [Guid]::NewGuid().ToString("N"), ".datc64"))
-        try {
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $TempDat, $true)
-            return (-not (Test-BaseItemsLookPatched $TempDat))
-        }
-        catch {
-            return $false
-        }
-        finally {
-            if (Test-Path -LiteralPath $TempDat -PathType Leaf) {
-                Remove-Item -LiteralPath $TempDat -Force
-            }
-        }
-    }
-    finally {
-        $Archive.Dispose()
     }
 }
 
@@ -389,34 +460,130 @@ function New-CurrentTargetRestoreZip {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $SourceArchive = [System.IO.Compression.ZipFile]::OpenRead($SourceZip)
+    $OutputZip = [System.IO.Path]::GetFullPath($OutputZip)
+    $OutputDir = Split-Path -Parent $OutputZip
+    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+    $TempZip = Join-Path $OutputDir ([string]::Concat(".", (Split-Path -Leaf $OutputZip), ".new-", [Guid]::NewGuid().ToString("N"), ".tmp"))
     try {
-        $OutputDir = Split-Path -Parent $OutputZip
-        New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-        if (Test-Path -LiteralPath $OutputZip -PathType Leaf) {
-            Remove-Item -LiteralPath $OutputZip -Force
-        }
-
-        $TargetArchive = [System.IO.Compression.ZipFile]::Open($OutputZip, [System.IO.Compression.ZipArchiveMode]::Create)
+        $TargetArchive = [System.IO.Compression.ZipFile]::Open($TempZip, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
             Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $InstallInfo.TcBaseItemsPath -Required | Out-Null
-            if ($SupportsUniqueWords) {
-                if (-not (Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $TcWordsPath)) {
-                    Write-Warning "还原包缺少 $TcWordsPath；本次安装包不会包含 Words 还原条目。"
+            if ($GameMode -ne "Bundles2") {
+                if ($SupportsUniqueWords) {
+                    Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $TcWordsPath | Out-Null
                 }
-            }
-            if (-not (Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $InstallInfo.TcEndgameMapsPath)) {
-                Write-Warning "还原包缺少 $($InstallInfo.TcEndgameMapsPath)；本次安装包不会包含 EndgameMaps 还原条目。"
+                Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $InstallInfo.TcEndgameMapsPath | Out-Null
             }
         }
         finally {
             $TargetArchive.Dispose()
         }
+        Get-Poe2ZipEntryCrc32Map -Path $TempZip | Out-Null
+        Move-Poe2FileAtomically -Source $TempZip -Destination $OutputZip | Out-Null
     }
     finally {
         $SourceArchive.Dispose()
+        if (Test-Path -LiteralPath $TempZip -PathType Leaf) {
+            Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+        }
     }
 
     return (Resolve-Path -LiteralPath $OutputZip).Path
+}
+
+function Add-CleanCurrentWordsToRestoreZip {
+    param([Parameter(Mandatory = $true)][string]$ZipPath)
+
+    if ($GameMode -ne "Bundles2" -or -not $SupportsUniqueWords) {
+        return $ZipPath
+    }
+
+    $TempDir = Join-Path $env:TEMP ([string]::Concat("poe2_restore_words_", [Guid]::NewGuid().ToString("N")))
+    $CurrentWords = Join-Path $TempDir "words.current.datc64"
+    $CleanWords = Join-Path $TempDir "words.clean.datc64"
+    $Log = Join-Path $TempDir "extract.log"
+    try {
+        New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+        & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $TcWordsPath $CurrentWords *> $Log
+        if ($LASTEXITCODE -ne 0) {
+            throw "无法读取当前 Words 以生成安全还原条目。退出码：$LASTEXITCODE；日志：$Log"
+        }
+        if (-not (Test-WordsLookPatched $CurrentWords)) {
+            return $ZipPath
+        }
+
+        Write-Host "当前 Words 仍有旧价格标记，正在从当前版本生成清理条目..." -ForegroundColor Yellow
+        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+        $Result = Invoke-Poe2Python -Python $Python -ArgumentList @(
+            (Join-Path $CodeToolsRoot "build_poe2scout_price_patch.py"),
+            "--clean-words", $CurrentWords,
+            "--clean-words-output", $CleanWords
+        )
+        if ($Result.ExitCode -ne 0) {
+            throw "清理当前 Words 失败。退出码：$($Result.ExitCode)"
+        }
+        if (-not (Test-Path -LiteralPath $CleanWords -PathType Leaf) -or (Test-WordsLookPatched $CleanWords)) {
+            throw "清理后的 Words 校验失败，拒绝继续还原。"
+        }
+        Update-ZipEntryFromFile -ZipPath $ZipPath -SourceFile $CleanWords -EntryName $TcWordsPath
+        return $ZipPath
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempDir -PathType Container) {
+            Remove-Item -LiteralPath $TempDir -Recurse -Force
+        }
+    }
+}
+
+function Add-CleanCurrentEndgameMapsToRestoreZip {
+    param([Parameter(Mandatory = $true)][string]$ZipPath)
+
+    if ($GameMode -ne "Bundles2") {
+        return $ZipPath
+    }
+
+    $TempDir = Join-Path $env:TEMP ([string]::Concat("poe2_restore_endgamemaps_", [Guid]::NewGuid().ToString("N")))
+    $CurrentEndgameMaps = Join-Path $TempDir "endgamemaps.current.datc64"
+    $CleanEndgameMaps = Join-Path $TempDir "endgamemaps.clean.datc64"
+    $Report = Join-Path $TempDir "endgamemaps-clean.report.json"
+    $Log = Join-Path $TempDir "extract.log"
+    try {
+        New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+        & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcEndgameMapsPath $CurrentEndgameMaps *> $Log
+        if ($LASTEXITCODE -ne 0) {
+            throw "无法读取当前 EndgameMaps 以补全还原包。退出码：$LASTEXITCODE；日志：$Log"
+        }
+        if (-not (Test-EndgameMapsLookPatched $CurrentEndgameMaps)) {
+            return $ZipPath
+        }
+
+        Write-Host "当前 EndgameMaps 仍有旧岛屿提示，正在生成清理条目补全还原包..." -ForegroundColor Yellow
+        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+        $Result = Invoke-Poe2Python -Python $Python -ArgumentList @(
+            (Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py"),
+            "clean",
+            "--source", $CurrentEndgameMaps,
+            "--output-zip", $ZipPath,
+            "--patched-dat", $CleanEndgameMaps,
+            "--game-path", $InstallInfo.TcEndgameMapsPath,
+            "--report", $Report
+        )
+        if ($Result.ExitCode -ne 0) {
+            throw "清理当前 EndgameMaps 失败。退出码：$($Result.ExitCode)"
+        }
+        if (-not (Test-Path -LiteralPath $CleanEndgameMaps -PathType Leaf) -or (Test-EndgameMapsLookPatched $CleanEndgameMaps)) {
+            throw "清理后的 EndgameMaps 校验失败，拒绝继续还原。"
+        }
+        if (-not (Test-ZipEntryExists -ZipPath $ZipPath -EntryName $InstallInfo.TcEndgameMapsPath)) {
+            throw "清理后的 EndgameMaps 没有写入还原安装包。"
+        }
+        return $ZipPath
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempDir -PathType Container) {
+            Remove-Item -LiteralPath $TempDir -Recurse -Force
+        }
+    }
 }
 
 function Get-RestoreZipCandidates {
@@ -446,12 +613,26 @@ function Get-PhysicalRestoreZipCandidates {
         (Get-Poe2PatchName "PhysicalRestorePatchZip")
     )
 
-    $SearchRoots = @(
+    $SearchRoots = New-Object System.Collections.Generic.List[string]
+    foreach ($Root in @(
         $RepoRoot,
         $RestoreOutDir,
+        (Join-Path $Poe2Dir ".poe2-price-patch"),
+        $Poe2Dir,
         (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)),
         (Join-Path (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)) "output\restore")
-    )
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace($Root)) {
+            $SearchRoots.Add($Root)
+        }
+    }
+
+    if (Test-Path -LiteralPath $Poe2Dir -PathType Container) {
+        foreach ($Directory in @(Get-ChildItem -LiteralPath $Poe2Dir -Directory -ErrorAction SilentlyContinue)) {
+            $SearchRoots.Add($Directory.FullName)
+            $SearchRoots.Add((Join-Path $Directory.FullName "output\restore"))
+        }
+    }
 
     $SeenPaths = @{}
     foreach ($Name in $Names) {
@@ -661,6 +842,56 @@ function Restore-PhysicalBundles2 {
                 }
             }
         }
+
+        if ($env:POE2_PATCH_TEST_CREATE_CONCURRENT_OPTIONAL_INDEX -eq "1") {
+            [System.IO.File]::WriteAllText((Join-Path $Bundles2Root "_.index.high.bin"), "EXTERNAL-OPTIONAL-INDEX")
+        }
+
+        $KnownTopLevelNames = @("_.index.bin", "_.index.high.bin", "_.index.low.bin", ".index.dbg")
+        $ExpectedTopLevelByName = @{}
+        foreach ($Entry in $TopLevelEntries) {
+            $ExpectedName = $Entry.FullName.Substring("Bundles2/".Length).Replace("\", "/").ToLowerInvariant()
+            $ExpectedTopLevelByName[$ExpectedName] = $true
+        }
+        $ActualTopLevelNames = @($KnownTopLevelNames | Where-Object {
+                Test-Path -LiteralPath (Join-Path $Bundles2Root $_) -PathType Leaf
+            } | ForEach-Object { $_.ToLowerInvariant() })
+        if ($ActualTopLevelNames.Count -ne $ExpectedTopLevelByName.Count) {
+            throw "Physical restore top-level index file-set verification failed: expected $($ExpectedTopLevelByName.Count), actual $($ActualTopLevelNames.Count)"
+        }
+        foreach ($ActualName in $ActualTopLevelNames) {
+            if (-not $ExpectedTopLevelByName.ContainsKey($ActualName)) {
+                throw "Physical restore found an unexpected concurrent top-level index file: $ActualName"
+            }
+        }
+
+        $ExpectedLibEntries = @($Entries | Where-Object { $_.FullName -like "Bundles2/LibGGPK3/*" })
+        $ActualLibFiles = if (Test-Path -LiteralPath $LibDir -PathType Container) {
+            @(Get-ChildItem -LiteralPath $LibDir -Recurse -File -ErrorAction Stop)
+        }
+        else {
+            @()
+        }
+        if ($ActualLibFiles.Count -ne $ExpectedLibEntries.Count) {
+            throw "Physical restore LibGGPK3 file-set verification failed: expected $($ExpectedLibEntries.Count), actual $($ActualLibFiles.Count)"
+        }
+        $ExpectedLibByRelative = @{}
+        foreach ($Entry in $ExpectedLibEntries) {
+            $Relative = $Entry.FullName.Substring("Bundles2/LibGGPK3/".Length).Replace("\", "/").ToLowerInvariant()
+            $ExpectedLibByRelative[$Relative] = $Entry
+        }
+        if ($ActualLibFiles.Count -gt 0) {
+            $LibPrefix = [System.IO.Path]::GetFullPath($LibDir).TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar
+            ) + [System.IO.Path]::DirectorySeparatorChar
+            foreach ($File in $ActualLibFiles) {
+                $Relative = $File.FullName.Substring($LibPrefix.Length).Replace("\", "/").ToLowerInvariant()
+                if (-not $ExpectedLibByRelative.ContainsKey($Relative)) {
+                    throw "Physical restore found an unexpected concurrent LibGGPK3 file: $Relative"
+                }
+            }
+        }
     }
     catch {
         $OriginalError = $_
@@ -772,6 +1003,81 @@ function Restore-PhysicalBundles2 {
     }
 }
 
+function Assert-Bundles2RestoreApplied {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string[]]$EntryNames
+    )
+
+    Resolve-BundleExtractor
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $EntriesToVerify = New-Object System.Collections.Generic.List[string]
+    $Seen = @{}
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        foreach ($Name in $EntryNames) {
+            if ([string]::IsNullOrWhiteSpace($Name)) {
+                continue
+            }
+            $Normalized = $Name.Replace("\", "/")
+            $Key = $Normalized.ToLowerInvariant()
+            if (-not $Seen.ContainsKey($Key) -and $null -ne $Archive.GetEntry($Normalized)) {
+                $Seen[$Key] = $true
+                $EntriesToVerify.Add($Normalized)
+            }
+        }
+    }
+    finally {
+        $Archive.Dispose()
+    }
+    if ($EntriesToVerify.Count -eq 0) {
+        throw "Bundles2 restore verification found no target entries in $ZipPath"
+    }
+
+    $TempDir = Join-Path $env:TEMP ([string]::Concat("poe2_verify_bundle_restore_", [Guid]::NewGuid().ToString("N")))
+    $RequestListPath = Join-Path $TempDir "verify-files.txt"
+    $ExtractDir = Join-Path $TempDir "extracted"
+    $VerifyLog = Join-Path $TempDir "verify.log"
+    try {
+        New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
+        [System.IO.File]::WriteAllLines(
+            $RequestListPath,
+            $EntriesToVerify.ToArray(),
+            (New-Object System.Text.UTF8Encoding($false))
+        )
+        & $BundledBundleExtractorExe --extract-list $Bundles2Paths.IndexBin $RequestListPath $ExtractDir *> $VerifyLog
+        if ($LASTEXITCODE -ne 0) {
+            throw "Bundles2 restore read-back extraction failed. Exit code: $LASTEXITCODE. Log: $VerifyLog"
+        }
+
+        $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        try {
+            for ($Index = 0; $Index -lt $EntriesToVerify.Count; $Index++) {
+                $EntryName = $EntriesToVerify[$Index]
+                $ActualPath = Join-Path $ExtractDir ([string]::Format("{0:D6}.bin", $Index))
+                Assert-File $ActualPath "restored $EntryName"
+                $ZipEntry = $Archive.GetEntry($EntryName)
+                $ExpectedIntegrity = Get-Poe2ZipEntryStreamIntegrity -Entry $ZipEntry
+                $ActualInfo = Get-Item -LiteralPath $ActualPath
+                if ([long]$ActualInfo.Length -ne [long]$ExpectedIntegrity.Length -or
+                    (Get-Poe2Sha256Hex -Path $ActualPath) -ne [string]$ExpectedIntegrity.Sha256) {
+                    throw "Bundles2 restore read-back content mismatch: $EntryName"
+                }
+            }
+        }
+        finally {
+            $Archive.Dispose()
+        }
+        Write-Host "已读回校验 Bundles2 中的 $($EntriesToVerify.Count) 个还原文件。" -ForegroundColor Green
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempDir -PathType Container) {
+            Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Resolve-BundleExtractor {
     if (-not (Test-Path -LiteralPath $BundledBundleExtractorExe -PathType Leaf)) {
         $script:BundledBundleExtractorExe = Join-Path $BundledInstallerDir "BundleExtractor\BundleExtractor.exe"
@@ -851,6 +1157,77 @@ function Extract-CurrentGgpkBaseItemsForRestoreCheck {
     }
 }
 
+function Assert-GgpkRestoreApplied {
+    param([Parameter(Mandatory = $true)][string]$ZipPath)
+
+    $Current = $null
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    try {
+        $Current = Extract-CurrentGgpkBaseItemsForRestoreCheck
+        $Targets = [ordered]@{
+            $InstallInfo.TcBaseItemsPath = $InstallInfo.LanguageFileSlug
+            $InstallInfo.TcWordsPath = $InstallInfo.WordsFileSlug
+            $InstallInfo.TcEndgameMapsPath = $InstallInfo.EndgameMapsFileSlug
+        }
+        $Verified = 0
+        $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        try {
+            foreach ($EntryName in $Targets.Keys) {
+                $Entry = $Archive.GetEntry(([string]$EntryName).Replace("\", "/"))
+                if ($null -eq $Entry) {
+                    continue
+                }
+                $ExpectedPath = Join-Path $Current.Dir ([string]::Concat("expected_", [Guid]::NewGuid().ToString("N"), ".datc64"))
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $ExpectedPath, $true)
+                $ActualPath = Join-Path $Current.Dir ("data\" + [string]$Targets[$EntryName])
+                Assert-File $ActualPath "GGPK read-back $EntryName"
+                $ExpectedItem = Get-Item -LiteralPath $ExpectedPath
+                $ActualItem = Get-Item -LiteralPath $ActualPath
+                if ($ExpectedItem.Length -ne $ActualItem.Length) {
+                    throw "GGPK 还原后读回长度不一致：$EntryName"
+                }
+                $ExpectedHash = (Get-FileHash -LiteralPath $ExpectedPath -Algorithm SHA256).Hash
+                $ActualHash = (Get-FileHash -LiteralPath $ActualPath -Algorithm SHA256).Hash
+                if ($ExpectedHash -ne $ActualHash) {
+                    throw "GGPK 还原后读回内容不一致：$EntryName"
+                }
+                $Verified += 1
+            }
+        }
+        finally {
+            $Archive.Dispose()
+        }
+        if ($Verified -eq 0) {
+            throw "GGPK 还原读回校验找不到任何目标 DAT 条目。"
+        }
+        Write-Host "已读回校验 GGPK 中的 $Verified 个还原文件。" -ForegroundColor Green
+    }
+    finally {
+        if ($null -ne $Current -and (Test-Path -LiteralPath $Current.Dir -PathType Container)) {
+            Remove-Item -LiteralPath $Current.Dir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Invoke-GgpkRestorePatch {
+    param([Parameter(Mandatory = $true)][string]$ZipPath)
+
+    Push-Location -LiteralPath $BundledInstallerDir
+    try {
+        $InstallerResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $ZipPath) -InputText ""
+        if ($InstallerResult.ExitCode -ne 0 -or $InstallerResult.Text -match 'Exception|Unhandled|錯誤|错误|失敗|失败') {
+            if (Test-GgpkExtractorMissingRuntimeDependency -Text $InstallerResult.Text) {
+                throw "GGPKExtractor missing VC runtime dependency. Exit code: $($InstallerResult.ExitCode). Log: restore-install"
+            }
+            throw "Restore installer failed. Exit code: $($InstallerResult.ExitCode)"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
@@ -893,27 +1270,43 @@ if ($GameMode -eq "GGPK") {
 }
 else {
     Assert-File $Bundles2Paths.IndexBin "Bundles2 _.index.bin"
-    Resolve-BundleExtractor
 }
-$Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
 
 if ($GameMode -eq "Bundles2" -and -not $NoInstall) {
     Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
 }
 
 if ($GameMode -eq "Bundles2") {
+    $RequestedPhysicalRestoreZip = $PhysicalRestoreZip
     $PhysicalRestoreZip = ""
-    foreach ($Candidate in (Get-PhysicalRestoreZipCandidates)) {
+    $UsablePhysicalRestoreZips = New-Object System.Collections.Generic.List[string]
+    $PhysicalCandidates = if ([string]::IsNullOrWhiteSpace($RequestedPhysicalRestoreZip)) {
+        @(Get-PhysicalRestoreZipCandidates)
+    }
+    else {
+        @($RequestedPhysicalRestoreZip)
+    }
+    foreach ($Candidate in $PhysicalCandidates) {
         if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
             try {
                 Assert-PhysicalRestoreZip $Candidate
-                $PhysicalRestoreZip = (Resolve-Path -LiteralPath $Candidate).Path
-                break
+                $UsablePhysicalRestoreZips.Add((Resolve-Path -LiteralPath $Candidate).Path)
             }
             catch {
                 Write-Warning "Ignore invalid physical restore zip: $Candidate ($($_.Exception.Message))"
             }
         }
+    }
+    if ($UsablePhysicalRestoreZips.Count -gt 0) {
+        $CandidatesByHash = @($UsablePhysicalRestoreZips | Group-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash })
+        if ($CandidatesByHash.Count -gt 1) {
+            $CandidateList = [string]::Join("；", $UsablePhysicalRestoreZips.ToArray())
+            throw "找到多个内容不同、但都能通过校验的真实还原包，无法安全判断应还原哪一个：$CandidateList"
+        }
+        $PhysicalRestoreZip = @($UsablePhysicalRestoreZips | Sort-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } -Descending)[0]
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($RequestedPhysicalRestoreZip)) {
+        throw "指定的真实还原包不可用，拒绝改用其它还原路径：$RequestedPhysicalRestoreZip"
     }
 
     if ([string]::IsNullOrWhiteSpace($PhysicalRestoreZip)) {
@@ -933,8 +1326,15 @@ if ($GameMode -eq "Bundles2") {
     }
 }
 
+# Physical Bundles2 restoration only needs file APIs.  Defer extractor and
+# runtime checks until the logical fallback is actually selected.
+if ($GameMode -eq "Bundles2") {
+    Resolve-BundleExtractor
+}
+$Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
+
 function Ensure-CleanBaseItemForRestore {
-    if (Test-Path -LiteralPath $CleanDat -PathType Leaf) {
+    if ($GameMode -ne "Bundles2" -and (Test-Path -LiteralPath $CleanDat -PathType Leaf)) {
         if (-not (Test-BaseItemsLookPatched $CleanDat)) {
             return $CleanDat
         }
@@ -1019,13 +1419,21 @@ finally {
 }
 
 if ($RestoreZip -ne $PatchFolderRestoreZip -and -not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
-    Copy-Item -LiteralPath $RestoreZip -Destination $PatchFolderRestoreZip -Force
+    Copy-Poe2FileAtomically -Source $RestoreZip -Destination $PatchFolderRestoreZip | Out-Null
 }
 
 $InstallRestoreZip = $RestoreZip
 if ($GameMode -eq "Bundles2" -or -not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*")) {
     $SingleTargetRestoreZip = Join-Path $RestoreOutDir ([string]::Concat("install_", $RestoreZipName))
+    if (([System.IO.Path]::GetFullPath($RestoreZip)).Equals([System.IO.Path]::GetFullPath($SingleTargetRestoreZip), [System.StringComparison]::OrdinalIgnoreCase)) {
+        $SingleTargetRestoreZip = Join-Path $RestoreOutDir ([string]::Concat("install_", [Guid]::NewGuid().ToString("N"), "_", $RestoreZipName))
+    }
     $InstallRestoreZip = New-CurrentTargetRestoreZip -SourceZip $RestoreZip -OutputZip $SingleTargetRestoreZip
+}
+if ($GameMode -eq "Bundles2") {
+    $InstallRestoreZip = Add-CleanCurrentWordsToRestoreZip -ZipPath $InstallRestoreZip
+    $InstallRestoreZip = Add-CleanCurrentEndgameMapsToRestoreZip -ZipPath $InstallRestoreZip
+    Assert-RestoreZip $InstallRestoreZip
 }
 
 if ($NoInstall) {
@@ -1042,21 +1450,21 @@ if ($GameMode -eq "GGPK") {
     Write-Host "GGPK     : $ContentGgpk"
     Write-Host "Patch    : $InstallRestoreZip"
 
-    Push-Location -LiteralPath $BundledInstallerDir
-    try {
-        $InstallerResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $InstallRestoreZip) -InputText ""
-        if ($InstallerResult.ExitCode -ne 0 -or $InstallerResult.Text -match 'Exception|Unhandled|錯誤|错误|失敗|失败') {
-            if (Test-GgpkExtractorMissingRuntimeDependency -Text $InstallerResult.Text) {
-                throw "GGPKExtractor missing VC runtime dependency. Exit code: $($InstallerResult.ExitCode). Log: restore-install"
+    for ($Attempt = 1; $Attempt -le 2; $Attempt++) {
+        try {
+            Invoke-GgpkRestorePatch -ZipPath $InstallRestoreZip
+            Assert-GgpkRestoreApplied -ZipPath $InstallRestoreZip
+            break
+        }
+        catch {
+            if ($Attempt -ge 2) {
+                throw "GGPK 还原写入或读回校验重试后仍失败：$($_.Exception.Message)"
             }
-            throw "Restore installer failed. Exit code: $($InstallerResult.ExitCode)"
+            Write-Warning "GGPK 还原写入或读回校验未通过，正在自动重试一次：$($_.Exception.Message)"
         }
     }
-    finally {
-        Pop-Location
-    }
 
-    Write-Host "Restore installed into Content.ggpk." -ForegroundColor Green
+    Write-Host "Restore installed and verified in Content.ggpk." -ForegroundColor Green
 }
 else {
     Write-Step "Install restore patch into Bundles2 using PatchBundle3"
@@ -1077,6 +1485,9 @@ else {
     }
     Write-Host "Index  : $($Bundles2Paths.IndexBin)"
     Write-Host "Patch  : $InstallRestoreZip"
+    # Candidate checks and clean-layer generation can take time. Close the race
+    # again immediately before PatchBundle3 touches the live index.
+    Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
 
     Push-Location -LiteralPath $BundledInstallerDir
     try {
@@ -1101,6 +1512,41 @@ else {
             throw "GGPKExtractor missing VC runtime dependency. Exit code: $BundlePatchExitCode. Log: restore-install"
         }
         throw "PatchBundle3 restore failed. Exit code: $BundlePatchExitCode"
+    }
+
+    try {
+        Assert-Bundles2RestoreApplied -ZipPath $InstallRestoreZip -EntryNames @(
+            $InstallInfo.TcBaseItemsPath,
+            $TcWordsPath,
+            $InstallInfo.TcEndgameMapsPath
+        )
+    }
+    catch {
+        Write-Warning "Bundles2 还原读回校验未通过，正在自动重试一次：$($_.Exception.Message)"
+        Push-Location -LiteralPath $BundledInstallerDir
+        try {
+            if ($UsePatchBundleDll) {
+                $RetryResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $InstallRestoreZip) -InputText "" -Quiet
+                $RetryExitCode = $RetryResult.ExitCode
+                $RetryText = $RetryResult.Text
+            }
+            else {
+                $RetryOutput = & $BundledBundlePatchExe $Bundles2Paths.IndexBin $InstallRestoreZip 2>&1
+                $RetryExitCode = $LASTEXITCODE
+                $RetryText = ($RetryOutput | Out-String)
+            }
+        }
+        finally {
+            Pop-Location
+        }
+        if ($RetryExitCode -ne 0 -or $RetryText -match 'Exception|Unhandled|FileNotFound|Could not load|Error:|錯誤|错误|失敗|失败') {
+            throw "PatchBundle3 restore retry failed. Exit code: $RetryExitCode"
+        }
+        Assert-Bundles2RestoreApplied -ZipPath $InstallRestoreZip -EntryNames @(
+            $InstallInfo.TcBaseItemsPath,
+            $TcWordsPath,
+            $InstallInfo.TcEndgameMapsPath
+        )
     }
 
     Write-Host "Restore installed into Bundles2." -ForegroundColor Green

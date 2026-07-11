@@ -12,11 +12,11 @@ using System.Reflection;
 
 [assembly: System.Reflection.AssemblyCompanyAttribute("Poe2PatchLauncher")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
-[assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b5e19f0d87a9289a77494200feb83a9f591669a4")]
+[assembly: System.Reflection.AssemblyFileVersionAttribute("0.4.9.5")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.4.9.5+9ce67c53330c14b5c7caf41c5cbd053cbb479db7")]
 [assembly: System.Reflection.AssemblyProductAttribute("Poe2PatchLauncher")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Poe2PatchLauncher")]
-[assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
+[assembly: System.Reflection.AssemblyVersionAttribute("0.4.9.5")]
 
 // 由 MSBuild WriteCodeFragment 类生成。
 

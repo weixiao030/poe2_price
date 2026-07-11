@@ -13,9 +13,11 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import re
 import struct
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -39,6 +41,40 @@ DEFAULT_SOURCE = (
 DEFAULT_GAME_PATH = "data/balance/simplified chinese/baseitemtypes.datc64"
 DISPLAY_NAME_FIELD_INDEX = 8
 STRUCTURE_SIGNATURE_VERSION = 1
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.new-", suffix=".tmp", dir=path.parent
+    )
+    os.close(handle)
+    temp_path = Path(temp_name)
+    try:
+        temp_path.write_bytes(data)
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def write_single_entry_zip_atomic(
+    output_zip: Path, game_path: str, payload: bytes
+) -> None:
+    output_zip.parent.mkdir(parents=True, exist_ok=True)
+    handle, temp_name = tempfile.mkstemp(
+        prefix=f".{output_zip.name}.new-", suffix=".zip", dir=output_zip.parent
+    )
+    os.close(handle)
+    temp_path = Path(temp_name)
+    try:
+        with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(game_path.replace("\\", "/"), payload)
+        with zipfile.ZipFile(temp_path, "r") as zf:
+            if zf.testzip() is not None:
+                raise ValueError(f"generated patch zip failed CRC validation: {temp_path}")
+        os.replace(temp_path, output_zip)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @dataclass
@@ -350,6 +386,7 @@ def build_replacements(
     keep_existing_price: bool,
     mode: str,
     patch_same_name_duplicates: bool,
+    preserve_unmatched_existing_price: bool = False,
 ) -> tuple[list[NameReplacement], list[str]]:
     by_path = {entry.metadata_path.lower(): entry for entry in entries}
     by_name: dict[str, list[BaseItemName]] = {}
@@ -401,7 +438,7 @@ def build_replacements(
             warnings.append(f"line {idx}: need metadata_path or name")
             continue
 
-        if patch_same_name_duplicates:
+        if patch_same_name_duplicates and not metadata_path:
             duplicate_name = (
                 strip_existing_price_suffix(entry.name, separator)
                 if keep_existing_price
@@ -418,6 +455,17 @@ def build_replacements(
 
         for target_entry in target_entries:
             if target_entry.row_index in seen_rows:
+                continue
+            if (
+                keep_existing_price
+                and mode == "fixed"
+                and re.fullmatch(_PATCHED_PRICE_TEXT_RE, target_entry.name.strip())
+            ):
+                seen_rows.add(target_entry.row_index)
+                warnings.append(
+                    f"line {idx}: skipped fixed-slot price-only row because the original "
+                    f"localized name is not recoverable: {target_entry.metadata_path}"
+                )
                 continue
             seen_rows.add(target_entry.row_index)
 
@@ -464,7 +512,7 @@ def build_replacements(
                 )
             )
 
-    if keep_existing_price:
+    if keep_existing_price and not preserve_unmatched_existing_price:
         for entry in entries:
             if entry.row_index in seen_rows:
                 continue
@@ -590,20 +638,25 @@ def build_patch(
     mode: str,
     patch_same_name_duplicates: bool,
     report: Path | None,
+    preserve_unmatched_existing_price: bool = False,
 ) -> None:
-    # Every invocation builds a complete patch for the current selection.  Reusing
-    # a zip from a previous run can silently reinstall stale BaseItemTypes entries
-    # when this run has no replacements (for example, switching from "all" to
-    # "uniques only").  Remove it before doing any work so later Words/island
-    # upserts always start from this run's output.
-    output_zip.unlink(missing_ok=True)
+    # Every invocation builds a complete patch for the current selection.  The
+    # caller may publish this staging result atomically after all optional layers
+    # are done, so never reuse stale entries from a previous invocation.
     data = source.read_bytes()
     entries = scan_base_item_names(data)
     rows = load_price_rows(prices)
     replacements, warnings = build_replacements(
-        entries, rows, separator, keep_existing_price, mode, patch_same_name_duplicates
+        entries,
+        rows,
+        separator,
+        keep_existing_price,
+        mode,
+        patch_same_name_duplicates,
+        preserve_unmatched_existing_price,
     )
     if not replacements:
+        write_single_entry_zip_atomic(output_zip, game_path, data)
         info = {
             "source": str(source),
             "output_zip": str(output_zip),
@@ -620,7 +673,7 @@ def build_patch(
             "compacted_names": 0,
             "replacements": [],
             "warnings": warnings + ["no replacements were generated"],
-            "zip_written": False,
+            "zip_written": True,
         }
         if report:
             report.parent.mkdir(parents=True, exist_ok=True)
@@ -628,10 +681,9 @@ def build_patch(
                 json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         if patched_dat:
-            patched_dat.parent.mkdir(parents=True, exist_ok=True)
-            patched_dat.write_bytes(data)
+            atomic_write_bytes(patched_dat, data)
         print("patched names: 0")
-        print("zip written: no")
+        print("zip written: yes (unchanged BaseItemTypes)")
         print("warnings:")
         for warning in info["warnings"]:
             print(f"  - {warning}")
@@ -645,13 +697,10 @@ def build_patch(
             raise ValueError(
                 f"patched datc64 size changed: {len(data)} -> {len(patched)}"
             )
-    output_zip.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(game_path.replace("\\", "/"), patched)
+    write_single_entry_zip_atomic(output_zip, game_path, patched)
 
     if patched_dat:
-        patched_dat.parent.mkdir(parents=True, exist_ok=True)
-        patched_dat.write_bytes(patched)
+        atomic_write_bytes(patched_dat, patched)
 
     info = {
         "source": str(source),
@@ -726,6 +775,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     build.add_argument("--separator", default="=")
     build.add_argument("--keep-existing-price", action="store_true")
     build.add_argument(
+        "--preserve-unmatched-existing-price",
+        action="store_true",
+        help="keep old price labels for rows absent from a degraded partial price result",
+    )
+    build.add_argument(
         "--no-patch-same-name-duplicates",
         action="store_true",
         help="only patch the exact metadata_path row, not other rows with the same display name",
@@ -762,6 +816,7 @@ def main(argv: list[str]) -> int:
             mode=args.mode,
             patch_same_name_duplicates=not args.no_patch_same_name_duplicates,
             report=args.report,
+            preserve_unmatched_existing_price=args.preserve_unmatched_existing_price,
         )
     return 0
 
