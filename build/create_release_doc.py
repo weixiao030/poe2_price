@@ -21,11 +21,82 @@ def copy_template_doc() -> bool:
         return False
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    targets = [OUT_DIR / "使用文档.docx", *DOC_PATHS]
+    doc = Document(TEMPLATE_DOC)
+    replacements = {
+        "4. 程序会抓取 poe2scout 国际服价格，并把价格追加为“=数字D/E”。": (
+            "4. 程序会按客户端类型抓取价格：国际服优先 poe2scout，国服优先 poecurrency.top；"
+            "异常分类会自动降级，D/E 比例使用当前数据源实时值。"
+        ),
+        "5. 程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”。": (
+            "5. 程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”，"
+            "并在游戏根目录的 .poe2-price-patch 文件夹保存持久副本。旧版备份丢失时，会先在临时沙盒清理并校验，成功前不修改真实游戏。"
+        ),
+        "6. 程序会把补丁写回对应游戏包。": (
+            "6. 价格文件会先在隔离目录生成并校验；实时数据失败时仅使用当前范围和模式的兼容核心缓存。"
+            "写入前复核游戏文件未被并发修改，写入后读回核对；失败会自动恢复。没有安全候选时只停止本次更新，不覆盖当前游戏。"
+        ),
+        "3. Bundles2 模式会使用“真实还原物价补丁.zip”恢复打补丁前的物理文件。": (
+            "3. Bundles2 模式优先验证并使用“真实还原物价补丁.zip”，无需先准备 .NET；替换后核对精确文件集合，失败会恢复操作前状态。"
+        ),
+        "4. GGPK 模式会使用“还原物价补丁.zip”写回当前客户端对应的 BaseItemTypes。": (
+            "4. GGPK 模式会使用“还原物价补丁.zip”写回当前语言目标，随后逐条读回校验；写入或校验失败会自动重试一次。"
+        ),
+        "5. 如果没有可用还原包，程序会拒绝做不完整还原。": (
+            "5. 如果没有物理还原包，程序会验证逻辑还原包，并以当前 Bundles2 的 Words/EndgameMaps 为底板只清理本工具标记；没有安全兼容路径时才会拒绝还原。"
+        ),
+        "Bundles2 模式不覆盖完整 _.index.bin 或 Tiny*.bundle.bin。": (
+            "Bundles2 模式会更新 _.index.bin 并向 LibGGPK3 写入增量内容，不会直接覆盖 Tiny*.bundle.bin。"
+        ),
+        "Bundles2 还原会恢复安装前备份的 _.index.bin 和 LibGGPK3 状态。": (
+            "Bundles2 还原优先恢复安装前备份的 _.index.bin 和 LibGGPK3；迁移基线则恢复到语义上干净的物价层。"
+        ),
+        "真实还原物价补丁.zip：Bundles2 模式的物理级恢复包。": (
+            "真实还原物价补丁.zip：Bundles2 模式的恢复包；持久副本位于 <游戏根目录>\\.poe2-price-patch。"
+        ),
+        r"tools\dotnet-runtime：内置 .NET 8 runtime，不要删除。": (
+            r"tools\dotnet-runtime：内置 .NET 8.0.28 runtime，不要删除；发布包另含校验过的离线修复包，只有两者都不可用时才访问 Microsoft 备用源。"
+        ),
+        r"tools\python：内置 Python 和依赖，不要删除。": (
+            r"tools\python：内置 Python 和依赖，不要删除；自动修复时依次尝试华为云、阿里云、南京大学镜像和 Python 官方备用源。"
+        ),
+        "提示找不到游戏目录：请确认物价补丁文件夹放在 POE2 游戏根目录。": (
+            "提示找不到游戏目录：请确认物价补丁文件夹放在 POE2 游戏根目录。若提示旧补丁有标记但备份丢失，新版会搜索旧文件夹并尝试离线沙盒迁移；失败时真实游戏不会被修改。"
+        ),
+        "提取或写入失败：请先关闭游戏和可能占用文件的工具。": (
+            "提取或写入失败：程序会等待短暂占用并在写入失败时自动恢复；仍失败时请关闭游戏和可能占用文件的工具后重试。"
+        ),
+        "缺少价格：可能是 poe2scout 暂无该物品数据，或英文名无法匹配本地物品表。": (
+            "缺少价格：可能是当前数据源暂无该物品，或名称无法匹配本地表。低匹配会保留未命中的旧价格；数据源完全不可用时保留当前补丁。"
+        ),
+    }
+    matched: set[str] = set()
+    for paragraph in doc.paragraphs:
+        original = paragraph.text.strip()
+        replacement = replacements.get(original)
+        if replacement is None:
+            continue
+        matched.add(original)
+        if paragraph.runs:
+            paragraph.runs[0].text = replacement
+            for run in paragraph.runs[1:]:
+                run.text = ""
+        else:
+            paragraph.add_run(replacement)
+    missing = sorted(set(replacements) - matched)
+    if missing:
+        raise RuntimeError(
+            "release document template no longer contains expected paragraphs: "
+            + " | ".join(missing)
+        )
+
+    generated = OUT_DIR / "使用文档.docx"
+    doc.save(generated)
+    targets = [*DOC_PATHS]
     for path in targets:
         path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(TEMPLATE_DOC, path)
+        shutil.copy2(generated, path)
         print(path)
+    print(generated)
     return True
 
 
@@ -133,9 +204,11 @@ def build():
             "程序会按客户端类型抓取价格：国际服使用 poe2scout，国服优先使用 poecurrency.top；没有国服数据时使用 poe2scout 兜底，并把价格追加为“=数字D/E”。",
             "D/E 换算比例会从当前价格源实时读取，不使用固定比例。",
             "国服优先使用 latest_buy1 / latest_sell1 最新盘口价，缺失时回退到 buy_avg / sell_avg；双边价差正常时取几何均值，差距过大时取较低一侧以降低过期均价和 OCR 异常价影响。",
-            "程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”。",
+            "程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”，并在游戏根目录的 .poe2-price-patch 文件夹保存持久副本。",
             "Bundles2 模式会以当前游戏包为底板刷新物价；如果已经先安装功能/词缀补丁，会尽量保留这些补丁，只清理并替换本工具写入的物价标记。",
-            "程序会把补丁写回对应游戏包。",
+            "旧版已写入物价层但真实还原包丢失时，程序会先在临时沙盒清理旧物价层、写入沙盒索引并读回校验；成功前不会修改真实游戏。",
+            "价格文件会先在隔离目录生成并校验；实时数据异常时自动尝试核心价格或当前范围和模式的兼容核心缓存。没有任何安全候选时只停止本次更新，不覆盖当前游戏。",
+            "写入前会复核游戏文件未被并发修改，写入后读回目标数据核对；写入或校验失败时自动使用已验证还原包恢复。",
         ],
     )
 
@@ -145,9 +218,10 @@ def build():
         [
             "关闭游戏。",
             "双击“一键还原物价补丁.exe”。",
-            "Bundles2 模式会使用“真实还原物价补丁.zip”恢复打补丁前的物理文件。",
+            "Bundles2 模式会优先验证并使用“真实还原物价补丁.zip”恢复打补丁前的物理文件，不要求先准备 .NET。",
             "GGPK 模式会使用“还原物价补丁.zip”写回当前客户端对应的 BaseItemTypes。",
-            "如果没有可用还原包，程序会拒绝做不完整还原。",
+            "如果没有物理还原包，程序会验证兼容的逻辑还原包；Bundles2 的 Words 和 EndgameMaps 会以当前游戏版本为底板只清理本工具标记。没有安全兼容路径时才会拒绝还原。",
+            "还原写入后会读回目标数据校验；逻辑还原失败会自动重试一次，物理还原失败会恢复操作前状态。",
         ],
     )
 
@@ -160,7 +234,7 @@ def build():
             "需要手动指定语言时，可设置 POE2_PATCH_LANGUAGE，例如 zh-TW、en、ja。",
             "Bundles2 模式会更新 _.index.bin 并写入 LibGGPK3 增量包；_.index.bin 更新时间变化是正常现象。",
             "Bundles2 模式不会直接覆盖 Tiny*.bundle.bin。",
-            "Bundles2 还原会恢复安装物价补丁前备份的 _.index.bin 和 LibGGPK3 状态。",
+            "Bundles2 还原优先恢复安装物价补丁前备份的 _.index.bin 和 LibGGPK3 状态；旧版本迁移生成的基线会恢复到清除本工具价格/岛屿标记且保留其它兼容补丁的状态。",
             "如果其他补丁没有改同一个 BaseItemTypes 资源，通常不会被本工具影响。",
             "如果其他补丁也改了同一个 BaseItemTypes 资源，最后写入者会覆盖同资源内对应字段。",
         ],
@@ -174,9 +248,9 @@ def build():
             "一键还原物价补丁.exe：还原对应 BaseItemTypes。",
             "物价补丁.zip：运行时生成的当前物价补丁包。",
             "还原物价补丁.zip：运行时生成或保存的恢复包。",
-            "真实还原物价补丁.zip：Bundles2 模式的物理级恢复包。",
-            r"tools\dotnet-runtime：内置 .NET 8 runtime，不要删除。",
-            r"tools\python：内置 Python 和依赖，不要删除。",
+            "真实还原物价补丁.zip：Bundles2 模式的恢复包；持久副本位于 <游戏根目录>\\.poe2-price-patch。",
+            r"tools\dotnet-runtime：内置 .NET 8.0.28 runtime，不要删除；发布包另含校验过的离线修复包，只有两者都不可用时才访问 Microsoft 备用源。",
+            r"tools\python：内置 Python 和依赖，不要删除；自动修复时依次尝试华为云、阿里云、南京大学镜像和 Python 官方备用源。",
             "一键安装特殊补丁工具：底层写入工具目录，不要删除。",
         ],
     )
@@ -187,7 +261,9 @@ def build():
         [
             "提示找不到游戏目录：请确认物价补丁文件夹放在 POE2 游戏根目录。",
             "提取或写入失败：请先关闭游戏和可能占用文件的工具。",
+            "提示当前 Bundles2 已含标记但找不到还原包：新版会自动搜索旧补丁文件夹和持久目录，并尝试离线沙盒迁移；若迁移失败，真实游戏不会被修改，请先用游戏平台验证或修复。",
             "缺少价格：可能是当前价格源暂无该物品数据，或物品名无法匹配本地物品表。",
+            "价格源暂时不可用：程序会优先继续使用兼容缓存；如果没有安全缓存，会保留当前补丁并停止本次更新，可稍后重试。",
             "杀软报毒：自制 exe、加密脚本和修改游戏文件都可能触发敏感提示，需要自行判断风险。",
         ],
     )

@@ -308,8 +308,23 @@ function Get-Poe2ConfigLanguage {
         return $null
     }
 
-    $ConfigFiles = Get-ChildItem -LiteralPath $MyGames -File -Filter "poe2_production*_Config.ini" -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending
+    $ConfigFiles = @(Get-ChildItem -LiteralPath $MyGames -File -Filter "poe2_production*_Config.ini" -ErrorAction SilentlyContinue)
+    if (-not [string]::IsNullOrWhiteSpace($Poe2Dir) -and (Test-Path -LiteralPath $Poe2Dir -PathType Container)) {
+        # A machine can have both the international and WeGame clients.  Do not
+        # let a recently used China-client config select the language for an
+        # international installation.  China installs force zh-CN later in
+        # Get-Poe2InstallInfo, so preferring their matching config is harmless.
+        $IsChinaInstall = Test-Poe2ChinaClient -Poe2Dir $Poe2Dir
+        $ConfigFiles = @($ConfigFiles | Sort-Object @{
+                    Expression = {
+                        $LooksChina = $_.Name -match '(?i)(?:china|wegame|tencent|(?:^|[_-])cn(?:[_-]|$))'
+                        if ($LooksChina -eq $IsChinaInstall) { 0 } else { 1 }
+                    }
+                }, @{ Expression = { $_.LastWriteTimeUtc }; Descending = $true })
+    }
+    else {
+        $ConfigFiles = @($ConfigFiles | Sort-Object LastWriteTimeUtc -Descending)
+    }
 
     foreach ($Config in $ConfigFiles) {
         $InLanguageSection = $false
@@ -429,13 +444,14 @@ function Get-Bundles2Paths {
 
     $Bundles2Dir = Join-Path $Poe2Dir "Bundles2"
     $IndexBin = Join-Path $Bundles2Dir "_.index.bin"
+    $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 
     return @{
         Bundles2Dir  = $Bundles2Dir
         IndexBin     = $IndexBin
         EnBaseItems  = "data/balance/baseitemtypes.datc64"
-        TcBaseItems  = (Get-Poe2InstallInfo -Poe2Dir $Poe2Dir).TcBaseItemsPath
-        TcEndgameMaps = (Get-Poe2InstallInfo -Poe2Dir $Poe2Dir).TcEndgameMapsPath
+        TcBaseItems  = $InstallInfo.TcBaseItemsPath
+        TcEndgameMaps = $InstallInfo.TcEndgameMapsPath
     }
 }
 
@@ -729,6 +745,72 @@ function Get-Poe2PhysicalBaseFingerprint {
         files = $SortedRecords
         inventory_sha256 = Get-Poe2TextSha256Hex -Text $Canonical
     }
+}
+
+function Get-Poe2Bundles2MutationFingerprint {
+    param([Parameter(Mandatory = $true)][string]$Bundles2Dir)
+
+    $Root = (Resolve-Path -LiteralPath $Bundles2Dir).Path
+    $RootPrefix = $Root.TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    ) + [System.IO.Path]::DirectorySeparatorChar
+    $Files = New-Object System.Collections.Generic.List[object]
+
+    foreach ($Relative in @("_.index.bin", "_.index.high.bin", "_.index.low.bin", ".index.dbg")) {
+        $Path = Join-Path $Root $Relative
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $Files.Add((Get-Item -LiteralPath $Path -ErrorAction Stop))
+        }
+    }
+    $LibDir = Join-Path $Root "LibGGPK3"
+    if (Test-Path -LiteralPath $LibDir -PathType Container) {
+        foreach ($File in @(Get-ChildItem -LiteralPath $LibDir -Recurse -File -ErrorAction Stop | Sort-Object FullName)) {
+            $Files.Add($File)
+        }
+    }
+
+    if (-not ($Files | Where-Object { $_.FullName.Equals((Join-Path $Root "_.index.bin"), [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)) {
+        throw "无法确认 Bundles2 写入状态：_.index.bin 不存在。"
+    }
+
+    $Records = @($Files | ForEach-Object {
+            $Relative = $_.FullName.Substring($RootPrefix.Length).Replace("\", "/")
+            [pscustomobject][ordered]@{
+                path = $Relative
+                length = [long]$_.Length
+                sha256 = Get-Poe2Sha256Hex -Path $_.FullName
+            }
+        } | Sort-Object @{ Expression = { ([string]$_.path).ToLowerInvariant() } })
+    $Canonical = [string]::Join("`n", @($Records | ForEach-Object {
+                "{0}|{1}|{2}" -f ([string]$_.path).ToLowerInvariant(), [long]$_.length, ([string]$_.sha256).ToLowerInvariant()
+            }))
+    return [pscustomobject][ordered]@{
+        version = 1
+        algorithm = "path-length-sha256-v1"
+        files = $Records
+        inventory_sha256 = Get-Poe2TextSha256Hex -Text $Canonical
+    }
+}
+
+function Assert-Poe2Bundles2MutationFingerprintCurrent {
+    param(
+        [Parameter(Mandatory = $true)]$Expected,
+        [Parameter(Mandatory = $true)][string]$Bundles2Dir
+    )
+
+    if ($null -eq $Expected -or [int]$Expected.version -ne 1 -or [string]$Expected.algorithm -ne "path-length-sha256-v1") {
+        throw "真实还原包缺少可识别的 Bundles2 写入前状态指纹。"
+    }
+    $Current = Get-Poe2Bundles2MutationFingerprint -Bundles2Dir $Bundles2Dir
+    if (@($Expected.files).Count -ne @($Current.files).Count) {
+        throw "Bundles2 状态已并发变化：文件数量与创建还原包时不同。"
+    }
+    $ExpectedHash = [string]$Expected.inventory_sha256
+    if ($ExpectedHash -notmatch '^[0-9a-fA-F]{64}$' -or -not $ExpectedHash.Equals([string]$Current.inventory_sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Bundles2 状态已并发变化：索引或 LibGGPK3 内容与创建还原包时不同。"
+    }
+    return $Current
 }
 
 function ConvertTo-Poe2UtcDateTimeOffset {
@@ -1044,38 +1126,78 @@ function Move-Poe2FileAtomically {
     return $DestinationFull
 }
 
+function Copy-Poe2FileAtomically {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $SourceFull = (Resolve-Path -LiteralPath $Source).Path
+    $DestinationFull = [System.IO.Path]::GetFullPath($Destination)
+    if ($SourceFull.Equals($DestinationFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $SourceFull
+    }
+    $DestinationDir = Split-Path -Parent $DestinationFull
+    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    $TempCopy = Join-Path $DestinationDir ([string]::Concat(".", (Split-Path -Leaf $DestinationFull), ".copy-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+    try {
+        [System.IO.File]::Copy($SourceFull, $TempCopy, $false)
+        Move-Poe2FileAtomically -Source $TempCopy -Destination $DestinationFull | Out-Null
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempCopy -PathType Leaf) {
+            Remove-Item -LiteralPath $TempCopy -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return (Resolve-Path -LiteralPath $DestinationFull).Path
+}
+
 function Assert-Poe2GameFilesAvailable {
     param(
         [Parameter(Mandatory = $true)][string]$Poe2Dir,
-        [Parameter(Mandatory = $true)][string]$IndexPath
+        [Parameter(Mandatory = $true)][string]$IndexPath,
+        [int]$RetryCount = 5,
+        [int]$RetryDelaySeconds = 2
     )
 
-    $RunningGames = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-            $_.ProcessName -like "PathOfExile*"
-        })
-    if ($RunningGames.Count -gt 0) {
-        $Names = [string]::Join(", ", @($RunningGames | ForEach-Object { "$($_.ProcessName) (PID $($_.Id))" }))
-        throw "检测到 POE2 游戏仍在运行，请完全关闭游戏后重试。进程：$Names"
-    }
+    $Attempts = [Math]::Max(1, $RetryCount)
+    for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
+        $RunningGames = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.ProcessName -like "PathOfExile*"
+            })
+        if ($RunningGames.Count -gt 0) {
+            if ($Attempt -ge $Attempts) {
+                $Names = [string]::Join(", ", @($RunningGames | ForEach-Object { "$($_.ProcessName) (PID $($_.Id))" }))
+                throw "检测到 POE2 游戏仍在运行，请完全关闭游戏后重试。进程：$Names"
+            }
+            Write-Host "检测到游戏仍在运行，等待关闭后自动重试（$Attempt/$Attempts）..." -ForegroundColor Yellow
+            Start-Sleep -Seconds ([Math]::Max(1, $RetryDelaySeconds))
+            continue
+        }
 
-    $Stream = $null
-    try {
-        $Stream = [System.IO.File]::Open(
-            $IndexPath,
-            [System.IO.FileMode]::Open,
-            [System.IO.FileAccess]::ReadWrite,
-            [System.IO.FileShare]::None
-        )
-    }
-    catch {
-        throw "Bundles2 索引文件被占用或不可写，请关闭游戏并等待游戏平台更新完成后重试。路径：$IndexPath。$($_.Exception.Message)"
-    }
-    finally {
-        if ($null -ne $Stream) {
-            $Stream.Dispose()
+        $Stream = $null
+        try {
+            $Stream = [System.IO.File]::Open(
+                $IndexPath,
+                [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::ReadWrite,
+                [System.IO.FileShare]::None
+            )
+            return
+        }
+        catch {
+            if ($Attempt -ge $Attempts) {
+                throw "Bundles2 索引文件被占用或不可写，请关闭游戏并等待游戏平台更新完成后重试。路径：$IndexPath。$($_.Exception.Message)"
+            }
+            Write-Host "Bundles2 索引暂时被占用，等待后自动重试（$Attempt/$Attempts）..." -ForegroundColor Yellow
+            Start-Sleep -Seconds ([Math]::Max(1, $RetryDelaySeconds))
+        }
+        finally {
+            if ($null -ne $Stream) {
+                $Stream.Dispose()
+            }
         }
     }
-
 }
 
 function Test-Poe2ReleaseMode {
@@ -1213,8 +1335,15 @@ function Invoke-DownloadWithRetry {
     param(
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$OutFile,
-        [int]$Retries = 3
+        [string]$ExpectedSha512 = "",
+        [string]$ExpectedSha256 = "",
+        [int]$Retries = 3,
+        [int]$TimeoutSeconds = 120
     )
+
+    if ([string]::IsNullOrWhiteSpace($ExpectedSha512) -and [string]::IsNullOrWhiteSpace($ExpectedSha256)) {
+        throw "A pinned SHA512 or SHA256 checksum is required for runtime downloads."
+    }
 
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -1223,14 +1352,25 @@ function Invoke-DownloadWithRetry {
     }
 
     for ($Attempt = 1; $Attempt -le $Retries; $Attempt++) {
+        $TempFile = [string]::Concat($OutFile, ".download-", [Guid]::NewGuid().ToString("N"), ".tmp")
         try {
-            if (Test-Path -LiteralPath $OutFile -PathType Leaf) {
-                Remove-Item -LiteralPath $OutFile -Force
-            }
-            Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec 180
-            if (-not (Test-ZipHeader $OutFile)) {
+            Invoke-WebRequest -Uri $Url -OutFile $TempFile -UseBasicParsing -TimeoutSec ([Math]::Max(30, $TimeoutSeconds))
+            if (-not (Test-ZipHeader $TempFile)) {
                 throw "Downloaded file is not a valid runtime zip."
             }
+            if (-not [string]::IsNullOrWhiteSpace($ExpectedSha512)) {
+                $ActualSha512 = (Get-FileHash -LiteralPath $TempFile -Algorithm SHA512).Hash
+                if (-not $ActualSha512.Equals($ExpectedSha512, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Downloaded runtime SHA512 does not match pinned release metadata."
+                }
+            }
+            else {
+                $ActualSha256 = (Get-FileHash -LiteralPath $TempFile -Algorithm SHA256).Hash
+                if (-not $ActualSha256.Equals($ExpectedSha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Downloaded runtime SHA256 does not match pinned release metadata."
+                }
+            }
+            Move-Poe2FileAtomically -Source $TempFile -Destination $OutFile | Out-Null
             return
         }
         catch {
@@ -1239,6 +1379,55 @@ function Invoke-DownloadWithRetry {
             }
             Start-Sleep -Seconds ([Math]::Min(10, $Attempt * 2))
         }
+        finally {
+            if (Test-Path -LiteralPath $TempFile -PathType Leaf) {
+                Remove-Item -LiteralPath $TempFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+function Install-Poe2DotNetRuntimeArchive {
+    param(
+        [Parameter(Mandatory = $true)][string]$ArchivePath,
+        [Parameter(Mandatory = $true)][string]$RuntimeDir
+    )
+
+    $ToolsDir = Split-Path -Parent $RuntimeDir
+    New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
+    $StageDir = Join-Path $ToolsDir ([string]::Concat(".dotnet-new-", [Guid]::NewGuid().ToString("N")))
+    $BackupDir = Join-Path $ToolsDir ([string]::Concat(".dotnet-backup-", [Guid]::NewGuid().ToString("N")))
+    try {
+        New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
+        Expand-Archive -LiteralPath $ArchivePath -DestinationPath $StageDir -Force
+        $StagedDotnet = Join-Path $StageDir "dotnet.exe"
+        if (-not (Test-DotNet8Runtime $StagedDotnet)) {
+            throw "Extracted .NET runtime is not usable."
+        }
+
+        $OldMoved = $false
+        try {
+            if (Test-Path -LiteralPath $RuntimeDir -PathType Container) {
+                [System.IO.Directory]::Move($RuntimeDir, $BackupDir)
+                $OldMoved = $true
+            }
+            [System.IO.Directory]::Move($StageDir, $RuntimeDir)
+        }
+        catch {
+            if ($OldMoved -and -not (Test-Path -LiteralPath $RuntimeDir) -and (Test-Path -LiteralPath $BackupDir -PathType Container)) {
+                [System.IO.Directory]::Move($BackupDir, $RuntimeDir)
+            }
+            throw
+        }
+        if (Test-Path -LiteralPath $BackupDir -PathType Container) {
+            Remove-Item -LiteralPath $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        return (Join-Path $RuntimeDir "dotnet.exe")
+    }
+    finally {
+        if (Test-Path -LiteralPath $StageDir -PathType Container) {
+            Remove-Item -LiteralPath $StageDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -1246,6 +1435,10 @@ function Install-LocalDotNet8Runtime {
     param([string]$RepoRoot)
 
     $RuntimeVersions = @("8.0.28", "8.0.27")
+    $RuntimeSha512 = @{
+        "8.0.28" = "cc7c5006285e95340a7bc4321acb76b143ee8ca6fc7e7925758624381d61ffeaf65d5a7dad389404677666f8f936df17a136716a773912e4c42b0eae637c5797"
+        "8.0.27" = "e31528b5452afdec4cdf78fb073e8693ed0c24a14f5b69065e7018f89eefc38e52fcfd4eed8255b5d58867aa850f66790fead5b66f0fab13a72bebf098e98937"
+    }
     $DownloadDir = Join-Path $RepoRoot "tools\downloads"
     $RuntimeDir = Join-Path $RepoRoot "tools\dotnet-runtime"
 
@@ -1256,36 +1449,45 @@ function Install-LocalDotNet8Runtime {
         $ZipPath = Join-Path $DownloadDir $RuntimeFile
         $Sources = @(
             @{
-                Name = "Huawei Cloud mirror"
-                Url = "https://mirrors.huaweicloud.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
+                Name = "Microsoft CDN 备用源"
+                Url = "https://dotnetcli.azureedge.net/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
+                TimeoutSeconds = 180
             },
             @{
-                Name = "Huawei Cloud repo mirror"
-                Url = "https://repo.huaweicloud.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
-            },
-            @{
-                Name = "Microsoft official fallback"
+                Name = "Microsoft 官方源"
                 Url = "https://builds.dotnet.microsoft.com/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
+                TimeoutSeconds = 180
             }
         )
+
+        if (
+            (Test-ZipHeader $ZipPath) -and
+            (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA512).Hash.Equals($RuntimeSha512[$RuntimeVersion], [System.StringComparison]::OrdinalIgnoreCase)
+        ) {
+            try {
+                Write-Host "使用随发布包提供的 .NET $RuntimeVersion 离线修复包。" -ForegroundColor Cyan
+                $LocalDotnet = Install-Poe2DotNetRuntimeArchive -ArchivePath $ZipPath -RuntimeDir $RuntimeDir
+                Write-Host ".NET 8 runtime ready: $LocalDotnet" -ForegroundColor Green
+                return $LocalDotnet
+            }
+            catch {
+                Write-Warning "本地 .NET 修复包安装失败，将尝试网络备用源：$($_.Exception.Message)"
+            }
+        }
 
         foreach ($Source in $Sources) {
             try {
                 Write-Host "Download .NET 8 runtime $RuntimeVersion`: $($Source.Name)"
-                Invoke-DownloadWithRetry -Url $Source.Url -OutFile $ZipPath
+                Invoke-DownloadWithRetry `
+                    -Url $Source.Url `
+                    -OutFile $ZipPath `
+                    -ExpectedSha512 $RuntimeSha512[$RuntimeVersion] `
+                    -Retries 2 `
+                    -TimeoutSeconds ([int]$Source.TimeoutSeconds)
 
-                if (Test-Path -LiteralPath $RuntimeDir -PathType Container) {
-                    Remove-Item -LiteralPath $RuntimeDir -Recurse -Force
-                }
-                New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
-                Expand-Archive -LiteralPath $ZipPath -DestinationPath $RuntimeDir -Force
-
-                $LocalDotnet = Join-Path $RuntimeDir "dotnet.exe"
-                if (Test-DotNet8Runtime $LocalDotnet) {
-                    Write-Host ".NET 8 runtime ready: $LocalDotnet" -ForegroundColor Green
-                    return $LocalDotnet
-                }
-                throw "Extracted runtime is not usable."
+                $LocalDotnet = Install-Poe2DotNetRuntimeArchive -ArchivePath $ZipPath -RuntimeDir $RuntimeDir
+                Write-Host ".NET 8 runtime ready: $LocalDotnet" -ForegroundColor Green
+                return $LocalDotnet
             }
             catch {
                 Write-Warning "$RuntimeVersion $($Source.Name) failed: $($_.Exception.Message)"
@@ -1438,8 +1640,9 @@ import zipfile
 function Install-LocalPythonRuntime {
     param([string]$RepoRoot)
 
-    $PythonVersion = "3.10.6"
+    $PythonVersion = "3.13.14"
     $PythonZipName = "python-$PythonVersion-embed-amd64.zip"
+    $PythonZipSha256 = "90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907"
     $DownloadDir = Join-Path $RepoRoot "tools\downloads"
     $PythonDir = Join-Path $RepoRoot "tools\python"
     $ZipPath = Join-Path $DownloadDir $PythonZipName
@@ -1448,35 +1651,85 @@ function Install-LocalPythonRuntime {
 
     $Sources = @(
         @{
-            Name = "Python official"
+            Name = "华为云镜像"
+            Url = "https://mirrors.huaweicloud.com/python/$PythonVersion/$PythonZipName"
+            TimeoutSeconds = 90
+        },
+        @{
+            Name = "阿里云镜像"
+            Url = "https://mirrors.aliyun.com/python-release/windows/$PythonZipName"
+            TimeoutSeconds = 90
+        },
+        @{
+            Name = "南京大学镜像"
+            Url = "https://mirrors.nju.edu.cn/python/$PythonVersion/$PythonZipName"
+            TimeoutSeconds = 90
+        },
+        @{
+            Name = "Python 官方备用源"
             Url = "https://www.python.org/ftp/python/$PythonVersion/$PythonZipName"
+            TimeoutSeconds = 180
         }
     )
 
     foreach ($Source in $Sources) {
+        $StageDir = ""
         try {
             Write-Host "Download Python runtime: $($Source.Name)"
-            Invoke-DownloadWithRetry -Url $Source.Url -OutFile $ZipPath
+            Invoke-DownloadWithRetry `
+                -Url $Source.Url `
+                -OutFile $ZipPath `
+                -ExpectedSha256 $PythonZipSha256 `
+                -Retries 2 `
+                -TimeoutSeconds ([int]$Source.TimeoutSeconds)
 
-            if (Test-Path -LiteralPath $PythonDir -PathType Container) {
-                Remove-Item -LiteralPath $PythonDir -Recurse -Force
-            }
-            New-Item -ItemType Directory -Force -Path $PythonDir | Out-Null
-            Expand-Archive -LiteralPath $ZipPath -DestinationPath $PythonDir -Force
-            Set-Content -LiteralPath (Join-Path $PythonDir "python310._pth") -Encoding ASCII -Value @(
-                "python310.zip",
+            $ToolsDir = Split-Path -Parent $PythonDir
+            $StageDir = Join-Path $ToolsDir ([string]::Concat(".python-new-", [Guid]::NewGuid().ToString("N")))
+            $BackupDir = Join-Path $ToolsDir ([string]::Concat(".python-backup-", [Guid]::NewGuid().ToString("N")))
+            New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
+            Expand-Archive -LiteralPath $ZipPath -DestinationPath $StageDir -Force
+            Set-Content -LiteralPath (Join-Path $StageDir "python313._pth") -Encoding ASCII -Value @(
+                "python313.zip",
                 "."
             )
 
-            $LocalPython = Join-Path $PythonDir "python.exe"
-            if (Test-Poe2PythonPackages $LocalPython) {
-                Write-Host "Python runtime ready: $LocalPython" -ForegroundColor Green
-                return $LocalPython
+            $StagedPython = Join-Path $StageDir "python.exe"
+            if (-not (Test-Poe2PythonPackages $StagedPython)) {
+                throw "Extracted Python runtime is not usable."
             }
-            throw "Extracted Python runtime is not usable."
+            $OldMoved = $false
+            try {
+                if (Test-Path -LiteralPath $PythonDir -PathType Container) {
+                    [System.IO.Directory]::Move($PythonDir, $BackupDir)
+                    $OldMoved = $true
+                }
+                [System.IO.Directory]::Move($StageDir, $PythonDir)
+            }
+            catch {
+                if ($OldMoved -and -not (Test-Path -LiteralPath $PythonDir) -and (Test-Path -LiteralPath $BackupDir -PathType Container)) {
+                    [System.IO.Directory]::Move($BackupDir, $PythonDir)
+                }
+                throw
+            }
+            finally {
+                if (Test-Path -LiteralPath $StageDir -PathType Container) {
+                    Remove-Item -LiteralPath $StageDir -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if (Test-Path -LiteralPath $BackupDir -PathType Container) {
+                Remove-Item -LiteralPath $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            $LocalPython = Join-Path $PythonDir "python.exe"
+            Write-Host "Python runtime ready: $LocalPython" -ForegroundColor Green
+            return $LocalPython
         }
         catch {
             Write-Warning "$($Source.Name) failed: $($_.Exception.Message)"
+        }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($StageDir) -and (Test-Path -LiteralPath $StageDir -PathType Container)) {
+                Remove-Item -LiteralPath $StageDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 

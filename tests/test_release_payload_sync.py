@@ -15,6 +15,7 @@ PUBLISHED_LAUNCHER = ROOT / "build" / "publish-self" / "Poe2PatchLauncher.exe"
 SOURCE_UPDATE_LAUNCHER = ROOT / "物价补丁" / "一键更新物价补丁.exe"
 SOURCE_RESTORE_LAUNCHER = ROOT / "物价补丁" / "一键还原物价补丁.exe"
 LAUNCHER_PROJECT = ROOT / "build" / "Poe2PatchLauncher" / "Poe2PatchLauncher.csproj"
+SOURCE_DOC = ROOT / "物价补丁" / "使用文档.docx"
 
 PAYLOAD_FILES = [
     "poe2_patch_common.ps1",
@@ -61,6 +62,8 @@ def test_encrypted_payload_matches_payload_zip():
         [
             "dotnet",
             "run",
+            "-c",
+            "Release",
             "--project",
             str(PACKER_PROJECT),
             "--",
@@ -100,3 +103,49 @@ def test_declared_version_is_consistent():
     changelog = (ROOT / "更新日志.md").read_text(encoding="utf-8-sig")
     assert f"POE2 物价补丁 v{version}" in readme
     assert f"（v{version}）" in changelog
+
+
+def test_release_document_describes_fail_safe_behavior():
+    assert SOURCE_DOC.exists(), "missing generated release document"
+    with zipfile.ZipFile(SOURCE_DOC, "r") as archive:
+        document = ET.fromstring(archive.read("word/document.xml"))
+    text = "".join(document.itertext())
+    for expected in (
+        "实时数据失败时仅使用当前范围和模式的兼容核心缓存",
+        "没有安全候选时只停止本次更新，不覆盖当前游戏",
+        "写入或校验失败会自动重试一次",
+        "低匹配会保留未命中的旧价格",
+        "发布包另含校验过的离线修复包",
+        "华为云、阿里云、南京大学镜像和 Python 官方备用源",
+    ):
+        assert expected in text
+
+
+def test_runtime_downloads_prefer_domestic_mirrors_with_official_fallback():
+    common = (TOOLS / "poe2_patch_common.ps1").read_text(encoding="utf-8-sig")
+    release = (ROOT / "build" / "make_release.ps1").read_text(encoding="utf-8-sig")
+
+    dotnet_sources = (
+        "https://dotnetcli.azureedge.net/dotnet/",
+        "https://builds.dotnet.microsoft.com/dotnet/",
+    )
+    python_sources = (
+        "https://mirrors.huaweicloud.com/python/",
+        "https://mirrors.aliyun.com/python-release/windows/",
+        "https://mirrors.nju.edu.cn/python/",
+        "https://www.python.org/ftp/python/",
+    )
+    assert [common.index(source) for source in dotnet_sources] == sorted(
+        common.index(source) for source in dotnet_sources
+    )
+    assert [common.index(source) for source in python_sources] == sorted(
+        common.index(source) for source in python_sources
+    )
+    assert [release.index(source) for source in python_sources] == sorted(
+        release.index(source) for source in python_sources
+    )
+    assert "ExpectedSha512" in common and "ExpectedSha256" in common
+    assert "Install-Poe2DotNetRuntimeArchive" in common
+    assert "使用随发布包提供的 .NET" in common
+    assert "Invoke-DownloadFromSources" in release
+    assert "tools\\downloads\\dotnet-runtime-8.0.28-win-x64.zip" in release

@@ -270,6 +270,52 @@ class PoecurrencyQualityTests(unittest.TestCase):
             ],
         )
 
+    def test_fresh_clean_duplicate_beats_higher_stale_error_price(self):
+        now = datetime(2026, 7, 10, 16, 0, tzinfo=timezone(timedelta(hours=8)))
+        prices, _quality = self.price_patch.collect_poecurrency_observations_with_quality(
+            [
+                {
+                    "category_label": "通货仓库",
+                    "items": [
+                        {
+                            "item_name": "神圣石",
+                            "currency_unit": "e",
+                            "latest_buy1": 300,
+                            "latest_datetime": "2026-07-10 15:00:00",
+                        },
+                        {
+                            "item_name": "神圣石",
+                            "currency_unit": "e",
+                            "latest_buy1": 900,
+                            "latest_datetime": "2026-07-01 15:00:00",
+                            "error": True,
+                            "error_info": "stale OCR",
+                        },
+                        {
+                            "item_name": "测试通货",
+                            "currency_unit": "e",
+                            "latest_buy1": 5,
+                            "latest_datetime": "2026-07-10 15:00:00",
+                        },
+                        {
+                            "item_name": "测试通货",
+                            "currency_unit": "e",
+                            "latest_buy1": 50,
+                            "latest_datetime": "2026-07-01 15:00:00",
+                            "error": True,
+                            "error_info": "stale",
+                        },
+                    ],
+                }
+            ],
+            now=now,
+        )
+
+        self.assertEqual(prices["divine"].price_exalted, Decimal("300"))
+        test_id = self.price_patch.poecurrency_api_id("测试通货")
+        self.assertEqual(prices[test_id].price_exalted, Decimal("5"))
+        self.assertNotIn("stale", prices[test_id].quality_flags)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,7 +29,7 @@ internal static class Program
                 _ => throw new InvalidOperationException("无法识别启动模式：" + mode)
             };
 
-            var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var appDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory));
             var patchRoot = appDir;
             var mutexScopeRoot = ResolveMutexScopeRoot(patchRoot, scriptArgs);
             using var instanceMutex = new Mutex(false, CreateInstanceMutexName(mutexScopeRoot));
@@ -116,8 +116,7 @@ internal static class Program
 
     private static string CreateInstanceMutexName(string patchRoot)
     {
-        var normalizedRoot = Path.GetFullPath(patchRoot)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(patchRoot))
             .ToUpperInvariant();
         var digest = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedRoot));
         return "Local\\Poe2PricePatch-" + Convert.ToHexString(digest);

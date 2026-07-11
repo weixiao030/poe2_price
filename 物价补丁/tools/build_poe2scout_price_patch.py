@@ -14,10 +14,12 @@ import csv
 import html
 import json
 import math
+import os
 import re
 import struct
 import subprocess
 import sys
+import tempfile
 import urllib.parse
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -270,20 +272,34 @@ def read_words_row(data: bytes, layout: DatLayout, row_index: int) -> WordEntry 
     )
 
 
+def inspect_words_price_labels(path: Path) -> dict[str, int | bool]:
+    data = path.read_bytes()
+    layout = detect_words_layout(data)
+    readable_rows = 0
+    patched_count = 0
+    for row_index in range(layout.row_count):
+        entry = read_words_row(data, layout, row_index)
+        if not entry:
+            continue
+        readable_rows += 1
+        if strip_existing_price(entry.display_name) != entry.display_name:
+            patched_count += 1
+    minimum_readable = max(1, math.ceil(layout.row_count * 0.95))
+    if readable_rows < minimum_readable:
+        raise ValueError(
+            "Words.datc64 live-row scan is incomplete: "
+            f"readable={readable_rows}, minimum={minimum_readable}, rows={layout.row_count}"
+        )
+    return {
+        "row_count": layout.row_count,
+        "readable_rows": readable_rows,
+        "patched": patched_count > 0,
+        "patched_count": patched_count,
+    }
+
+
 def words_look_price_patched(path: Path) -> bool:
-    try:
-        data = path.read_bytes()
-        layout = detect_words_layout(data)
-        for row_index in range(layout.row_count):
-            entry = read_words_row(data, layout, row_index)
-            if entry and re.search(
-                rf"(?:\r?\n\[{PRICE_TEXT_RE}\]|<<\[{PRICE_TEXT_RE}\]>>|{UNIQUE_MARKUP_PRICE_RE})",
-                entry.display_name,
-            ):
-                return True
-    except Exception:
-        return True
-    return False
+    return bool(inspect_words_price_labels(path)["patched"])
 
 
 def load_unique_names(
@@ -332,9 +348,13 @@ def strip_existing_price(name: str) -> str:
     )
     if markup:
         return markup.group(1).strip()
-    name = re.sub(rf"<<\[{PRICE_TEXT_RE}\]>>$", "", name)
-    name = re.sub(rf"\s*\[{PRICE_TEXT_RE}\]$", "", name)
-    return re.sub(rf"={PRICE_TEXT_RE}$", "", name).strip()
+    if re.search(rf"<<\[{PRICE_TEXT_RE}\]>>$", name):
+        return re.sub(rf"<<\[{PRICE_TEXT_RE}\]>>$", "", name).strip()
+    if re.search(rf"\s*\[{PRICE_TEXT_RE}\]$", name):
+        return re.sub(rf"\s*\[{PRICE_TEXT_RE}\]$", "", name).strip()
+    if re.search(rf"={PRICE_TEXT_RE}$", name):
+        return re.sub(rf"={PRICE_TEXT_RE}$", "", name).strip()
+    return name
 
 
 def format_unique_price_name(base_name: str, price: str, label_mode: str) -> str:
@@ -400,8 +420,7 @@ def clean_unique_word_prices_file(
     output = bytearray(data)
     cleaned = clean_stale_unique_word_prices(data, layout, output, unique_names)
     if cleaned:
-        patched_words.parent.mkdir(parents=True, exist_ok=True)
-        patched_words.write_bytes(bytes(output))
+        atomic_write_bytes(patched_words, bytes(output))
     return cleaned
 
 
@@ -435,9 +454,7 @@ def clean_word_price_labels_file(
                 "reason": "removed disabled unique price label",
             }
         )
-    if cleaned:
-        patched_words.parent.mkdir(parents=True, exist_ok=True)
-        patched_words.write_bytes(bytes(output))
+    atomic_write_bytes(patched_words, bytes(output))
     return cleaned
 
 
@@ -505,8 +522,7 @@ def patch_unique_word_prices(
         data, layout, output, unique_names, skip_rows=patched_rows
     )
     if patched or cleaned:
-        patched_words.parent.mkdir(parents=True, exist_ok=True)
-        patched_words.write_bytes(bytes(output))
+        atomic_write_bytes(patched_words, bytes(output))
     return len(patched), patched + cleaned, missing
 
 
@@ -583,8 +599,7 @@ def patch_unique_word_prices_with_cn_fallback(
         data, layout, output, unique_names, skip_rows=patched_rows
     )
     if patched or cleaned:
-        patched_words.parent.mkdir(parents=True, exist_ok=True)
-        patched_words.write_bytes(bytes(output))
+        atomic_write_bytes(patched_words, bytes(output))
     return len(patched), patched + cleaned, missing, fallback_count
 
 
@@ -633,6 +648,20 @@ def list_unique_word_price_candidates(
     return rows, missing
 
 
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.new-", suffix=".tmp", dir=path.parent
+    )
+    os.close(handle)
+    temp_path = Path(temp_name)
+    try:
+        temp_path.write_bytes(data)
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 def upsert_zip_entry(zip_path: Path, entry_name: str, data: bytes) -> None:
     entry_name = entry_name.replace("\\", "/")
     zip_path.parent.mkdir(parents=True, exist_ok=True)
@@ -642,10 +671,22 @@ def upsert_zip_entry(zip_path: Path, entry_name: str, data: bytes) -> None:
             for info in zf.infolist():
                 if info.filename != entry_name:
                     existing.append((info, zf.read(info.filename)))
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for info, content in existing:
-            zf.writestr(info, content)
-        zf.writestr(entry_name, data)
+    handle, temp_name = tempfile.mkstemp(
+        prefix=f".{zip_path.name}.new-", suffix=".zip", dir=zip_path.parent
+    )
+    os.close(handle)
+    temp_path = Path(temp_name)
+    try:
+        with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for info, content in existing:
+                zf.writestr(info, content)
+            zf.writestr(entry_name, data)
+        with zipfile.ZipFile(temp_path, "r") as zf:
+            if zf.testzip() is not None:
+                raise ValueError(f"generated patch zip failed CRC validation: {temp_path}")
+        os.replace(temp_path, zip_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def scan_base_items(path: Path) -> dict[str, str]:
@@ -1837,7 +1878,8 @@ def fetch_unique_items(
 
 def to_decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
     try:
-        return Decimal(str(value))
+        parsed = Decimal(str(value))
+        return parsed if parsed.is_finite() else default
     except (InvalidOperation, TypeError, ValueError):
         return default
 
@@ -2293,6 +2335,26 @@ def poecurrency_item_metadata(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def poecurrency_quality_rank(
+    quality_flags: tuple[str, ...] | list[str],
+    source_timestamp: str,
+    price: Decimal,
+) -> tuple[int, int, int, int, int, float, Decimal]:
+    """Prefer trustworthy/fresh observations before using price as a tiebreaker."""
+    flags = set(quality_flags)
+    parsed = parse_poecurrency_datetime(source_timestamp)
+    timestamp_rank = parsed.timestamp() if parsed is not None else float("-inf")
+    return (
+        int("error" not in flags),
+        int("stale" not in flags),
+        int("anomaly" not in flags),
+        int("unit_defaulted" not in flags),
+        int("yesterday_fallback" not in flags),
+        timestamp_rank,
+        price,
+    )
+
+
 def collect_poecurrency_observations_with_quality(
     summary: Any,
     *,
@@ -2454,9 +2516,6 @@ def collect_poecurrency_observations_with_quality(
                 quality["skipped_no_price"] += 1
                 continue
 
-            if api_id == "divine" and unit == "e":
-                divine_exalted = max(divine_exalted, price)
-
             quality_flags: list[str] = []
             if item_has_error:
                 quality_flags.append("error")
@@ -2500,6 +2559,22 @@ def collect_poecurrency_observations_with_quality(
             quality[f"{prefix}_min"] = min(values).isoformat(timespec="seconds")
             quality[f"{prefix}_max"] = max(values).isoformat(timespec="seconds")
 
+    divine_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate["api_id"] == "divine" and candidate["unit"] == "e"
+    ]
+    if divine_candidates:
+        selected_divine = max(
+            divine_candidates,
+            key=lambda candidate: poecurrency_quality_rank(
+                candidate["quality_flags"],
+                candidate["source_timestamp"],
+                candidate["price"],
+            ),
+        )
+        divine_exalted = selected_divine["price"]
+
     best: dict[str, PriceObservation] = {}
     for candidate in candidates:
         price = candidate["price"]
@@ -2531,7 +2606,11 @@ def collect_poecurrency_observations_with_quality(
             source_metadata=candidate["source_metadata"],
         )
         old = best.get(api_id)
-        if old is None or obs.price_exalted > old.price_exalted:
+        if old is None or poecurrency_quality_rank(
+            obs.quality_flags, obs.source_timestamp, obs.price_exalted
+        ) > poecurrency_quality_rank(
+            old.quality_flags, old.source_timestamp, old.price_exalted
+        ):
             best[api_id] = obs
 
     if "divine" not in best and divine_exalted > 0:
@@ -2986,6 +3065,41 @@ def apply_fallback_rows(
     return rows, counts
 
 
+def evaluate_local_match_gate(
+    rows: list[dict[str, str]],
+    base_pairs: list[BaseItemPair],
+    *,
+    enabled: bool,
+    low_match_warning_count: int = 25,
+) -> dict[str, Any]:
+    if not enabled:
+        return {"state": "not-applicable", "ratio": 0.0, "warning": ""}
+    if not base_pairs:
+        return {
+            "state": "unavailable",
+            "ratio": 0.0,
+            "warning": (
+                "local BaseItemTypes yielded no matchable rows; "
+                "existing labels will be preserved"
+            ),
+        }
+    if not rows:
+        raise ValueError(
+            "all enabled price sources produced zero matches for the current BaseItemTypes"
+        )
+    ratio = len(rows) / len(base_pairs) if base_pairs else 0.0
+    if len(rows) < low_match_warning_count:
+        return {
+            "state": "degraded",
+            "ratio": ratio,
+            "warning": (
+                f"local BaseItemTypes match count is unusually low ({len(rows)}); "
+                "unmatched existing labels will be preserved"
+            ),
+        }
+    return {"state": "ok", "ratio": ratio, "warning": ""}
+
+
 def write_csv(path: Path, rows: list[dict[str, str]], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
@@ -3004,6 +3118,7 @@ def run_patch_builder(
     mode: str,
     patched_dat: Path | None,
     game_path: str | None,
+    preserve_unmatched_existing_price: bool = False,
 ) -> None:
     progress("生成 BaseItemTypes 价格补丁包")
     cmd = [
@@ -3022,6 +3137,8 @@ def run_patch_builder(
         mode,
         "--keep-existing-price",
     ]
+    if preserve_unmatched_existing_price:
+        cmd.append("--preserve-unmatched-existing-price")
     if game_path:
         cmd.extend(["--game-path", game_path])
     if patched_dat:
@@ -3100,6 +3217,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--no-uniques", action="store_true")
     parser.add_argument("--no-build-patch", action="store_true")
     parser.add_argument(
+        "--strict-feature-cleanup",
+        action="store_true",
+        help=(
+            "Fail instead of degrading when an optional Words cleanup cannot be "
+            "completed. Used for restore-baseline migration."
+        ),
+    )
+    parser.add_argument(
         "--patch-scope",
         choices=PATCH_SCOPES,
         default="all",
@@ -3140,6 +3265,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--report", type=Path)
     parser.add_argument("--patched-dat", type=Path)
     parser.add_argument("--patched-words", type=Path)
+    parser.add_argument(
+        "--check-words",
+        type=Path,
+        help="Only inspect live Words rows for price labels and print JSON.",
+    )
+    parser.add_argument(
+        "--clean-words",
+        type=Path,
+        help="Only remove active price labels from a Words file and print JSON.",
+    )
+    parser.add_argument("--clean-words-output", type=Path)
     parser.add_argument("--game-path")
     parser.add_argument("--words-game-path")
     parser.add_argument(
@@ -3179,8 +3315,54 @@ def build_cn_reference_chain(first_source: str, fallback_sources: list[str]) -> 
     return sources
 
 
+def derive_words_game_path(game_path: str) -> str:
+    normalized = str(game_path or "").replace("\\", "/")
+    if not re.search(r"baseitemtypes\.datc64$", normalized, flags=re.IGNORECASE):
+        return ""
+    return re.sub(
+        r"baseitemtypes\.datc64$",
+        "words.datc64",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+
+
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+    if args.check_words is not None and args.clean_words is not None:
+        raise SystemExit("--check-words and --clean-words cannot be used together")
+    if args.check_words is not None:
+        inspection = inspect_words_price_labels(args.check_words)
+        print(
+            json.dumps(
+                {
+                    "path": str(args.check_words),
+                    **inspection,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+    if args.clean_words is not None:
+        if args.clean_words_output is None:
+            raise SystemExit("--clean-words-output is required with --clean-words")
+        cleaned_rows = clean_word_price_labels_file(
+            args.clean_words, args.clean_words_output
+        )
+        inspection = inspect_words_price_labels(args.clean_words_output)
+        print(
+            json.dumps(
+                {
+                    "source": str(args.clean_words),
+                    "output": str(args.clean_words_output),
+                    "cleaned_count": len(cleaned_rows),
+                    **inspection,
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+
     fallback_price_sources = parse_fallback_sources(args.fallback_price_sources)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     patch_base_items = args.patch_scope in {"all", "currency"}
@@ -3306,6 +3488,28 @@ def main(argv: list[str]) -> int:
                 for category in summary_data
                 if isinstance(category, dict)
             )
+            quality_items = max(1, int(poecurrency_quality.get("item_count") or 0))
+            timestamp_items = int(
+                poecurrency_quality.get("latest_datetime_items") or 0
+            )
+            missing_unit_ratio = (
+                int(poecurrency_quality.get("missing_unit_items") or 0)
+                / quality_items
+            )
+            stale_ratio = (
+                int(poecurrency_quality.get("stale_items") or 0)
+                / max(1, timestamp_items)
+            )
+            poecurrency_quality["missing_unit_ratio"] = missing_unit_ratio
+            poecurrency_quality["stale_ratio"] = stale_ratio
+            if quality_items >= 10 and missing_unit_ratio >= 0.5:
+                raise ValueError(
+                    "poecurrency-cn unit metadata is missing for at least half of rows"
+                )
+            if timestamp_items >= 10 and stale_ratio >= 0.5:
+                raise ValueError(
+                    "poecurrency-cn at least half of timestamped rows are stale"
+                )
             poecurrency_health = evaluate_source_health(
                 "poecurrency-cn",
                 summary_data,
@@ -3565,6 +3769,19 @@ def main(argv: list[str]) -> int:
                 fallback_rows_by_source,
             )
             fallback_rows_added = sum(fallback_rows_added_by_source.values())
+        local_match_gate = evaluate_local_match_gate(
+            rows, base_pairs, enabled=patch_base_items
+        )
+        if local_match_gate["warning"]:
+            warning = str(local_match_gate["warning"])
+            fallback_warnings.append(warning)
+            if primary_source_status == "ok":
+                primary_source_status = "partial"
+            print(f"warning: {warning}", file=sys.stderr)
+    else:
+        local_match_gate = evaluate_local_match_gate(
+            rows, base_pairs, enabled=False
+        )
     if not patch_base_items:
         missing.extend(
             {
@@ -3647,6 +3864,8 @@ def main(argv: list[str]) -> int:
         "unique_price_label_mode": args.unique_price_label_mode,
         "unique_words_clean_passthrough": False,
         "matched_items": len(rows),
+        "local_match_ratio": local_match_gate["ratio"],
+        "local_match_gate": local_match_gate["state"],
         "fallback_matched_items": fallback_rows_added,
         "fallback_matched_items_by_source": fallback_rows_added_by_source,
         "high_value_reference_items": high_value_reference_rows,
@@ -3669,7 +3888,7 @@ def main(argv: list[str]) -> int:
             source: str(value) for source, value in fallback_divine_by_source.items()
         },
         "poe2scout_fallback": bool(
-            (args.price_source == "poecurrency-cn" and args.cn_reference_source == "poe2scout")
+            "poe2scout" in fallback_divine_by_source
             or "poe2scout" in fallback_rows_added_by_source
         ),
         "cn_reference_source": args.cn_reference_source,
@@ -3680,11 +3899,12 @@ def main(argv: list[str]) -> int:
         "source_health": source_health_reports,
         "http_request_count": len(client.request_metrics()),
         "http_requests": client.request_metrics(),
+        "feature_degradations": [],
     }
 
     if not args.no_build_patch:
-        words_game_path = args.words_game_path or (
-            (args.game_path or "").replace("baseitemtypes.datc64", "words.datc64")
+        words_game_path = args.words_game_path or derive_words_game_path(
+            args.game_path or ""
         )
         if patch_base_items:
             run_patch_builder(
@@ -3696,6 +3916,9 @@ def main(argv: list[str]) -> int:
                 mode=args.mode,
                 patched_dat=args.patched_dat,
                 game_path=args.game_path,
+                preserve_unmatched_existing_price=(
+                    local_match_gate["state"] in {"degraded", "unavailable"}
+                ),
             )
         else:
             if not args.game_path:
@@ -3791,14 +4014,26 @@ def main(argv: list[str]) -> int:
         elif args.tc_words.exists() and words_game_path:
             progress("清理未启用的传奇装备价格标记")
             patched_words = args.patched_words or (args.out_dir / "words.patched.datc64")
+            words_cleanup_failed = False
             try:
                 cleaned_rows = clean_word_price_labels_file(args.tc_words, patched_words)
             except Exception as exc:
+                if args.strict_feature_cleanup:
+                    raise
                 print(
-                    f"warning: failed to clean existing unique price labels; keeping current Words.datc64: {exc}",
+                    "warning: failed to clean existing unique price labels; "
+                    f"the current Words file will be copied unchanged: {exc}",
                     file=sys.stderr,
                 )
                 cleaned_rows = []
+                words_cleanup_failed = True
+                summary["feature_degradations"].append(
+                    {
+                        "feature": "unique-words",
+                        "status": "preserved",
+                        "reason": f"cleanup failed: {type(exc).__name__}: {exc}",
+                    }
+                )
             unique_word_rows.extend(cleaned_rows)
             if cleaned_rows:
                 progress(f"写入清理后的 Words 文件 ({len(cleaned_rows)} 条)")
@@ -3808,8 +4043,15 @@ def main(argv: list[str]) -> int:
                     patched_words.read_bytes(),
                 )
             else:
-                progress("Words 文件无需清理，写入原始文件保持补丁完整")
-                upsert_zip_entry(output_zip, words_game_path, args.tc_words.read_bytes())
+                if words_cleanup_failed:
+                    progress("Words 清理不可用，复制当前文件以保持补丁完整")
+                else:
+                    progress("Words 文件无需清理，写入原始文件保持补丁完整")
+                upsert_zip_entry(
+                    output_zip,
+                    words_game_path,
+                    args.tc_words.read_bytes(),
+                )
                 summary["unique_words_clean_passthrough"] = True
             if patch_unique_words and not args.no_uniques:
                 unique_word_missing.append(

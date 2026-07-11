@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import struct
@@ -442,6 +443,8 @@ def detect_endgame_maps_layout(data: bytes) -> DatLayout:
 
     best_layout: DatLayout | None = None
     best_score = -1
+    best_rank = (-1, -1, -1)
+    best_score_count = 0
     for row_size in range(RUMOUR_TEXT_OFFSET + 4, 360):
         string_base = 4 + row_count * row_size
         if string_base >= len(data):
@@ -449,16 +452,36 @@ def detect_endgame_maps_layout(data: bytes) -> DatLayout:
         layout = DatLayout(
             row_count=row_count, row_size=row_size, string_base=string_base
         )
-        score = 0
+        readable_entries: list[RumourEntry] = []
         for map_index in range(len(RUMOUR_ROWS)):
-            if read_rumour_entry(data, layout, map_index) is not None:
-                score += 1
-        if score > best_score:
+            entry = read_rumour_entry(data, layout, map_index)
+            if entry is not None:
+                readable_entries.append(entry)
+        score = len(readable_entries)
+        rank = (
+            score,
+            len({entry.text for entry in readable_entries}),
+            sum(1 for entry in readable_entries if entry.text_offset != 0),
+        )
+        if rank > best_rank:
             best_score = score
+            best_rank = rank
             best_layout = layout
+            best_score_count = 1
+        elif rank == best_rank:
+            best_score_count += 1
 
-    if best_layout is None or best_score < 10:
-        raise ValueError("cannot detect EndgameMaps.datc64 row layout")
+    minimum_score = max(10, math.ceil(len(RUMOUR_ROWS) * 0.75))
+    if best_layout is None or best_score < minimum_score:
+        raise ValueError(
+            "cannot detect EndgameMaps.datc64 row layout with sufficient confidence; "
+            f"readable={best_score}, required={minimum_score}"
+        )
+    if best_score_count != 1:
+        raise ValueError(
+            "EndgameMaps.datc64 row layout is ambiguous; "
+            f"{best_score_count} layouts share score {best_score}"
+        )
     return best_layout
 
 
@@ -660,32 +683,49 @@ def get_patch_status(source: Path, game_path: str) -> dict[str, object]:
 def upsert_zip_entry(zip_path: Path, entry_name: str, payload: bytes) -> None:
     entry_name = entry_name.replace("\\", "/")
     zip_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if not zip_path.exists():
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(entry_name, payload)
-        return
-
     fd, temp_name = tempfile.mkstemp(
-        prefix=f"{zip_path.stem}.", suffix=".zip", dir=str(zip_path.parent)
+        prefix=f".{zip_path.name}.new-", suffix=".tmp", dir=str(zip_path.parent)
     )
     os.close(fd)
-    Path(temp_name).unlink(missing_ok=True)
+    temp_path = Path(temp_name)
     try:
-        with zipfile.ZipFile(zip_path, "r") as source, zipfile.ZipFile(
-            temp_name, "w", compression=zipfile.ZIP_DEFLATED
-        ) as target:
-            for info in source.infolist():
-                if info.filename.replace("\\", "/") == entry_name:
-                    continue
-                target.writestr(info, source.read(info.filename))
+        existing: list[tuple[zipfile.ZipInfo, bytes]] = []
+        if zip_path.exists():
+            with zipfile.ZipFile(zip_path, "r") as source:
+                for info in source.infolist():
+                    if info.filename.replace("\\", "/") != entry_name:
+                        existing.append((info, source.read(info.filename)))
+        with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            for info, data in existing:
+                target.writestr(info, data)
             target.writestr(entry_name, payload)
-        Path(temp_name).replace(zip_path)
+        with zipfile.ZipFile(temp_path, "r") as check:
+            if check.testzip() is not None:
+                raise ValueError(f"generated patch zip failed CRC validation: {temp_path}")
+        os.replace(temp_path, zip_path)
     finally:
-        try:
-            Path(temp_name).unlink()
-        except FileNotFoundError:
-            pass
+        temp_path.unlink(missing_ok=True)
+
+
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.new-", suffix=".tmp", dir=str(path.parent)
+    )
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        temp_path.write_bytes(payload)
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def atomic_write_json(path: Path, value: object) -> None:
+    atomic_write_bytes(
+        path,
+        json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8"),
+    )
 
 
 def build_patch(
@@ -704,8 +744,7 @@ def build_patch(
     upsert_zip_entry(output_zip, game_path, patched)
 
     if patched_dat:
-        patched_dat.parent.mkdir(parents=True, exist_ok=True)
-        patched_dat.write_bytes(patched)
+        atomic_write_bytes(patched_dat, patched)
 
     info = {
         "source": str(source),
@@ -739,8 +778,7 @@ def build_patch(
         "unchanged": unchanged,
     }
     if report:
-        report.parent.mkdir(parents=True, exist_ok=True)
-        report.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(report, info)
 
     print(f"island rumour hints: {len(replacements)} changed, {len(unchanged)} unchanged")
     print(f"language: {language_key}")
@@ -790,8 +828,7 @@ def clean_patch(
     upsert_zip_entry(output_zip, game_path, patched)
 
     if patched_dat:
-        patched_dat.parent.mkdir(parents=True, exist_ok=True)
-        patched_dat.write_bytes(patched)
+        atomic_write_bytes(patched_dat, patched)
 
     info = {
         "source": str(source),
@@ -823,8 +860,7 @@ def clean_patch(
         "unchanged": unchanged,
     }
     if report:
-        report.parent.mkdir(parents=True, exist_ok=True)
-        report.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_write_json(report, info)
 
     print(f"island rumour hints cleaned: {len(replacements)} changed, {len(unchanged)} unchanged")
     print(f"dat size: {len(data)} -> {len(patched)}")
