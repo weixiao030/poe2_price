@@ -25,7 +25,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.4.9.5"
+$script:PatchVersion = "v0.4.9.6"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -126,8 +126,8 @@ function Show-PatchScopeDialog {
             $DetectedPath = Resolve-Poe2GameDirectorySelection -Mode "auto" -PreferredRoot $PreferredPoe2Dir
             $AutoPathRadio.Tag = $DetectedPath
             $PathTextBox.Text = $DetectedPath
-            $DetectedMode = Get-Poe2GameMode -Poe2Dir $DetectedPath
-            & $SetPathStatus "已自动识别：$DetectedMode" $false
+            $DetectedInstall = Get-Poe2InstallInfo -Poe2Dir $DetectedPath
+            & $SetPathStatus "已自动识别：$($DetectedInstall.DisplayName)" $false
         }
         catch {
             $AutoPathRadio.Tag = $null
@@ -142,8 +142,8 @@ function Show-PatchScopeDialog {
             & $SetPathStatus "请选择包含 Content.ggpk 或 Bundles2\_.index.bin 的游戏根目录。" $true
         }
         else {
-            $DetectedMode = Get-Poe2GameMode -Poe2Dir $ResolvedPath
-            & $SetPathStatus "有效游戏目录：$DetectedMode" $false
+            $DetectedInstall = Get-Poe2InstallInfo -Poe2Dir $ResolvedPath
+            & $SetPathStatus "有效游戏目录：$($DetectedInstall.DisplayName)" $false
         }
     }
 
@@ -2512,6 +2512,13 @@ else {
     $Poe2Dir = Resolve-Poe2GameDirectorySelection -Mode "auto" -PreferredRoot $PreferredPoe2Dir
     $GameDirectorySelectionMode = "auto"
 }
+$script:GameDirectoryMutex = Enter-Poe2GameDirectoryMutex -Poe2Dir $Poe2Dir
+try {
+    Save-Poe2GameDirectory -Poe2Dir $Poe2Dir | Out-Null
+}
+catch {
+    Write-Warning "无法保存最近使用的游戏目录，本次更新仍会继续：$($_.Exception.Message)"
+}
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
 $PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques"))
 $PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
@@ -3210,7 +3217,8 @@ if (-not $NoInstall) {
             Assert-File $RestoreScriptPath "restore_price_patch.ps1"
             $RollbackOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $RestoreScriptPath `
                 -Poe2Dir $Poe2Dir `
-                -PhysicalRestoreZip $PhysicalRestoreZip 2>&1
+                -PhysicalRestoreZip $PhysicalRestoreZip `
+                -SkipGameDirectoryMutex 2>&1
             $RollbackExitCode = $LASTEXITCODE
             $RollbackOutput | ForEach-Object { Write-Host $_ }
             if ($RollbackExitCode -ne 0) {

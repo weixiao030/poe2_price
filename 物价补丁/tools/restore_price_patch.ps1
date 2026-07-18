@@ -2,7 +2,8 @@
     [string]$Poe2Dir = "",
     [string]$RestoreZip = "",
     [string]$PhysicalRestoreZip = "",
-    [switch]$NoInstall
+    [switch]$NoInstall,
+    [switch]$SkipGameDirectoryMutex
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,11 +20,38 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
+$script:PatchVersion = "v0.4.9.6"
+$Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
+$PreferredPoe2Dir = Split-Path -Parent $RepoRoot
 
-if ([string]::IsNullOrWhiteSpace($Poe2Dir)) {
-    $Poe2Dir = (Split-Path -Parent $RepoRoot)
+trap {
+    Write-Host ""
+    Write-Host "还原失败：$($_.Exception.Message)" -ForegroundColor Red
+    exit 1
 }
-$Poe2Dir = (Resolve-Path -LiteralPath $Poe2Dir).Path
+
+if ($Poe2DirWasExplicit) {
+    $Poe2Dir = Resolve-Poe2GameDirectorySelection -Mode "manual" -ManualPath $Poe2Dir
+    $GameDirectorySelectionMode = "manual"
+}
+else {
+    $DirectorySelection = Show-Poe2GameDirectorySelectionDialog `
+        -Title "POE2 物价补丁还原 $script:PatchVersion" `
+        -PreferredRoot $PreferredPoe2Dir `
+        -InitialPoe2Dir (Get-Poe2SavedGameDirectory) `
+        -ActionText "请选择要还原物价补丁的 POE2 客户端。"
+    $Poe2Dir = [string]$DirectorySelection.Poe2Dir
+    $GameDirectorySelectionMode = [string]$DirectorySelection.PathMode
+}
+if (-not $SkipGameDirectoryMutex) {
+    $script:GameDirectoryMutex = Enter-Poe2GameDirectoryMutex -Poe2Dir $Poe2Dir
+}
+try {
+    Save-Poe2GameDirectory -Poe2Dir $Poe2Dir | Out-Null
+}
+catch {
+    Write-Warning "无法保存最近使用的游戏目录，本次还原仍会继续：$($_.Exception.Message)"
+}
 
 function Write-Step {
     param([string]$Text)
@@ -1251,8 +1279,9 @@ $CleanDat = Join-Path $RepoRoot ("output\dat_files_latest\data\" + $InstallInfo.
 $TcWordsPath = $InstallInfo.TcWordsPath
 $SupportsUniqueWords = Test-Poe2UniqueWordsSupported -WordsPath $TcWordsPath
 
-Write-Host "POE2 price patch restore" -ForegroundColor Green
+Write-Host "POE2 物价补丁还原器 $script:PatchVersion" -ForegroundColor Green
 Write-Host "Game dir : $Poe2Dir"
+Write-Host "目录选择：$(if ($GameDirectorySelectionMode -eq 'manual') { '手动选择' } else { '自动识别' })" -ForegroundColor Cyan
 Write-Host "Patch dir: $RepoRoot"
 Write-Host "Detected : $($InstallInfo.DisplayName)" -ForegroundColor Cyan
 Write-Host "Mode     : $GameMode" -ForegroundColor Cyan
