@@ -141,6 +141,277 @@ function Get-Poe2GameMode {
     }
 }
 
+function Test-Poe2GameDirectory {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $false
+    }
+
+    try {
+        $Candidate = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
+        if (-not (Test-Path -LiteralPath $Candidate -PathType Container)) {
+            return $false
+        }
+
+        $Resolved = (Resolve-Path -LiteralPath $Candidate).Path
+        return (
+            (Test-Path -LiteralPath (Join-Path $Resolved "Content.ggpk") -PathType Leaf) -or
+            (Test-Path -LiteralPath (Join-Path $Resolved "Bundles2\_.index.bin") -PathType Leaf)
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function ConvertTo-Poe2GameDirectoryPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $null
+    }
+
+    try {
+        $Candidate = [Environment]::ExpandEnvironmentVariables($Path.Trim())
+        if ($Candidate -match '^\s*"([^"]+)"(?:,\s*-?\d+)?\s*$') {
+            $Candidate = $Matches[1]
+        }
+        else {
+            $Candidate = ($Candidate -replace ',\s*-?\d+\s*$', '').Trim().Trim('"')
+        }
+
+        if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
+            $Candidate = Split-Path -Parent (Resolve-Path -LiteralPath $Candidate).Path
+        }
+
+        for ($Depth = 0; $Depth -lt 3 -and -not [string]::IsNullOrWhiteSpace($Candidate); $Depth += 1) {
+            if (Test-Poe2GameDirectory -Path $Candidate) {
+                return (Resolve-Path -LiteralPath $Candidate).Path
+            }
+            $Parent = Split-Path -Parent $Candidate
+            if ([string]::IsNullOrWhiteSpace($Parent) -or $Parent -eq $Candidate) {
+                break
+            }
+            $Candidate = $Parent
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Get-Poe2GameDirectoryCandidates {
+    param(
+        [string]$PreferredRoot = "",
+        [string[]]$AdditionalPaths = @()
+    )
+
+    $Results = New-Object System.Collections.ArrayList
+    $SeenPaths = @{}
+
+    function Add-Poe2GameDirectoryCandidate {
+        param(
+            [string]$Path,
+            [string]$Source,
+            [int]$Priority
+        )
+
+        $Resolved = ConvertTo-Poe2GameDirectoryPath -Path $Path
+        if ([string]::IsNullOrWhiteSpace($Resolved)) {
+            return
+        }
+
+        $Key = $Resolved.ToUpperInvariant()
+        if ($SeenPaths.ContainsKey($Key)) {
+            return
+        }
+        $SeenPaths[$Key] = $true
+        [void]$Results.Add([pscustomobject]@{
+                Path     = $Resolved
+                Source   = $Source
+                Mode     = (Get-Poe2GameMode -Poe2Dir $Resolved)
+                Priority = $Priority
+            })
+    }
+
+    Add-Poe2GameDirectoryCandidate -Path $PreferredRoot -Source "补丁文件夹上一级" -Priority 0
+    foreach ($Path in @($AdditionalPaths)) {
+        Add-Poe2GameDirectoryCandidate -Path $Path -Source "附加候选路径" -Priority 5
+    }
+    foreach ($VariableName in @("POE2_GAME_DIR", "POE2_DIR")) {
+        Add-Poe2GameDirectoryCandidate `
+            -Path ([Environment]::GetEnvironmentVariable($VariableName)) `
+            -Source "环境变量 $VariableName" `
+            -Priority 10
+    }
+
+    $UninstallRoots = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    foreach ($Root in $UninstallRoots) {
+        foreach ($Entry in @(Get-ItemProperty -Path $Root -ErrorAction SilentlyContinue)) {
+            $DisplayName = [string]$Entry.DisplayName
+            if ($DisplayName -notmatch '(?i)Path\s+of\s+Exile\s*(?:2|II)|流放之路\s*2') {
+                continue
+            }
+            foreach ($PropertyName in @("InstallLocation", "DisplayIcon", "InstallSource")) {
+                Add-Poe2GameDirectoryCandidate `
+                    -Path ([string]$Entry.$PropertyName) `
+                    -Source "已安装程序：$DisplayName" `
+                    -Priority 20
+            }
+        }
+    }
+
+    $SteamRoots = New-Object System.Collections.ArrayList
+    $SeenSteamRoots = @{}
+    function Add-SteamRoot {
+        param([string]$Path)
+
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            return
+        }
+        try {
+            $Resolved = [System.IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"')))
+            if (-not (Test-Path -LiteralPath $Resolved -PathType Container)) {
+                return
+            }
+            $Key = $Resolved.ToUpperInvariant()
+            if (-not $SeenSteamRoots.ContainsKey($Key)) {
+                $SeenSteamRoots[$Key] = $true
+                [void]$SteamRoots.Add($Resolved)
+            }
+        }
+        catch {
+            return
+        }
+    }
+
+    Add-SteamRoot -Path (Join-Path ${env:ProgramFiles(x86)} "Steam" -ErrorAction SilentlyContinue)
+    Add-SteamRoot -Path (Join-Path $env:ProgramFiles "Steam" -ErrorAction SilentlyContinue)
+    foreach ($SteamRegistry in @(
+            @{ Path = "HKCU:\Software\Valve\Steam"; Name = "SteamPath" },
+            @{ Path = "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam"; Name = "InstallPath" },
+            @{ Path = "HKLM:\SOFTWARE\Valve\Steam"; Name = "InstallPath" }
+        )) {
+        $SteamEntry = Get-ItemProperty -Path $SteamRegistry.Path -ErrorAction SilentlyContinue
+        if ($null -ne $SteamEntry) {
+            Add-SteamRoot -Path ([string]$SteamEntry.($SteamRegistry.Name))
+        }
+    }
+
+    $SteamLibraries = New-Object System.Collections.ArrayList
+    $SeenSteamLibraries = @{}
+    function Add-SteamLibrary {
+        param([string]$Path)
+
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            return
+        }
+        try {
+            $Resolved = [System.IO.Path]::GetFullPath($Path)
+            $Key = $Resolved.ToUpperInvariant()
+            if (-not $SeenSteamLibraries.ContainsKey($Key)) {
+                $SeenSteamLibraries[$Key] = $true
+                [void]$SteamLibraries.Add($Resolved)
+            }
+        }
+        catch {
+            return
+        }
+    }
+
+    foreach ($SteamRoot in @($SteamRoots)) {
+        Add-SteamLibrary -Path $SteamRoot
+        $LibraryConfig = Join-Path $SteamRoot "steamapps\libraryfolders.vdf"
+        if (Test-Path -LiteralPath $LibraryConfig -PathType Leaf) {
+            foreach ($Line in @(Get-Content -LiteralPath $LibraryConfig -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+                if ($Line -match '^\s*"(?:path|\d+)"\s+"([^"]+)"') {
+                    Add-SteamLibrary -Path $Matches[1].Replace('\\', '\')
+                }
+            }
+        }
+    }
+
+    foreach ($Library in @($SteamLibraries)) {
+        $SteamApps = Join-Path $Library "steamapps"
+        Add-Poe2GameDirectoryCandidate `
+            -Path (Join-Path $SteamApps "common\Path of Exile 2") `
+            -Source "Steam 游戏库" `
+            -Priority 30
+
+        foreach ($Manifest in @(Get-ChildItem -LiteralPath $SteamApps -Filter "appmanifest_*.acf" -File -ErrorAction SilentlyContinue)) {
+            $ManifestText = Get-Content -LiteralPath $Manifest.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+            if ($ManifestText -match '(?im)^\s*"name"\s+"(?:Path of Exile 2|流放之路\s*2)"' -and
+                $ManifestText -match '(?im)^\s*"installdir"\s+"([^"]+)"') {
+                Add-Poe2GameDirectoryCandidate `
+                    -Path (Join-Path $SteamApps ("common\" + $Matches[1])) `
+                    -Source "Steam 清单" `
+                    -Priority 30
+            }
+        }
+    }
+
+    $ProgramDataRoot = $env:ProgramData
+    if ([string]::IsNullOrWhiteSpace($ProgramDataRoot)) {
+        $ProgramDataRoot = [Environment]::GetFolderPath("CommonApplicationData")
+    }
+    $EpicManifestRoot = Join-Path $ProgramDataRoot "Epic\EpicGamesLauncher\Data\Manifests" -ErrorAction SilentlyContinue
+    foreach ($Manifest in @(Get-ChildItem -LiteralPath $EpicManifestRoot -Filter "*.item" -File -ErrorAction SilentlyContinue)) {
+        try {
+            $Item = Get-Content -LiteralPath $Manifest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ([string]$Item.DisplayName -match '(?i)Path\s+of\s+Exile\s*(?:2|II)|流放之路\s*2') {
+                Add-Poe2GameDirectoryCandidate `
+                    -Path ([string]$Item.InstallLocation) `
+                    -Source "Epic 游戏清单" `
+                    -Priority 40
+            }
+        }
+        catch {
+            continue
+        }
+    }
+
+    foreach ($StandardPath in @(
+            (Join-Path $env:ProgramFiles "Grinding Gear Games\Path of Exile 2" -ErrorAction SilentlyContinue),
+            (Join-Path ${env:ProgramFiles(x86)} "Grinding Gear Games\Path of Exile 2" -ErrorAction SilentlyContinue),
+            (Join-Path $env:LocalAppData "Programs\Path of Exile 2" -ErrorAction SilentlyContinue)
+        )) {
+        Add-Poe2GameDirectoryCandidate -Path $StandardPath -Source "常见安装位置" -Priority 50
+    }
+
+    return @($Results | Sort-Object Priority, Path)
+}
+
+function Resolve-Poe2GameDirectorySelection {
+    param(
+        [ValidateSet("auto", "manual")]
+        [string]$Mode = "auto",
+        [string]$ManualPath = "",
+        [string]$PreferredRoot = "",
+        [string[]]$AdditionalPaths = @()
+    )
+
+    if ($Mode -eq "manual") {
+        $Resolved = ConvertTo-Poe2GameDirectoryPath -Path $ManualPath
+        if ([string]::IsNullOrWhiteSpace($Resolved)) {
+            throw "手动选择的文件夹不是有效的 POE2 游戏根目录。请选择包含 Content.ggpk 或 Bundles2\_.index.bin 的文件夹。"
+        }
+        return $Resolved
+    }
+
+    $Candidates = @(Get-Poe2GameDirectoryCandidates -PreferredRoot $PreferredRoot -AdditionalPaths $AdditionalPaths)
+    if ($Candidates.Count -eq 0) {
+        throw "自动识别失败。请切换到手动选择，并选择包含 Content.ggpk 或 Bundles2\_.index.bin 的 POE2 游戏根目录。"
+    }
+    return [string]$Candidates[0].Path
+}
+
 function Test-Poe2ChinaClient {
     param([Parameter(Mandatory = $true)][string]$Poe2Dir)
 

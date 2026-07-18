@@ -27,11 +27,8 @@ Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
 $script:PatchVersion = "v0.4.9.5"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
-
-if ([string]::IsNullOrWhiteSpace($Poe2Dir)) {
-    $Poe2Dir = (Split-Path -Parent $RepoRoot)
-}
-$Poe2Dir = (Resolve-Path -LiteralPath $Poe2Dir).Path
+$Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
+$PreferredPoe2Dir = Split-Path -Parent $RepoRoot
 
 function Write-Step {
     param([string]$Text)
@@ -56,6 +53,11 @@ function Get-PatchScopeDisplayName {
 }
 
 function Show-PatchScopeDialog {
+    param(
+        [string]$InitialPoe2Dir = "",
+        [string]$PreferredPoe2Dir = ""
+    )
+
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
@@ -68,7 +70,7 @@ function Show-PatchScopeDialog {
     $Form.TopMost = $true
     $Form.Font = New-Object System.Drawing.Font("Microsoft YaHei UI", 9)
     $Form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
-    $Form.ClientSize = New-Object System.Drawing.Size(610, 340)
+    $Form.ClientSize = New-Object System.Drawing.Size(610, 480)
 
     $Title = New-Object System.Windows.Forms.Label
     $Title.Text = (New-Utf16Text @(0x9009, 0x62E9, 0x672C, 0x6B21, 0x8981, 0x5199, 0x5165, 0x7684, 0x8865, 0x4E01, 0x5185, 0x5BB9))
@@ -77,9 +79,133 @@ function Show-PatchScopeDialog {
     $Title.Font = New-Object System.Drawing.Font($Form.Font.FontFamily, 11, [System.Drawing.FontStyle]::Bold)
     $Form.Controls.Add($Title)
 
+    $PathGroup = New-Object System.Windows.Forms.GroupBox
+    $PathGroup.Text = "游戏文件夹"
+    $PathGroup.Location = New-Object System.Drawing.Point(24, 50)
+    $PathGroup.Size = New-Object System.Drawing.Size(572, 142)
+    $Form.Controls.Add($PathGroup)
+
+    $AutoPathRadio = New-Object System.Windows.Forms.RadioButton
+    $AutoPathRadio.Text = "自动识别游戏文件夹（推荐）"
+    $AutoPathRadio.Location = New-Object System.Drawing.Point(18, 24)
+    $AutoPathRadio.AutoSize = $true
+    $PathGroup.Controls.Add($AutoPathRadio)
+
+    $ManualPathRadio = New-Object System.Windows.Forms.RadioButton
+    $ManualPathRadio.Text = "手动选择游戏文件夹"
+    $ManualPathRadio.Location = New-Object System.Drawing.Point(18, 50)
+    $ManualPathRadio.AutoSize = $true
+    $PathGroup.Controls.Add($ManualPathRadio)
+
+    $PathTextBox = New-Object System.Windows.Forms.TextBox
+    $PathTextBox.Location = New-Object System.Drawing.Point(18, 78)
+    $PathTextBox.Size = New-Object System.Drawing.Size(426, 24)
+    $PathTextBox.Text = $InitialPoe2Dir
+    $PathGroup.Controls.Add($PathTextBox)
+
+    $BrowseButton = New-Object System.Windows.Forms.Button
+    $BrowseButton.Text = "浏览..."
+    $BrowseButton.Location = New-Object System.Drawing.Point(456, 76)
+    $BrowseButton.Size = New-Object System.Drawing.Size(96, 28)
+    $PathGroup.Controls.Add($BrowseButton)
+
+    $PathStatus = New-Object System.Windows.Forms.Label
+    $PathStatus.Location = New-Object System.Drawing.Point(18, 112)
+    $PathStatus.Size = New-Object System.Drawing.Size(534, 20)
+    $PathStatus.AutoEllipsis = $true
+    $PathGroup.Controls.Add($PathStatus)
+
+    $SetPathStatus = {
+        param([string]$Text, [bool]$IsError)
+        $PathStatus.Text = $Text
+        $PathStatus.ForeColor = if ($IsError) { [System.Drawing.Color]::Firebrick } else { [System.Drawing.Color]::DarkGreen }
+    }
+
+    $RefreshAutoPath = {
+        try {
+            $DetectedPath = Resolve-Poe2GameDirectorySelection -Mode "auto" -PreferredRoot $PreferredPoe2Dir
+            $AutoPathRadio.Tag = $DetectedPath
+            $PathTextBox.Text = $DetectedPath
+            $DetectedMode = Get-Poe2GameMode -Poe2Dir $DetectedPath
+            & $SetPathStatus "已自动识别：$DetectedMode" $false
+        }
+        catch {
+            $AutoPathRadio.Tag = $null
+            $PathTextBox.Text = ""
+            & $SetPathStatus $_.Exception.Message $true
+        }
+    }
+
+    $RefreshManualPath = {
+        $ResolvedPath = ConvertTo-Poe2GameDirectoryPath -Path $PathTextBox.Text
+        if ([string]::IsNullOrWhiteSpace($ResolvedPath)) {
+            & $SetPathStatus "请选择包含 Content.ggpk 或 Bundles2\_.index.bin 的游戏根目录。" $true
+        }
+        else {
+            $DetectedMode = Get-Poe2GameMode -Poe2Dir $ResolvedPath
+            & $SetPathStatus "有效游戏目录：$DetectedMode" $false
+        }
+    }
+
+    $RefreshPathMode = {
+        $IsManual = [bool]$ManualPathRadio.Checked
+        $PathTextBox.Enabled = $IsManual
+        $BrowseButton.Enabled = $IsManual
+        if ($IsManual) {
+            & $RefreshManualPath
+        }
+        else {
+            & $RefreshAutoPath
+        }
+    }
+
+    $AutoPathRadio.Add_CheckedChanged({
+            if ($AutoPathRadio.Checked) {
+                & $RefreshPathMode
+            }
+        })
+    $ManualPathRadio.Add_CheckedChanged({
+            if ($ManualPathRadio.Checked) {
+                & $RefreshPathMode
+            }
+        })
+    $PathTextBox.Add_TextChanged({
+            if ($ManualPathRadio.Checked) {
+                & $RefreshManualPath
+            }
+        })
+    $BrowseButton.Add_Click({
+            $FolderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
+            $FolderDialog.Description = "选择 POE2 游戏根目录"
+            $FolderDialog.ShowNewFolderButton = $false
+            if (-not [string]::IsNullOrWhiteSpace($PathTextBox.Text) -and
+                (Test-Path -LiteralPath $PathTextBox.Text -PathType Container)) {
+                $FolderDialog.SelectedPath = $PathTextBox.Text
+            }
+            elseif (Test-Path -LiteralPath $PreferredPoe2Dir -PathType Container) {
+                $FolderDialog.SelectedPath = $PreferredPoe2Dir
+            }
+            try {
+                if ($FolderDialog.ShowDialog($Form) -eq [System.Windows.Forms.DialogResult]::OK) {
+                    $ManualPathRadio.Checked = $true
+                    $PathTextBox.Text = $FolderDialog.SelectedPath
+                }
+            }
+            finally {
+                $FolderDialog.Dispose()
+            }
+        })
+
+    if ($Poe2DirWasExplicit) {
+        $ManualPathRadio.Checked = $true
+    }
+    else {
+        $AutoPathRadio.Checked = $true
+    }
+
     $Group = New-Object System.Windows.Forms.GroupBox
     $Group.Text = (New-Utf16Text @(0x8865, 0x4E01, 0x5185, 0x5BB9))
-    $Group.Location = New-Object System.Drawing.Point(24, 60)
+    $Group.Location = New-Object System.Drawing.Point(24, 204)
     $Group.Size = New-Object System.Drawing.Size(572, 132)
     $Form.Controls.Add($Group)
 
@@ -125,7 +251,7 @@ function Show-PatchScopeDialog {
 
     $LinksGroup = New-Object System.Windows.Forms.GroupBox
     $LinksGroup.Text = "更新地址"
-    $LinksGroup.Location = New-Object System.Drawing.Point(24, 208)
+    $LinksGroup.Location = New-Object System.Drawing.Point(24, 348)
     $LinksGroup.Size = New-Object System.Drawing.Size(572, 72)
     $Form.Controls.Add($LinksGroup)
 
@@ -159,26 +285,46 @@ function Show-PatchScopeDialog {
 
     $OkButton = New-Object System.Windows.Forms.Button
     $OkButton.Text = (New-Utf16Text @(0x5F00, 0x59CB, 0x66F4, 0x65B0))
-    $OkButton.Location = New-Object System.Drawing.Point(390, 292)
+    $OkButton.Location = New-Object System.Drawing.Point(390, 432)
     $OkButton.Size = New-Object System.Drawing.Size(96, 32)
     $Form.AcceptButton = $OkButton
     $Form.Controls.Add($OkButton)
 
     $CancelButton = New-Object System.Windows.Forms.Button
     $CancelButton.Text = (New-Utf16Text @(0x53D6, 0x6D88))
-    $CancelButton.Location = New-Object System.Drawing.Point(500, 292)
+    $CancelButton.Location = New-Object System.Drawing.Point(500, 432)
     $CancelButton.Size = New-Object System.Drawing.Size(96, 32)
     $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $Form.CancelButton = $CancelButton
     $Form.Controls.Add($CancelButton)
 
     $OkButton.Add_Click({
+            $PathMode = if ($ManualPathRadio.Checked) { "manual" } else { "auto" }
+            try {
+                $SelectedPoe2Dir = Resolve-Poe2GameDirectorySelection `
+                    -Mode $PathMode `
+                    -ManualPath $PathTextBox.Text `
+                    -PreferredRoot $PreferredPoe2Dir
+            }
+            catch {
+                [System.Windows.Forms.MessageBox]::Show(
+                    $_.Exception.Message,
+                    $script:PatchWindowTitle,
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Warning
+                ) | Out-Null
+                return
+            }
             if (-not ($CurrencyCheck.Checked -or $UniqueCheck.Checked -or $IslandRumourCheck.Checked)) {
                 [System.Windows.Forms.MessageBox]::Show(
                     (New-Utf16Text @(0x8BF7, 0x81F3, 0x5C11, 0x9009, 0x62E9, 0x4E00, 0x4E2A, 0x8865, 0x4E01, 0x5185, 0x5BB9)),
                     $script:PatchWindowTitle
                 ) | Out-Null
                 return
+            }
+            $Form.Tag = [pscustomobject]@{
+                Poe2Dir = $SelectedPoe2Dir
+                PathMode = $PathMode
             }
             $Form.DialogResult = [System.Windows.Forms.DialogResult]::OK
             $Form.Close()
@@ -187,6 +333,9 @@ function Show-PatchScopeDialog {
     $Result = $Form.ShowDialog()
     if ($Result -ne [System.Windows.Forms.DialogResult]::OK) {
         throw "Patch scope selection was cancelled."
+    }
+    if ($null -eq $Form.Tag -or [string]::IsNullOrWhiteSpace([string]$Form.Tag.Poe2Dir)) {
+        throw "No POE2 game directory was selected."
     }
 
     if ($CurrencyCheck.Checked -and $UniqueCheck.Checked) {
@@ -206,11 +355,17 @@ function Show-PatchScopeDialog {
         CurrencyPrices     = [bool]$CurrencyCheck.Checked
         UniquePrices       = [bool]$UniqueCheck.Checked
         IslandRumourHints  = [bool]$IslandRumourCheck.Checked
+        Poe2Dir            = [string]$Form.Tag.Poe2Dir
+        PathMode           = [string]$Form.Tag.PathMode
     }
 }
 
 function Resolve-PatchScope {
-    param([string]$Requested)
+    param(
+        [string]$Requested,
+        [string]$InitialPoe2Dir = "",
+        [string]$PreferredPoe2Dir = ""
+    )
 
     $Allowed = @("all", "currency", "uniques", "none")
     $Scope = $Requested
@@ -226,7 +381,9 @@ function Resolve-PatchScope {
     }
     if (Test-Poe2ReleaseMode) {
         try {
-            $Selection = Show-PatchScopeDialog
+            $Selection = Show-PatchScopeDialog `
+                -InitialPoe2Dir $InitialPoe2Dir `
+                -PreferredPoe2Dir $PreferredPoe2Dir
             $script:PatchScopeDialogSelection = $Selection
             return [string]$Selection.Scope
         }
@@ -2338,7 +2495,23 @@ function Assert-GgpkPatchApplied {
 }
 
 try {
-$PatchScope = Resolve-PatchScope -Requested $PatchScope
+$PatchScope = Resolve-PatchScope `
+    -Requested $PatchScope `
+    -InitialPoe2Dir $Poe2Dir `
+    -PreferredPoe2Dir $PreferredPoe2Dir
+if ($null -ne $script:PatchScopeDialogSelection -and
+    -not [string]::IsNullOrWhiteSpace([string]$script:PatchScopeDialogSelection.Poe2Dir)) {
+    $Poe2Dir = [string]$script:PatchScopeDialogSelection.Poe2Dir
+    $GameDirectorySelectionMode = [string]$script:PatchScopeDialogSelection.PathMode
+}
+elseif ($Poe2DirWasExplicit) {
+    $Poe2Dir = Resolve-Poe2GameDirectorySelection -Mode "manual" -ManualPath $Poe2Dir
+    $GameDirectorySelectionMode = "manual"
+}
+else {
+    $Poe2Dir = Resolve-Poe2GameDirectorySelection -Mode "auto" -PreferredRoot $PreferredPoe2Dir
+    $GameDirectorySelectionMode = "auto"
+}
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
 $PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques"))
 $PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
@@ -2403,6 +2576,7 @@ $EnglishWordsUnavailable = $false
 
 Write-Host "POE2 物价补丁更新器 $script:PatchVersion" -ForegroundColor Green
 Write-Host "游戏目录：$Poe2Dir"
+Write-Host "目录选择：$(if ($GameDirectorySelectionMode -eq 'manual') { '手动选择' } else { '自动识别' })" -ForegroundColor Cyan
 Write-Host "补丁目录：$RepoRoot"
 Write-Host "检测结果：$($InstallInfo.DisplayName)" -ForegroundColor Cyan
 Write-Host "安装模式：$GameMode" -ForegroundColor Cyan
