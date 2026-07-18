@@ -8,6 +8,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PATCH_VERSION = "v0.4.9.6"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -23,6 +24,34 @@ def copy_template_doc() -> bool:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     doc = Document(TEMPLATE_DOC)
     replacements = {
+        "POE2 三服合一物价补丁使用文档": (
+            f"POE2 三服合一物价补丁使用文档 {PATCH_VERSION}"
+        ),
+        "程序会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2。": (
+            "更新和还原都会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。"
+        ),
+        "把整个“物价补丁”文件夹放到 POE2 游戏根目录。脚本会自动识别上一级目录，不写死盘符。": (
+            "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录和各平台游戏库，也可以手动浏览。"
+        ),
+        "二、自动识别": "二、选择与自动识别游戏目录",
+        "检测到 Content.ggpk：按国际服官方 GGPK 处理。": (
+            "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。"
+        ),
+        "检测到 Bundles2 且有 WeGame/腾讯文件特征：按国服 WeGame Bundles2 处理。": (
+            "国服会匹配“流放之路：降临”和 WeGameApps\\rail_apps 游戏库；目录还必须包含 Bundles2\\_.index.bin，并通过 WeGame/Rail/Tencent 特征确认。"
+        ),
+        "检测到 Bundles2 且没有 WeGame/腾讯文件特征：按国际服 Steam/Epic Bundles2 处理。": (
+            "检测到 Content.ggpk 时按国际服官方 GGPK 处理；检测到非国服特征的 Bundles2 时按国际服 Steam/Epic 处理。"
+        ),
+        "国际服会读取当前游戏 language 设置，自动写入对应语言的 BaseItemTypes。": (
+            "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。国际服仍会读取 language 设置。"
+        ),
+        "3. 程序会提取英文表和当前客户端目标语言表。": (
+            "3. 在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；更新器还需选择补丁范围。随后程序提取英文表和当前客户端目标语言表。"
+        ),
+        "2. 双击“一键还原物价补丁.exe”。": (
+            "2. 双击“一键还原物价补丁.exe”，在还原窗口中确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录。"
+        ),
         "4. 程序会抓取 poe2scout 国际服价格，并把价格追加为“=数字D/E”。": (
             "4. 程序会按客户端类型抓取价格：国际服优先 poe2scout，国服优先 poecurrency.top；"
             "异常分类会自动降级，D/E 比例使用当前数据源实时值。"
@@ -60,7 +89,7 @@ def copy_template_doc() -> bool:
             r"tools\python：内置 Python 和依赖，不要删除；自动修复时依次尝试华为云、阿里云、南京大学镜像和 Python 官方备用源。"
         ),
         "提示找不到游戏目录：请确认物价补丁文件夹放在 POE2 游戏根目录。": (
-            "提示找不到游戏目录：请确认物价补丁文件夹放在 POE2 游戏根目录。若提示旧补丁有标记但备份丢失，新版会搜索旧文件夹并尝试离线沙盒迁移；失败时真实游戏不会被修改。"
+            "提示找不到游戏目录：改用手动选择，并选择直接包含 Content.ggpk 或 Bundles2\\_.index.bin 的游戏根目录；不要选择物价补丁文件夹。多个客户端必须明确选择。若旧补丁有标记但备份丢失，新版会搜索旧文件夹并尝试离线沙盒迁移；失败时真实游戏不会被修改。"
         ),
         "提取或写入失败：请先关闭游戏和可能占用文件的工具。": (
             "提取或写入失败：程序会等待短暂占用并在写入失败时自动恢复；仍失败时请关闭游戏和可能占用文件的工具后重试。"
@@ -82,12 +111,41 @@ def copy_template_doc() -> bool:
                 run.text = ""
         else:
             paragraph.add_run(replacement)
-    missing = sorted(set(replacements) - matched)
+    current_text = {paragraph.text.strip() for paragraph in doc.paragraphs}
+    missing = sorted(
+        original
+        for original, replacement in replacements.items()
+        if original not in matched and replacement not in current_text
+    )
     if missing:
         raise RuntimeError(
             "release document template no longer contains expected paragraphs: "
             + " | ".join(missing)
         )
+
+    # The WPS-authored template's contextualSpacing flag makes some
+    # LibreOffice versions overlap consecutive list paragraphs after wrapping.
+    list_style_ppr = doc.styles["List Bullet"]._element.get_or_add_pPr()
+    for node in list_style_ppr.findall(qn("w:contextualSpacing")):
+        list_style_ppr.remove(node)
+
+    # Keep the compact path examples unchanged; only the long Bundles2 note
+    # needs extra separation from the following bullet after it wraps.
+    for paragraph in doc.paragraphs:
+        if paragraph.style.name == "List Bullet":
+            paragraph.paragraph_format.space_after = Pt(
+                6 if paragraph.text.startswith("Bundles2 模式会更新") else 3
+            )
+
+    for section in doc.sections:
+        for paragraph in section.footer.paragraphs:
+            if paragraph.text.strip().startswith("POE2 三服合一物价补丁"):
+                if paragraph.runs:
+                    paragraph.runs[0].text = f"POE2 三服合一物价补丁 {PATCH_VERSION}"
+                    for run in paragraph.runs[1:]:
+                        run.text = ""
+                else:
+                    paragraph.add_run(f"POE2 三服合一物价补丁 {PATCH_VERSION}")
 
     generated = OUT_DIR / "使用文档.docx"
     doc.save(generated)
@@ -159,7 +217,7 @@ def build():
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = title.add_run("POE2 三服合一物价补丁使用文档")
+    r = title.add_run(f"POE2 三服合一物价补丁使用文档 {PATCH_VERSION}")
     set_font(r)
     r.font.size = Pt(20)
     r.font.bold = True
@@ -167,12 +225,12 @@ def build():
     for line in [
         "重要提示：打补丁会修改游戏文件，存在封号或校验风险。",
         "请在关闭游戏后运行，并自行确认可以接受风险。",
-        "程序会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2。",
+        "更新和还原都会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。",
     ]:
         para(doc, line, 14, True, (192, 0, 0), WD_ALIGN_PARAGRAPH.CENTER, 2, 1.0)
 
     para(doc, "一、发布版怎么放", 13, True, after=4)
-    para(doc, "把整个“物价补丁”文件夹放到 POE2 游戏根目录。脚本会自动识别上一级目录，不写死盘符。")
+    para(doc, "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录和各平台游戏库，也可以手动浏览。")
     bullets(
         doc,
         [
@@ -183,14 +241,14 @@ def build():
         ],
     )
 
-    para(doc, "二、自动识别", 13, True, after=4)
+    para(doc, "二、选择与自动识别游戏目录", 13, True, after=4)
     bullets(
         doc,
         [
-            "检测到 Content.ggpk：按国际服官方 GGPK 处理。",
-            "检测到 Bundles2 且有 WeGame/腾讯文件特征：按国服 WeGame Bundles2 处理。",
-            "检测到 Bundles2 且没有 WeGame/腾讯文件特征：按国际服 Steam/Epic Bundles2 处理。",
-            "国际服会读取当前游戏 language 设置，自动写入对应语言的 BaseItemTypes。",
+            "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。",
+            "国服会匹配“流放之路：降临”和 WeGameApps\\rail_apps 游戏库；目录还必须包含 Bundles2\\_.index.bin，并通过 WeGame/Rail/Tencent 特征确认。",
+            "检测到 Content.ggpk 时按国际服官方 GGPK 处理；检测到非国服特征的 Bundles2 时按国际服 Steam/Epic 处理。",
+            "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。国际服仍会读取 language 设置。",
         ],
     )
 
@@ -200,7 +258,7 @@ def build():
         [
             "关闭游戏。",
             "双击“一键更新物价补丁.exe”。",
-            "程序会提取英文表和当前客户端目标语言表。",
+            "在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；更新器还需选择补丁范围。随后程序提取英文表和当前客户端目标语言表。",
             "程序会按客户端类型抓取价格：国际服使用 poe2scout，国服优先使用 poecurrency.top；没有国服数据时使用 poe2scout 兜底，并把价格追加为“=数字D/E”。",
             "D/E 换算比例会从当前价格源实时读取，不使用固定比例。",
             "国服优先使用 latest_buy1 / latest_sell1 最新盘口价，缺失时回退到 buy_avg / sell_avg；双边价差正常时取几何均值，差距过大时取较低一侧以降低过期均价和 OCR 异常价影响。",
@@ -217,7 +275,7 @@ def build():
         doc,
         [
             "关闭游戏。",
-            "双击“一键还原物价补丁.exe”。",
+            "双击“一键还原物价补丁.exe”，在还原窗口中确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录。",
             "Bundles2 模式会优先验证并使用“真实还原物价补丁.zip”恢复打补丁前的物理文件，不要求先准备 .NET。",
             "GGPK 模式会使用“还原物价补丁.zip”写回当前客户端对应的 BaseItemTypes。",
             "如果没有物理还原包，程序会验证兼容的逻辑还原包；Bundles2 的 Words 和 EndgameMaps 会以当前游戏版本为底板只清理本工具标记。没有安全兼容路径时才会拒绝还原。",
@@ -259,7 +317,7 @@ def build():
     bullets(
         doc,
         [
-            "提示找不到游戏目录：请确认物价补丁文件夹放在 POE2 游戏根目录。",
+            "提示找不到游戏目录：改用手动选择，并选择直接包含 Content.ggpk 或 Bundles2\\_.index.bin 的游戏根目录；不要选择物价补丁文件夹。多个客户端必须明确选择。",
             "提取或写入失败：请先关闭游戏和可能占用文件的工具。",
             "提示当前 Bundles2 已含标记但找不到还原包：新版会自动搜索旧补丁文件夹和持久目录，并尝试离线沙盒迁移；若迁移失败，真实游戏不会被修改，请先用游戏平台验证或修复。",
             "缺少价格：可能是当前价格源暂无该物品数据，或物品名无法匹配本地物品表。",
@@ -270,7 +328,7 @@ def build():
 
     footer = sec.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fr = footer.add_run("POE2 三服合一物价补丁")
+    fr = footer.add_run(f"POE2 三服合一物价补丁 {PATCH_VERSION}")
     set_font(fr)
     fr.font.size = Pt(9)
     fr.font.color.rgb = RGBColor(128, 128, 128)

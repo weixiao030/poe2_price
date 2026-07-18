@@ -7,6 +7,7 @@ __pycache__/
 *.py[cod]
 *.tmp
 *.log
+build/downloads/*.zip
 
 # .NET 本地编译缓存（已跟踪的历史文件不受此规则影响）
 **/bin/

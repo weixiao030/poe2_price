@@ -92,6 +92,13 @@ def test_declared_version_is_consistent():
     assert match, "missing PatchVersion"
     version = match.group(1)
 
+    restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
+    restore_match = re.search(
+        r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', restore_script
+    )
+    assert restore_match, "missing restore PatchVersion"
+    assert restore_match.group(1) == version
+
     project = ET.parse(LAUNCHER_PROJECT).getroot()
     properties = {node.tag: (node.text or "").strip() for node in project.iter()}
     assert properties["Version"] == version
@@ -117,6 +124,10 @@ def test_release_document_describes_fail_safe_behavior():
         "低匹配会保留未命中的旧价格",
         "发布包另含校验过的离线修复包",
         "华为云、阿里云、南京大学镜像和 Python 官方备用源",
+        "更新和还原都会自动识别",
+        "流放之路：降临",
+        "如果发现多个客户端",
+        "在还原窗口中确认自动识别的路径",
     ):
         assert expected in text
 
@@ -149,3 +160,16 @@ def test_runtime_downloads_prefer_domestic_mirrors_with_official_fallback():
     assert "使用随发布包提供的 .NET" in common
     assert "Invoke-DownloadFromSources" in release
     assert "tools\\downloads\\dotnet-runtime-8.0.28-win-x64.zip" in release
+
+
+def test_release_quick_start_keeps_directory_selection_instructions():
+    release = (ROOT / "build" / "make_release.ps1").read_text(encoding="utf-8-sig")
+    quick_start = (ROOT / "物价补丁" / "请先看使用文档.txt").read_text(
+        encoding="utf-8-sig"
+    )
+
+    for expected in ("可以放在任意位置", "手动选择", "流放之路：降临", "多个客户端"):
+        assert expected in release
+        assert expected in quick_start
+    assert "把整个物价补丁文件夹放到 POE2 游戏根目录" not in release
+    assert "把整个物价补丁文件夹放到 POE2 游戏根目录" not in quick_start

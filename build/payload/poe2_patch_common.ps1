@@ -137,7 +137,7 @@ function Get-Poe2GameMode {
         return "Bundles2"
     }
     else {
-        throw "无法检测 POE2 游戏目录：请把物价补丁文件夹放在游戏根目录。找不到 Content.ggpk 或 Bundles2\_.index.bin"
+        throw "无法检测 POE2 游戏目录：请选择直接包含 Content.ggpk 或 Bundles2\_.index.bin 的游戏根目录。"
     }
 }
 
@@ -150,14 +150,14 @@ function Test-Poe2GameDirectory {
 
     try {
         $Candidate = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
-        if (-not (Test-Path -LiteralPath $Candidate -PathType Container)) {
+        if (-not (Test-Path -LiteralPath $Candidate -PathType Container -ErrorAction Stop)) {
             return $false
         }
 
-        $Resolved = (Resolve-Path -LiteralPath $Candidate).Path
+        $Resolved = (Resolve-Path -LiteralPath $Candidate -ErrorAction Stop).Path
         return (
-            (Test-Path -LiteralPath (Join-Path $Resolved "Content.ggpk") -PathType Leaf) -or
-            (Test-Path -LiteralPath (Join-Path $Resolved "Bundles2\_.index.bin") -PathType Leaf)
+            (Test-Path -LiteralPath (Join-Path $Resolved "Content.ggpk") -PathType Leaf -ErrorAction Stop) -or
+            (Test-Path -LiteralPath (Join-Path $Resolved "Bundles2\_.index.bin") -PathType Leaf -ErrorAction Stop)
         )
     }
     catch {
@@ -181,7 +181,7 @@ function ConvertTo-Poe2GameDirectoryPath {
             $Candidate = ($Candidate -replace ',\s*-?\d+\s*$', '').Trim().Trim('"')
         }
 
-        if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
+        if (Test-Path -LiteralPath $Candidate -PathType Leaf -ErrorAction Stop) {
             $Candidate = Split-Path -Parent (Resolve-Path -LiteralPath $Candidate).Path
         }
 
@@ -203,10 +203,136 @@ function ConvertTo-Poe2GameDirectoryPath {
     return $null
 }
 
+function Test-Poe2GameDisplayName {
+    param([string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        return $false
+    }
+
+    return ($Name.Trim() -match '(?i)(?:Path\s+of\s+Exile\s*(?:2|II)|流放之路\s*(?:2|[:：]?\s*降临)|(?:^|[^A-Z0-9])POE\s*2(?:[^A-Z0-9]|$))')
+}
+
+function Get-Poe2SettingsPath {
+    param([string]$SettingsPath = "")
+
+    if (-not [string]::IsNullOrWhiteSpace($SettingsPath)) {
+        return [System.IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($SettingsPath.Trim().Trim('"')))
+    }
+
+    $LocalAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if ([string]::IsNullOrWhiteSpace($LocalAppData)) {
+        return $null
+    }
+    return (Join-Path $LocalAppData "Poe2PricePatch\settings.json")
+}
+
+function Get-Poe2SavedGameDirectory {
+    param([string]$SettingsPath = "")
+
+    try {
+        $StatePath = Get-Poe2SettingsPath -SettingsPath $SettingsPath
+        if ([string]::IsNullOrWhiteSpace($StatePath) -or -not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
+            return $null
+        }
+
+        $State = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        return (ConvertTo-Poe2GameDirectoryPath -Path ([string]$State.game_directory))
+    }
+    catch {
+        return $null
+    }
+}
+
+function Save-Poe2GameDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Poe2Dir,
+        [string]$SettingsPath = ""
+    )
+
+    $Resolved = ConvertTo-Poe2GameDirectoryPath -Path $Poe2Dir
+    if ([string]::IsNullOrWhiteSpace($Resolved)) {
+        throw "无法保存无效的 POE2 游戏目录：$Poe2Dir"
+    }
+
+    $StatePath = Get-Poe2SettingsPath -SettingsPath $SettingsPath
+    if ([string]::IsNullOrWhiteSpace($StatePath)) {
+        return $Resolved
+    }
+
+    $StateDir = Split-Path -Parent $StatePath
+    New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+    $TempPath = Join-Path $StateDir ([string]::Concat("settings-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+    $Json = [pscustomobject]@{
+        version        = 1
+        game_directory = $Resolved
+        saved_at_utc   = (Get-Date).ToUniversalTime().ToString("o")
+    } | ConvertTo-Json
+
+    try {
+        [System.IO.File]::WriteAllText($TempPath, $Json, (New-Object System.Text.UTF8Encoding($false)))
+        if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+            try {
+                [System.IO.File]::Replace($TempPath, $StatePath, $null)
+            }
+            catch {
+                Move-Item -LiteralPath $TempPath -Destination $StatePath -Force
+            }
+        }
+        else {
+            [System.IO.File]::Move($TempPath, $StatePath)
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempPath -PathType Leaf) {
+            Remove-Item -LiteralPath $TempPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    return $Resolved
+}
+
+function Enter-Poe2GameDirectoryMutex {
+    param([Parameter(Mandatory = $true)][string]$Poe2Dir)
+
+    $Resolved = ConvertTo-Poe2GameDirectoryPath -Path $Poe2Dir
+    if ([string]::IsNullOrWhiteSpace($Resolved)) {
+        throw "无法为无效的 POE2 游戏目录创建运行锁：$Poe2Dir"
+    }
+
+    $Normalized = $Resolved.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).ToUpperInvariant()
+    $Sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $Digest = $Sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Normalized))
+    }
+    finally {
+        $Sha256.Dispose()
+    }
+    $Token = [string]::Concat(($Digest | ForEach-Object { $_.ToString("X2") }))
+    $Mutex = New-Object System.Threading.Mutex($false, ("Local\Poe2PricePatch-Game-" + $Token))
+    $Taken = $false
+    try {
+        $Taken = $Mutex.WaitOne(0)
+    }
+    catch [System.Threading.AbandonedMutexException] {
+        $Taken = $true
+    }
+
+    if (-not $Taken) {
+        $Mutex.Dispose()
+        throw "同一游戏目录的物价补丁正在运行，请等待当前更新或还原完成后再试：$Resolved"
+    }
+    return $Mutex
+}
+
 function Get-Poe2GameDirectoryCandidates {
     param(
         [string]$PreferredRoot = "",
-        [string[]]$AdditionalPaths = @()
+        [string[]]$AdditionalPaths = @(),
+        [string[]]$AdditionalWeGameRoots = @(),
+        [string]$SettingsPath = "",
+        [switch]$IgnoreSavedDirectory,
+        [switch]$SkipSystemGameDiscovery
     )
 
     $Results = New-Object System.Collections.ArrayList
@@ -229,10 +355,16 @@ function Get-Poe2GameDirectoryCandidates {
             return
         }
         $SeenPaths[$Key] = $true
+        try {
+            $GameMode = Get-Poe2GameMode -Poe2Dir $Resolved
+        }
+        catch {
+            return
+        }
         [void]$Results.Add([pscustomobject]@{
                 Path     = $Resolved
                 Source   = $Source
-                Mode     = (Get-Poe2GameMode -Poe2Dir $Resolved)
+                Mode     = $GameMode
                 Priority = $Priority
             })
     }
@@ -241,11 +373,17 @@ function Get-Poe2GameDirectoryCandidates {
     foreach ($Path in @($AdditionalPaths)) {
         Add-Poe2GameDirectoryCandidate -Path $Path -Source "附加候选路径" -Priority 5
     }
+    if (-not $IgnoreSavedDirectory) {
+        Add-Poe2GameDirectoryCandidate `
+            -Path (Get-Poe2SavedGameDirectory -SettingsPath $SettingsPath) `
+            -Source "最近使用的游戏目录" `
+            -Priority 8
+    }
     foreach ($VariableName in @("POE2_GAME_DIR", "POE2_DIR")) {
         Add-Poe2GameDirectoryCandidate `
             -Path ([Environment]::GetEnvironmentVariable($VariableName)) `
             -Source "环境变量 $VariableName" `
-            -Priority 10
+            -Priority 6
     }
 
     $UninstallRoots = @(
@@ -253,19 +391,127 @@ function Get-Poe2GameDirectoryCandidates {
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     )
-    foreach ($Root in $UninstallRoots) {
-        foreach ($Entry in @(Get-ItemProperty -Path $Root -ErrorAction SilentlyContinue)) {
-            $DisplayName = [string]$Entry.DisplayName
-            if ($DisplayName -notmatch '(?i)Path\s+of\s+Exile\s*(?:2|II)|流放之路\s*2') {
-                continue
-            }
-            foreach ($PropertyName in @("InstallLocation", "DisplayIcon", "InstallSource")) {
-                Add-Poe2GameDirectoryCandidate `
-                    -Path ([string]$Entry.$PropertyName) `
-                    -Source "已安装程序：$DisplayName" `
-                    -Priority 20
+    if (-not $SkipSystemGameDiscovery) {
+        foreach ($Root in $UninstallRoots) {
+            foreach ($Entry in @(Get-ItemProperty -Path $Root -ErrorAction SilentlyContinue)) {
+                $DisplayName = [string]$Entry.DisplayName
+                if (-not (Test-Poe2GameDisplayName -Name $DisplayName)) {
+                    continue
+                }
+                foreach ($PropertyName in @("InstallLocation", "DisplayIcon", "InstallSource")) {
+                    Add-Poe2GameDirectoryCandidate `
+                        -Path ([string]$Entry.$PropertyName) `
+                        -Source "已安装程序：$DisplayName" `
+                        -Priority 20
+                }
             }
         }
+    }
+
+    $WeGameLibraries = New-Object System.Collections.ArrayList
+    $SeenWeGameLibraries = @{}
+    function Add-WeGameLibrary {
+        param([string]$Path)
+
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            return
+        }
+
+        try {
+            $Expanded = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
+            if (Test-Path -LiteralPath $Expanded -PathType Leaf -ErrorAction Stop) {
+                $Expanded = Split-Path -Parent (Resolve-Path -LiteralPath $Expanded -ErrorAction Stop).Path
+            }
+            $Parent = Split-Path -Parent $Expanded
+            $Candidates = New-Object System.Collections.ArrayList
+            [void]$Candidates.Add($Expanded)
+            [void]$Candidates.Add((Join-Path $Expanded "rail_apps"))
+            [void]$Candidates.Add((Join-Path $Expanded "WeGameApps\rail_apps"))
+            if (-not [string]::IsNullOrWhiteSpace($Parent)) {
+                [void]$Candidates.Add((Join-Path $Parent "WeGameApps\rail_apps"))
+            }
+            foreach ($Candidate in $Candidates) {
+                if ([string]::IsNullOrWhiteSpace($Candidate) -or
+                    -not (Test-Path -LiteralPath $Candidate -PathType Container -ErrorAction Stop)) {
+                    continue
+                }
+                $Resolved = (Resolve-Path -LiteralPath $Candidate -ErrorAction Stop).Path
+                $Key = $Resolved.ToUpperInvariant()
+                if (-not $SeenWeGameLibraries.ContainsKey($Key)) {
+                    $SeenWeGameLibraries[$Key] = $true
+                    [void]$WeGameLibraries.Add($Resolved)
+                }
+            }
+        }
+        catch {
+            return
+        }
+    }
+
+    foreach ($Path in @($AdditionalWeGameRoots)) {
+        Add-WeGameLibrary -Path $Path
+    }
+    if (-not $SkipSystemGameDiscovery) {
+        foreach ($VariableName in @("WEGAME_GAME_ROOT", "WEGAME_APPS_ROOT", "TENCENT_GAME_ROOT")) {
+            Add-WeGameLibrary -Path ([Environment]::GetEnvironmentVariable($VariableName))
+        }
+        foreach ($WeGameRegistryPath in @(
+                "HKCU:\Software\Tencent\WeGame",
+                "HKLM:\SOFTWARE\Tencent\WeGame",
+                "HKLM:\SOFTWARE\WOW6432Node\Tencent\WeGame"
+            )) {
+            $WeGameEntry = Get-ItemProperty -Path $WeGameRegistryPath -ErrorAction SilentlyContinue
+            if ($null -eq $WeGameEntry) {
+                continue
+            }
+            foreach ($PropertyName in @("InstallPath", "InstallLocation", "Path", "RootPath", "GamePath", "GameRoot")) {
+                Add-WeGameLibrary -Path ([string]$WeGameEntry.$PropertyName)
+            }
+        }
+        foreach ($Root in $UninstallRoots) {
+            foreach ($Entry in @(Get-ItemProperty -Path $Root -ErrorAction SilentlyContinue)) {
+                if ([string]$Entry.DisplayName -notmatch '(?i)(?:WeGame|腾讯游戏平台)') {
+                    continue
+                }
+                foreach ($PropertyName in @("InstallLocation", "DisplayIcon", "InstallSource")) {
+                    Add-WeGameLibrary -Path ([string]$Entry.$PropertyName)
+                }
+            }
+        }
+        foreach ($Drive in @([System.IO.DriveInfo]::GetDrives())) {
+            try {
+                if (-not $Drive.IsReady -or $Drive.DriveType -notin @([System.IO.DriveType]::Fixed, [System.IO.DriveType]::Removable)) {
+                    continue
+                }
+                foreach ($Relative in @(
+                        "WeGameApps\rail_apps",
+                        "Program Files\WeGameApps\rail_apps",
+                        "Program Files (x86)\WeGameApps\rail_apps",
+                        "Tencent Games",
+                        "腾讯游戏"
+                    )) {
+                    Add-WeGameLibrary -Path (Join-Path $Drive.Root $Relative)
+                }
+            }
+            catch {
+                continue
+            }
+        }
+    }
+
+    foreach ($Library in @($WeGameLibraries)) {
+        if (Test-Poe2GameDisplayName -Name (Split-Path -Leaf $Library)) {
+            Add-Poe2GameDirectoryCandidate -Path $Library -Source "WeGame 游戏库" -Priority 25
+        }
+        foreach ($Directory in @(Get-ChildItem -LiteralPath $Library -Directory -ErrorAction SilentlyContinue)) {
+            if (Test-Poe2GameDisplayName -Name $Directory.Name) {
+                Add-Poe2GameDirectoryCandidate -Path $Directory.FullName -Source "WeGame 游戏库" -Priority 25
+            }
+        }
+    }
+
+    if ($SkipSystemGameDiscovery) {
+        return @($Results | Sort-Object Priority, Path)
     }
 
     $SteamRoots = New-Object System.Collections.ArrayList
@@ -347,7 +593,11 @@ function Get-Poe2GameDirectoryCandidates {
 
         foreach ($Manifest in @(Get-ChildItem -LiteralPath $SteamApps -Filter "appmanifest_*.acf" -File -ErrorAction SilentlyContinue)) {
             $ManifestText = Get-Content -LiteralPath $Manifest.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-            if ($ManifestText -match '(?im)^\s*"name"\s+"(?:Path of Exile 2|流放之路\s*2)"' -and
+            $ManifestName = ""
+            if ($ManifestText -match '(?im)^\s*"name"\s+"([^"]+)"') {
+                $ManifestName = $Matches[1]
+            }
+            if ((Test-Poe2GameDisplayName -Name $ManifestName) -and
                 $ManifestText -match '(?im)^\s*"installdir"\s+"([^"]+)"') {
                 Add-Poe2GameDirectoryCandidate `
                     -Path (Join-Path $SteamApps ("common\" + $Matches[1])) `
@@ -365,7 +615,7 @@ function Get-Poe2GameDirectoryCandidates {
     foreach ($Manifest in @(Get-ChildItem -LiteralPath $EpicManifestRoot -Filter "*.item" -File -ErrorAction SilentlyContinue)) {
         try {
             $Item = Get-Content -LiteralPath $Manifest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ([string]$Item.DisplayName -match '(?i)Path\s+of\s+Exile\s*(?:2|II)|流放之路\s*2') {
+            if (Test-Poe2GameDisplayName -Name ([string]$Item.DisplayName)) {
                 Add-Poe2GameDirectoryCandidate `
                     -Path ([string]$Item.InstallLocation) `
                     -Source "Epic 游戏清单" `
@@ -394,7 +644,11 @@ function Resolve-Poe2GameDirectorySelection {
         [string]$Mode = "auto",
         [string]$ManualPath = "",
         [string]$PreferredRoot = "",
-        [string[]]$AdditionalPaths = @()
+        [string[]]$AdditionalPaths = @(),
+        [string[]]$AdditionalWeGameRoots = @(),
+        [string]$SettingsPath = "",
+        [switch]$IgnoreSavedDirectory,
+        [switch]$SkipSystemGameDiscovery
     )
 
     if ($Mode -eq "manual") {
@@ -405,11 +659,224 @@ function Resolve-Poe2GameDirectorySelection {
         return $Resolved
     }
 
-    $Candidates = @(Get-Poe2GameDirectoryCandidates -PreferredRoot $PreferredRoot -AdditionalPaths $AdditionalPaths)
+    $Candidates = @(Get-Poe2GameDirectoryCandidates `
+            -PreferredRoot $PreferredRoot `
+            -AdditionalPaths $AdditionalPaths `
+            -AdditionalWeGameRoots $AdditionalWeGameRoots `
+            -SettingsPath $SettingsPath `
+            -IgnoreSavedDirectory:$IgnoreSavedDirectory `
+            -SkipSystemGameDiscovery:$SkipSystemGameDiscovery)
     if ($Candidates.Count -eq 0) {
         throw "自动识别失败。请切换到手动选择，并选择包含 Content.ggpk 或 Bundles2\_.index.bin 的 POE2 游戏根目录。"
     }
+
+    $ExplicitCandidates = @($Candidates | Where-Object { [int]$_.Priority -lt 20 })
+    if ($ExplicitCandidates.Count -gt 0) {
+        return [string]$ExplicitCandidates[0].Path
+    }
+    if ($Candidates.Count -gt 1) {
+        $CandidateText = [string]::Join("；", @($Candidates | ForEach-Object { [string]$_.Path }))
+        throw "自动识别到多个 POE2 客户端，无法安全判断要操作哪一个。请切换到手动选择：$CandidateText"
+    }
     return [string]$Candidates[0].Path
+}
+
+function Show-Poe2GameDirectorySelectionDialog {
+    param(
+        [string]$Title = "POE2 物价补丁",
+        [string]$PreferredRoot = "",
+        [string]$InitialPoe2Dir = "",
+        [string]$ActionText = "请选择要操作的 POE2 游戏目录。"
+    )
+
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $Form = New-Object System.Windows.Forms.Form
+    $Form.Text = $Title
+    $Form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $Form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+    $Form.MaximizeBox = $false
+    $Form.MinimizeBox = $false
+    $Form.ClientSize = New-Object System.Drawing.Size(620, 272)
+
+    $ActionLabel = New-Object System.Windows.Forms.Label
+    $ActionLabel.Text = $ActionText
+    $ActionLabel.Location = New-Object System.Drawing.Point(22, 18)
+    $ActionLabel.Size = New-Object System.Drawing.Size(576, 22)
+    $Form.Controls.Add($ActionLabel)
+
+    $AutoRadio = New-Object System.Windows.Forms.RadioButton
+    $AutoRadio.Text = "自动识别游戏文件夹（推荐）"
+    $AutoRadio.Location = New-Object System.Drawing.Point(24, 52)
+    $AutoRadio.AutoSize = $true
+    $Form.Controls.Add($AutoRadio)
+
+    $ManualRadio = New-Object System.Windows.Forms.RadioButton
+    $ManualRadio.Text = "手动选择游戏文件夹"
+    $ManualRadio.Location = New-Object System.Drawing.Point(266, 52)
+    $ManualRadio.AutoSize = $true
+    $Form.Controls.Add($ManualRadio)
+
+    $PathTextBox = New-Object System.Windows.Forms.TextBox
+    $PathTextBox.Location = New-Object System.Drawing.Point(24, 84)
+    $PathTextBox.Size = New-Object System.Drawing.Size(462, 25)
+    $PathTextBox.Text = $InitialPoe2Dir
+    $Form.Controls.Add($PathTextBox)
+
+    $BrowseButton = New-Object System.Windows.Forms.Button
+    $BrowseButton.Text = "浏览..."
+    $BrowseButton.Location = New-Object System.Drawing.Point(500, 82)
+    $BrowseButton.Size = New-Object System.Drawing.Size(96, 28)
+    $Form.Controls.Add($BrowseButton)
+
+    $StatusLabel = New-Object System.Windows.Forms.Label
+    $StatusLabel.Location = New-Object System.Drawing.Point(24, 120)
+    $StatusLabel.Size = New-Object System.Drawing.Size(572, 44)
+    $StatusLabel.AutoEllipsis = $true
+    $Form.Controls.Add($StatusLabel)
+
+    $WarningLabel = New-Object System.Windows.Forms.Label
+    $WarningLabel.Text = "电脑上有多个客户端时，请使用手动选择，避免更新或还原到错误目录。"
+    $WarningLabel.Location = New-Object System.Drawing.Point(24, 170)
+    $WarningLabel.Size = New-Object System.Drawing.Size(572, 22)
+    $WarningLabel.ForeColor = [System.Drawing.Color]::DarkOrange
+    $Form.Controls.Add($WarningLabel)
+
+    $ConfirmButton = New-Object System.Windows.Forms.Button
+    $ConfirmButton.Text = "确定"
+    $ConfirmButton.Location = New-Object System.Drawing.Point(396, 218)
+    $ConfirmButton.Size = New-Object System.Drawing.Size(96, 30)
+    $Form.Controls.Add($ConfirmButton)
+
+    $CancelButton = New-Object System.Windows.Forms.Button
+    $CancelButton.Text = "取消"
+    $CancelButton.Location = New-Object System.Drawing.Point(500, 218)
+    $CancelButton.Size = New-Object System.Drawing.Size(96, 30)
+    $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+    $Form.Controls.Add($CancelButton)
+    $Form.AcceptButton = $ConfirmButton
+    $Form.CancelButton = $CancelButton
+
+    $SetStatus = {
+        param([string]$Text, [bool]$IsError)
+        $StatusLabel.Text = $Text
+        $StatusLabel.ForeColor = if ($IsError) { [System.Drawing.Color]::Firebrick } else { [System.Drawing.Color]::DarkGreen }
+    }
+
+    $RefreshAuto = {
+        try {
+            $DetectedPath = Resolve-Poe2GameDirectorySelection -Mode "auto" -PreferredRoot $PreferredRoot
+            $AutoRadio.Tag = $DetectedPath
+            $PathTextBox.Text = $DetectedPath
+            $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $DetectedPath
+            & $SetStatus "已自动识别：$($InstallInfo.DisplayName)" $false
+        }
+        catch {
+            $AutoRadio.Tag = $null
+            $PathTextBox.Text = ""
+            & $SetStatus $_.Exception.Message $true
+        }
+    }
+
+    $RefreshManual = {
+        $ResolvedPath = ConvertTo-Poe2GameDirectoryPath -Path $PathTextBox.Text
+        if ([string]::IsNullOrWhiteSpace($ResolvedPath)) {
+            & $SetStatus "请选择包含 Content.ggpk 或 Bundles2\_.index.bin 的游戏根目录。" $true
+        }
+        else {
+            $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $ResolvedPath
+            & $SetStatus "有效游戏目录：$($InstallInfo.DisplayName)" $false
+        }
+    }
+
+    $RefreshMode = {
+        $IsManual = [bool]$ManualRadio.Checked
+        $PathTextBox.Enabled = $IsManual
+        $BrowseButton.Enabled = $IsManual
+        if ($IsManual) {
+            & $RefreshManual
+        }
+        else {
+            & $RefreshAuto
+        }
+    }
+
+    $AutoRadio.Add_CheckedChanged({
+            if ($AutoRadio.Checked) {
+                & $RefreshMode
+            }
+        })
+    $ManualRadio.Add_CheckedChanged({
+            if ($ManualRadio.Checked) {
+                & $RefreshMode
+            }
+        })
+    $PathTextBox.Add_TextChanged({
+            if ($ManualRadio.Checked) {
+                & $RefreshManual
+            }
+        })
+    $BrowseButton.Add_Click({
+            $FolderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
+            $FolderDialog.Description = "选择 POE2 游戏根目录"
+            $FolderDialog.ShowNewFolderButton = $false
+            if (-not [string]::IsNullOrWhiteSpace($PathTextBox.Text) -and
+                (Test-Path -LiteralPath $PathTextBox.Text -PathType Container)) {
+                $FolderDialog.SelectedPath = $PathTextBox.Text
+            }
+            elseif (Test-Path -LiteralPath $PreferredRoot -PathType Container) {
+                $FolderDialog.SelectedPath = $PreferredRoot
+            }
+            try {
+                if ($FolderDialog.ShowDialog($Form) -eq [System.Windows.Forms.DialogResult]::OK) {
+                    $ManualRadio.Checked = $true
+                    $PathTextBox.Text = $FolderDialog.SelectedPath
+                }
+            }
+            finally {
+                $FolderDialog.Dispose()
+            }
+        })
+    $ConfirmButton.Add_Click({
+            try {
+                $PathMode = if ($ManualRadio.Checked) { "manual" } else { "auto" }
+                $SelectedPath = if ($PathMode -eq "manual") {
+                    Resolve-Poe2GameDirectorySelection -Mode "manual" -ManualPath $PathTextBox.Text
+                }
+                else {
+                    Resolve-Poe2GameDirectorySelection -Mode "auto" -PreferredRoot $PreferredRoot
+                }
+                $Form.Tag = [pscustomobject]@{
+                    Poe2Dir  = $SelectedPath
+                    PathMode = $PathMode
+                }
+                $Form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                $Form.Close()
+            }
+            catch {
+                [System.Windows.Forms.MessageBox]::Show(
+                    $Form,
+                    $_.Exception.Message,
+                    "游戏目录无效",
+                    [System.Windows.Forms.MessageBoxButtons]::OK,
+                    [System.Windows.Forms.MessageBoxIcon]::Warning
+                ) | Out-Null
+            }
+        })
+
+    $AutoRadio.Checked = $true
+    try {
+        $Result = $Form.ShowDialog()
+        $Selection = $Form.Tag
+    }
+    finally {
+        $Form.Dispose()
+    }
+    if ($Result -ne [System.Windows.Forms.DialogResult]::OK -or $null -eq $Selection) {
+        throw "已取消游戏目录选择。"
+    }
+    return $Selection
 }
 
 function Test-Poe2ChinaClient {

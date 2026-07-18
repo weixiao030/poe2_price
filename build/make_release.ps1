@@ -723,7 +723,7 @@ function Prepare-ReleaseSeedFiles {
     $script:IntlRestoreSeed = Resolve-FirstExistingFile -Candidates $IntlRestoreSeedCandidates -Name "国际服还原补丁.zip"
     $script:IntlBaseItemsRestoreSeedCandidates = @($script:IntlRestoreSeed) + $IntlBaseItemsRestoreSeedCandidates
 
-    Set-Content -LiteralPath (Join-Path $PatchSourceDir "请先看使用文档.txt") -Encoding UTF8 -Value "请先打开使用文档.docx。把整个物价补丁文件夹放到 POE2 游戏根目录；关闭游戏后再运行一键更新或一键还原。程序会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2。"
+    Set-Content -LiteralPath (Join-Path $PatchSourceDir "请先看使用文档.txt") -Encoding UTF8 -Value "请先打开使用文档.docx。物价补丁文件夹可以放在任意位置；关闭游戏后运行一键更新或一键还原，并在窗口中确认自动识别的客户端，或改用手动选择。支持国服 WeGame（流放之路：降临）、国际服官方 GGPK、国际服 Steam/Epic Bundles2；发现多个客户端时必须手动选择。"
 
     foreach ($GeneratedZip in @(
         (Join-Path $PatchSourceDir "物价补丁.zip"),
