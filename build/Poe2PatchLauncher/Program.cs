@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 internal static class Program
 {
@@ -141,9 +142,62 @@ internal static class Program
             }
         }
 
-        // A release is normally placed in <game>\物价补丁, so sibling copies
-        // must share the same mutex even when their patch-folder names differ.
-        return Directory.GetParent(patchRoot)?.FullName ?? patchRoot;
+        // Prefer the traditional <game>\物价补丁 layout. If the patch folder
+        // lives elsewhere, reuse the most recently confirmed game directory.
+        // The PowerShell entrypoints acquire a second game-scoped mutex after
+        // the user confirms the directory, covering first-run/manual choices.
+        var patchParent = Directory.GetParent(patchRoot)?.FullName ?? patchRoot;
+        if (IsPoe2GameDirectory(patchParent))
+        {
+            return patchParent;
+        }
+
+        return TryReadSavedGameDirectory() ?? patchParent;
+    }
+
+    private static string? TryReadSavedGameDirectory()
+    {
+        try
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (string.IsNullOrWhiteSpace(localAppData))
+            {
+                return null;
+            }
+
+            var settingsPath = Path.Combine(localAppData, "Poe2PricePatch", "settings.json");
+            if (!File.Exists(settingsPath))
+            {
+                return null;
+            }
+
+            using var settings = JsonDocument.Parse(File.ReadAllText(settingsPath));
+            if (!settings.RootElement.TryGetProperty("game_directory", out var gameDirectoryElement) ||
+                gameDirectoryElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var gameDirectory = gameDirectoryElement.GetString();
+            if (string.IsNullOrWhiteSpace(gameDirectory))
+            {
+                return null;
+            }
+
+            var resolved = Path.TrimEndingDirectorySeparator(Path.GetFullPath(gameDirectory));
+            return IsPoe2GameDirectory(resolved) ? resolved : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsPoe2GameDirectory(string path)
+    {
+        return Directory.Exists(path) &&
+            (File.Exists(Path.Combine(path, "Content.ggpk")) ||
+             File.Exists(Path.Combine(path, "Bundles2", "_.index.bin")));
     }
 
     private static bool TryTakeInstanceMutex(Mutex instanceMutex)
