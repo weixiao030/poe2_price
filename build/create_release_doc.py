@@ -8,7 +8,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.4.9.6"
+PATCH_VERSION = "v0.4.9.7"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -100,12 +100,18 @@ def copy_template_doc() -> bool:
         ),
     }
     matched: set[str] = set()
+    title_key = "POE2 三服合一物价补丁使用文档"
     for paragraph in doc.paragraphs:
         original = paragraph.text.strip()
-        replacement = replacements.get(original)
+        if original == title_key or original.startswith(f"{title_key} v"):
+            replacement = f"{title_key} {PATCH_VERSION}"
+            matched.add(title_key)
+        else:
+            replacement = replacements.get(original)
         if replacement is None:
             continue
-        matched.add(original)
+        if original != title_key and not original.startswith(f"{title_key} v"):
+            matched.add(original)
         if paragraph.runs:
             paragraph.runs[0].text = replacement
             for run in paragraph.runs[1:]:
