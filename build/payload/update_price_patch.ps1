@@ -25,7 +25,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.4.9.5"
+$script:PatchVersion = "v0.4.9.6"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 
 if ([string]::IsNullOrWhiteSpace($Poe2Dir)) {

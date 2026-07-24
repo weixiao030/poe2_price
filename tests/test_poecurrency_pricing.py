@@ -64,6 +64,48 @@ class PoecurrencyPricingTests(unittest.TestCase):
             )
         }
 
+    def test_international_matching_keeps_all_same_name_metadata_aliases(self):
+        pairs = [
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Currency/PinnacleKey",
+                "Faded Crisis Fragment",
+                "褪色危機碎片",
+            ),
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Quest/PinnacleKeyQuest",
+                "Faded Crisis Fragment",
+                "褪色危機碎片",
+            ),
+        ]
+        prices = {
+            "faded": self.price_patch.PriceObservation(
+                api_id="faded",
+                en_name="Faded Crisis Fragment",
+                category="currency",
+                price_exalted=Decimal("100"),
+                value_traded=Decimal("1"),
+                source_pair="test/scout",
+                display_price="1.00D",
+            )
+        }
+
+        rows, missing = self.price_patch.match_prices_to_base_items(
+            prices,
+            pairs,
+            client=object(),
+            use_poe2db=False,
+            max_workers=1,
+        )
+
+        self.assertEqual(missing, [])
+        self.assertEqual(
+            {row["metadata_path"] for row in rows},
+            {
+                "Metadata/Items/Currency/PinnacleKey",
+                "Metadata/Items/Quest/PinnacleKeyQuest",
+            },
+        )
+
     def test_http_attempt_has_hard_deadline_without_spawning_retry_workers(self):
         client = self.price_patch.RetryingRequests(
             max_retries=20,

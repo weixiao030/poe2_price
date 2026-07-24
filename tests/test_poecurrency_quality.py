@@ -242,6 +242,82 @@ class PoecurrencyQualityTests(unittest.TestCase):
         self.assertEqual(quality["localized_name_matches"], 1)
         self.assertEqual(quality["english_alias_matches"], 1)
 
+    def test_cn_matching_keeps_all_same_name_metadata_aliases(self):
+        pairs = [
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Currency/RitualPinnacleKey",
+                "Head of the King",
+                "國王首級",
+            ),
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Quest/RitualPinnacleKeyQuest",
+                "Head of the King",
+                "國王首級",
+            ),
+        ]
+        prices = {
+            "king": self.price_patch.PriceObservation(
+                api_id="king",
+                en_name="國王首級",
+                category="cn:test",
+                price_exalted=Decimal("100"),
+                value_traded=Decimal("1"),
+                source_pair="test/localized",
+                display_price="1.00D",
+            )
+        }
+
+        rows, missing = self.price_patch.match_cn_prices_to_base_items(
+            prices,
+            pairs,
+        )
+
+        self.assertEqual(missing, [])
+        self.assertEqual(
+            {row["metadata_path"] for row in rows},
+            {
+                "Metadata/Items/Currency/RitualPinnacleKey",
+                "Metadata/Items/Quest/RitualPinnacleKeyQuest",
+            },
+        )
+
+    def test_cn_matching_uses_english_alias_to_resolve_translation_collision(self):
+        pairs = [
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Gems/SkillGemDespair",
+                "Despair",
+                "絕望",
+            ),
+            self.price_patch.BaseItemPair(
+                "Metadata/Items/Gem/SupportGemDesperation",
+                "Desperation",
+                "絕望",
+            ),
+        ]
+        prices = {
+            "desperation": self.price_patch.PriceObservation(
+                api_id="desperation",
+                en_name="絕望",
+                english_name="Desperation",
+                category="cn:test",
+                price_exalted=Decimal("100"),
+                value_traded=Decimal("1"),
+                source_pair="test/localized",
+                display_price="1.00D",
+            )
+        }
+
+        rows, missing = self.price_patch.match_cn_prices_to_base_items(
+            prices,
+            pairs,
+        )
+
+        self.assertEqual(missing, [])
+        self.assertEqual(
+            [row["metadata_path"] for row in rows],
+            ["Metadata/Items/Gem/SupportGemDesperation"],
+        )
+
     def test_empty_category_is_reported_separately(self):
         prices, quality = self.price_patch.collect_poecurrency_observations_with_quality(
             [

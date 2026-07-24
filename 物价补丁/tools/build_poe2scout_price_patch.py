@@ -2789,9 +2789,21 @@ def match_prices_to_base_items(
     use_poe2db: bool,
     max_workers: int,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    by_en = {pair.en_name: pair for pair in base_pairs}
-    by_en_norm = {normalize_name(pair.en_name): pair for pair in base_pairs}
-    by_tc = {pair.tc_name: pair for pair in base_pairs}
+    # Several game metadata rows intentionally share one visible item name
+    # (for example currency and quest aliases for pinnacle fragments). Keep
+    # every alias so a price is not tied to whichever row happened to be last
+    # in BaseItemTypes.
+    by_en: dict[str, list[BaseItemPair]] = {}
+    by_en_norm: dict[str, list[BaseItemPair]] = {}
+    by_tc: dict[str, list[BaseItemPair]] = {}
+    for pair in base_pairs:
+        if pair.en_name:
+            by_en.setdefault(pair.en_name, []).append(pair)
+            normalized_en = normalize_name(pair.en_name)
+            if normalized_en:
+                by_en_norm.setdefault(normalized_en, []).append(pair)
+        if pair.tc_name:
+            by_tc.setdefault(pair.tc_name, []).append(pair)
 
     matched: list[dict[str, str]] = []
     missing: list[dict[str, str]] = []
@@ -2802,21 +2814,22 @@ def match_prices_to_base_items(
             continue
         if obs.price_exalted < Decimal("1") or not obs.display_price:
             continue
-        pair = by_en.get(obs.en_name) or by_en_norm.get(normalize_name(obs.en_name))
+        pairs = by_en.get(obs.en_name) or by_en_norm.get(normalize_name(obs.en_name), [])
         price = obs.display_price
-        if pair and price:
-            matched.append(
-                {
-                    "metadata_path": pair.metadata_path,
-                    "name": pair.tc_name,
-                    "price": price,
-                    "new_name": "",
-                    "en_name": obs.en_name,
-                    "api_id": obs.api_id,
-                    "price_exalted": str(obs.price_exalted),
-                    "source_pair": obs.source_pair,
-                }
-            )
+        if pairs and price:
+            for pair in pairs:
+                matched.append(
+                    {
+                        "metadata_path": pair.metadata_path,
+                        "name": pair.tc_name,
+                        "price": price,
+                        "new_name": "",
+                        "en_name": obs.en_name,
+                        "api_id": obs.api_id,
+                        "price_exalted": str(obs.price_exalted),
+                        "source_pair": obs.source_pair,
+                    }
+                )
         elif use_poe2db and price:
             pending_poe2db.append(obs)
         else:
@@ -2841,20 +2854,21 @@ def match_prices_to_base_items(
                     tc_name = future.result()
                 except Exception:
                     tc_name = None
-                pair = by_tc.get(tc_name or "")
-                if pair and price:
-                    matched.append(
-                        {
-                            "metadata_path": pair.metadata_path,
-                            "name": pair.tc_name,
-                            "price": price,
-                            "new_name": "",
-                            "en_name": obs.en_name,
-                            "api_id": obs.api_id,
-                            "price_exalted": str(obs.price_exalted),
-                            "source_pair": f"{obs.source_pair}; poe2db={tc_name}",
-                        }
-                    )
+                pairs = by_tc.get(tc_name or "", [])
+                if pairs and price:
+                    for pair in pairs:
+                        matched.append(
+                            {
+                                "metadata_path": pair.metadata_path,
+                                "name": pair.tc_name,
+                                "price": price,
+                                "new_name": "",
+                                "en_name": obs.en_name,
+                                "api_id": obs.api_id,
+                                "price_exalted": str(obs.price_exalted),
+                                "source_pair": f"{obs.source_pair}; poe2db={tc_name}",
+                            }
+                        )
                 else:
                     missing.append(
                         {
@@ -2879,44 +2893,79 @@ def match_cn_prices_to_base_items(
     base_pairs: list[BaseItemPair],
     quality: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
-    by_tc: dict[str, BaseItemPair] = {}
-    by_en: dict[str, BaseItemPair] = {}
+    by_tc: dict[str, list[BaseItemPair]] = {}
+    by_en: dict[str, list[BaseItemPair]] = {}
+
+    def add_aliases(
+        index: dict[str, list[BaseItemPair]],
+        names: set[str],
+        pair: BaseItemPair,
+    ) -> None:
+        for name in names:
+            normalized = normalize_market_name(name)
+            if normalized:
+                index.setdefault(normalized, []).append(pair)
+
     for pair in base_pairs:
-        for name in {pair.tc_name, strip_existing_price(pair.tc_name)}:
-            normalized = normalize_market_name(name)
-            if normalized and normalized not in by_tc:
-                by_tc[normalized] = pair
-        for name in {pair.en_name, strip_existing_price(pair.en_name)}:
-            normalized = normalize_market_name(name)
-            if normalized and normalized not in by_en:
-                by_en[normalized] = pair
+        add_aliases(by_tc, {pair.tc_name, strip_existing_price(pair.tc_name)}, pair)
+        add_aliases(by_en, {pair.en_name, strip_existing_price(pair.en_name)}, pair)
+
+    def select_localized_aliases(
+        candidates: list[BaseItemPair], english_name: str
+    ) -> list[BaseItemPair]:
+        if len(candidates) <= 1:
+            return candidates
+        normalized_english = normalize_market_name(english_name)
+        if normalized_english:
+            english_matches = [
+                pair
+                for pair in candidates
+                if normalize_market_name(pair.en_name) == normalized_english
+            ]
+            if english_matches:
+                return english_matches
+
+        candidate_english_names = {
+            normalize_market_name(pair.en_name)
+            for pair in candidates
+            if pair.en_name
+        }
+        if len(candidate_english_names) > 1:
+            # A localized translation collision is not enough evidence to
+            # apply one market price to unrelated English items.
+            return candidates[:1]
+        return candidates
 
     matched: list[tuple[dict[str, str], str]] = []
     missing: list[dict[str, str]] = []
     for obs in prices.values():
         if obs.price_exalted < Decimal("1") or not obs.display_price:
             continue
-        pair = by_tc.get(normalize_market_name(obs.en_name))
+        pairs = select_localized_aliases(
+            by_tc.get(normalize_market_name(obs.en_name), []),
+            obs.english_name,
+        )
         match_method = "localized_name"
-        if pair is None and obs.english_name:
-            pair = by_en.get(normalize_market_name(obs.english_name))
+        if not pairs and obs.english_name:
+            pairs = by_en.get(normalize_market_name(obs.english_name), [])
             match_method = "english_alias"
-        if pair:
-            matched.append(
-                (
-                    {
-                        "metadata_path": pair.metadata_path,
-                        "name": pair.tc_name,
-                        "price": obs.display_price,
-                        "new_name": "",
-                        "en_name": obs.english_name or obs.en_name,
-                        "api_id": obs.api_id,
-                        "price_exalted": str(obs.price_exalted),
-                        "source_pair": obs.source_pair,
-                    },
-                    match_method,
+        if pairs:
+            for pair in pairs:
+                matched.append(
+                    (
+                        {
+                            "metadata_path": pair.metadata_path,
+                            "name": pair.tc_name,
+                            "price": obs.display_price,
+                            "new_name": "",
+                            "en_name": obs.english_name or obs.en_name,
+                            "api_id": obs.api_id,
+                            "price_exalted": str(obs.price_exalted),
+                            "source_pair": obs.source_pair,
+                        },
+                        match_method,
+                    )
                 )
-            )
         else:
             missing.append(
                 {
