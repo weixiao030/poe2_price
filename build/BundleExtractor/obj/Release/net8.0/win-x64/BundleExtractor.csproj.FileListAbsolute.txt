@@ -396,3 +396,5 @@ D:\备份合集6\电脑文件备份\自己写的软件合集\poe2物价补丁\po
 D:\备份合集6\电脑文件备份\自己写的软件合集\poe2物价补丁\poe2_price\build\BundleExtractor\obj\Release\net8.0\win-x64\refint\BundleExtractor.dll
 D:\备份合集6\电脑文件备份\自己写的软件合集\poe2物价补丁\poe2_price\build\BundleExtractor\obj\Release\net8.0\win-x64\BundleExtractor.genruntimeconfig.cache
 D:\备份合集6\电脑文件备份\自己写的软件合集\poe2物价补丁\poe2_price\build\BundleExtractor\obj\Release\net8.0\win-x64\ref\BundleExtractor.dll
+D:\备份合集6\电脑文件备份\自己写的软件合集\poe2物价补丁\poe2_price\build\BundleExtractor\bin\Release\net8.0\win-x64\LibBundledGGPK3.dll
+D:\备份合集6\电脑文件备份\自己写的软件合集\poe2物价补丁\poe2_price\build\BundleExtractor\bin\Release\net8.0\win-x64\LibGGPK3.dll

@@ -102,7 +102,7 @@ DEFAULT_UNIQUE_GOLD_PRICES = (
     / "data_balance_uniquegoldprices.datc64"
 )
 DEFAULT_PATCH_SCRIPT = Path(__file__).with_name("poe2_name_price_patch.py")
-PRICE_TEXT_RE = r"(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]"
+PRICE_TEXT_RE = r"(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]"
 UNIQUE_MARKUP_PRICE_RE = rf"\[[^\]\r\n|]*{PRICE_TEXT_RE}[^\]\r\n|]*\|[^\]\r\n]+\]"
 UNIQUE_PRICE_LABEL_MODES = ("markup", "overlay", "newline", "off")
 DISPLAY_NAME_FIELD_INDEX = 8
@@ -223,7 +223,7 @@ def detect_base_item_layout(data: bytes) -> DatLayout:
         raise ValueError("cannot detect BaseItemTypes row layout")
 
     row_size = row_bytes // row_count
-    if row_size <= DISPLAY_NAME_FIELD_INDEX * 4 or row_size % 4 != 0:
+    if row_size <= DISPLAY_NAME_FIELD_INDEX * 4:
         raise ValueError(f"unexpected BaseItemTypes row size: {row_size}")
 
     return DatLayout(row_count=row_count, row_size=row_size, string_base=string_base)

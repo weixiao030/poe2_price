@@ -673,8 +673,14 @@ function Build-Payload {
 
     foreach ($FileName in @(
         "poe2_patch_common.ps1",
+        "poe_patch_profiles.ps1",
+        "price_patch_gui.ps1",
         "update_price_patch.ps1",
         "restore_price_patch.ps1",
+        "poe1_patch_common.ps1",
+        "update_poe1_price_patch.ps1",
+        "restore_poe1_price_patch.ps1",
+        "build_poe1_price_patch.py",
         "poe2_name_price_patch.py",
         "poe2_island_rumour_patch.py",
         "build_poe2scout_price_patch.py"
@@ -723,7 +729,7 @@ function Prepare-ReleaseSeedFiles {
     $script:IntlRestoreSeed = Resolve-FirstExistingFile -Candidates $IntlRestoreSeedCandidates -Name "国际服还原补丁.zip"
     $script:IntlBaseItemsRestoreSeedCandidates = @($script:IntlRestoreSeed) + $IntlBaseItemsRestoreSeedCandidates
 
-    Set-Content -LiteralPath (Join-Path $PatchSourceDir "请先看使用文档.txt") -Encoding UTF8 -Value "请先打开使用文档.docx。物价补丁文件夹可以放在任意位置；关闭游戏后运行一键更新或一键还原，并在窗口中确认自动识别的客户端，或改用手动选择。支持国服 WeGame（流放之路：降临）、国际服官方 GGPK、国际服 Steam/Epic Bundles2；发现多个客户端时必须手动选择。"
+    Set-Content -LiteralPath (Join-Path $PatchSourceDir "请先看使用文档.txt") -Encoding UTF8 -Value "请先打开使用文档.docx。物价补丁文件夹可以放在任意位置；关闭游戏后运行物价补丁.exe，在统一窗口确认 POE1 / POE2、客户端路径和服区，点击底部开始/更新物价补丁或还原物价补丁。支持 POE1 / POE2、国服 WeGame（流放之路：降临）、国际服官方 GGPK、国际服 Steam/Epic Bundles2；发现多个客户端时必须手动选择。"
 
     foreach ($GeneratedZip in @(
         (Join-Path $PatchSourceDir "物价补丁.zip"),
@@ -765,10 +771,15 @@ function Publish-Launcher {
 
     $LauncherExe = Join-Path $PublishDir "Poe2PatchLauncher.exe"
     Assert-File -Path $LauncherExe -Name "published launcher"
-    # Keep the executables committed under the source distribution in sync with
-    # the encrypted payload and file-version metadata produced by this build.
-    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $PatchSourceDir "一键更新物价补丁.exe") -Force
-    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $PatchSourceDir "一键还原物价补丁.exe") -Force
+    # Keep one unified executable in the source distribution. The operation,
+    # game version and client are selected inside the GUI.
+    foreach ($LegacyName in @("一键更新物价补丁.exe", "一键还原物价补丁.exe")) {
+        $LegacyPath = Join-Path $PatchSourceDir $LegacyName
+        if (Test-Path -LiteralPath $LegacyPath -PathType Leaf) {
+            Remove-Item -LiteralPath $LegacyPath -Force
+        }
+    }
+    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $PatchSourceDir "物价补丁.exe") -Force
 }
 
 function Publish-BundleExtractor {
@@ -808,8 +819,7 @@ function Build-ReleaseFolder {
 
     $LauncherExe = Join-Path $PublishDir "Poe2PatchLauncher.exe"
     Assert-File -Path $LauncherExe -Name "published launcher"
-    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $ReleaseDir "一键更新物价补丁.exe") -Force
-    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $ReleaseDir "一键还原物价补丁.exe") -Force
+    Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $ReleaseDir "物价补丁.exe") -Force
 
     foreach ($FileName in @("使用文档.docx", "请先看使用文档.txt")) {
         $Source = Join-Path $PatchSourceDir $FileName
@@ -839,8 +849,7 @@ function Build-ReleaseFolder {
 function Test-ReleaseFolder {
     Write-Step "Verify release folder"
     $ExpectedFiles = @(
-        "一键更新物价补丁.exe",
-        "一键还原物价补丁.exe",
+        "物价补丁.exe",
         "使用文档.docx",
         "请先看使用文档.txt",
         "国服还原包.zip",

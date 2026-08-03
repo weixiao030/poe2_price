@@ -1,0 +1,576 @@
+﻿function Get-PoePatchSettingsPath {
+    param([string]$SettingsPath = "")
+
+    if (-not [string]::IsNullOrWhiteSpace($SettingsPath)) {
+        return [System.IO.Path]::GetFullPath(
+            [Environment]::ExpandEnvironmentVariables($SettingsPath.Trim().Trim('"'))
+        )
+    }
+
+    $LocalAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    if ([string]::IsNullOrWhiteSpace($LocalAppData)) {
+        return $null
+    }
+    return (Join-Path $LocalAppData "PoePricePatch\settings.json")
+}
+
+function Get-PoePatchSavedGameDirectory {
+    param(
+        [ValidateSet("poe1", "poe2")]
+        [string]$GameVersion,
+        [string]$SettingsPath = ""
+    )
+
+    try {
+        $StatePath = Get-PoePatchSettingsPath -SettingsPath $SettingsPath
+        if ([string]::IsNullOrWhiteSpace($StatePath) -or
+            -not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
+            if ($GameVersion -eq "poe2") {
+                return (Get-Poe2SavedGameDirectory)
+            }
+            return $null
+        }
+
+        $State = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $PropertyName = "${GameVersion}_game_directory"
+        $Value = [string]$State.$PropertyName
+        if ([string]::IsNullOrWhiteSpace($Value)) {
+            if ($GameVersion -eq "poe2") {
+                return (Get-Poe2SavedGameDirectory)
+            }
+            return $null
+        }
+
+        $Resolved = ConvertTo-PoeGameDirectoryPath -Path $Value
+        if ([string]::IsNullOrWhiteSpace($Resolved)) {
+            return $null
+        }
+        $DetectedVersion = Get-PoeDetectedGameVersion -GameDirectory $Resolved
+        if (-not [string]::IsNullOrWhiteSpace($DetectedVersion) -and $DetectedVersion -ne $GameVersion) {
+            return $null
+        }
+        return $Resolved
+    }
+    catch {
+        if ($GameVersion -eq "poe2") {
+            return (Get-Poe2SavedGameDirectory)
+        }
+        return $null
+    }
+}
+
+function Save-PoePatchGameDirectory {
+    param(
+        [ValidateSet("poe1", "poe2")]
+        [string]$GameVersion,
+        [Parameter(Mandatory = $true)][string]$GameDirectory,
+        [string]$SettingsPath = ""
+    )
+
+    $Resolved = ConvertTo-PoeGameDirectoryPath -Path $GameDirectory
+    if ([string]::IsNullOrWhiteSpace($Resolved)) {
+        throw "无法保存无效的游戏目录：$GameDirectory"
+    }
+
+    $DetectedVersion = Get-PoeDetectedGameVersion -GameDirectory $Resolved
+    if (-not [string]::IsNullOrWhiteSpace($DetectedVersion) -and $DetectedVersion -ne $GameVersion) {
+        throw "所选目录属于 $($DetectedVersion.ToUpperInvariant())，不能保存为 $($GameVersion.ToUpperInvariant())。"
+    }
+
+    $StatePath = Get-PoePatchSettingsPath -SettingsPath $SettingsPath
+    if ([string]::IsNullOrWhiteSpace($StatePath)) {
+        return $Resolved
+    }
+
+    $State = [ordered]@{
+        version = 1
+        poe1_game_directory = ""
+        poe2_game_directory = ""
+        last_game_version = $GameVersion
+        saved_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+    }
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+        try {
+            $Previous = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($Name in @("poe1_game_directory", "poe2_game_directory")) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$Previous.$Name)) {
+                    $State[$Name] = [string]$Previous.$Name
+                }
+            }
+        }
+        catch {
+            # A corrupt optional preference file must not block an update.
+        }
+    }
+    $State["${GameVersion}_game_directory"] = $Resolved
+
+    $StateDir = Split-Path -Parent $StatePath
+    New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+    $TempPath = Join-Path $StateDir ([string]::Concat("settings-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+    try {
+        $Json = $State | ConvertTo-Json
+        [System.IO.File]::WriteAllText($TempPath, $Json, (New-Object System.Text.UTF8Encoding($false)))
+        if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+            try {
+                [System.IO.File]::Replace($TempPath, $StatePath, $null)
+            }
+            catch {
+                Move-Item -LiteralPath $TempPath -Destination $StatePath -Force
+            }
+        }
+        else {
+            [System.IO.File]::Move($TempPath, $StatePath)
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempPath -PathType Leaf) {
+            Remove-Item -LiteralPath $TempPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $Resolved
+}
+
+function Test-PoeGameDirectory {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $false
+    }
+    try {
+        $Resolved = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+        return (
+            (Test-Path -LiteralPath (Join-Path $Resolved "Content.ggpk") -PathType Leaf) -or
+            (Test-Path -LiteralPath (Join-Path $Resolved "Bundles2\_.index.bin") -PathType Leaf)
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function ConvertTo-PoeGameDirectoryPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $null
+    }
+    try {
+        $Candidate = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
+        if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
+            $Candidate = Split-Path -Parent (Resolve-Path -LiteralPath $Candidate).Path
+        }
+        if ((Split-Path -Leaf $Candidate) -ieq "Bundles2") {
+            $Candidate = Split-Path -Parent $Candidate
+        }
+        for ($Depth = 0; $Depth -lt 3 -and -not [string]::IsNullOrWhiteSpace($Candidate); $Depth += 1) {
+            if (Test-PoeGameDirectory -Path $Candidate) {
+                return (Resolve-Path -LiteralPath $Candidate).Path
+            }
+            $Parent = Split-Path -Parent $Candidate
+            if ([string]::IsNullOrWhiteSpace($Parent) -or $Parent -eq $Candidate) {
+                break
+            }
+            $Candidate = $Parent
+        }
+    }
+    catch {
+        return $null
+    }
+    return $null
+}
+
+function Get-PoeExecutableMajorVersion {
+    param([Parameter(Mandatory = $true)][string]$GameDirectory)
+
+    foreach ($Name in @(
+            "PathOfExile_x64Steam.exe",
+            "PathOfExileSteam.exe",
+            "PathOfExile_x64.exe",
+            "PathOfExile.exe",
+            "Client.exe"
+        )) {
+        $Path = Join-Path $GameDirectory $Name
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            continue
+        }
+        try {
+            $Version = (Get-Item -LiteralPath $Path).VersionInfo.FileVersion
+            if (-not [string]::IsNullOrWhiteSpace($Version) -and $Version -match '^(\d+)\.') {
+                return [int]$Matches[1]
+            }
+        }
+        catch {
+            continue
+        }
+    }
+    return 0
+}
+
+function Get-PoeDetectedGameVersion {
+    param([Parameter(Mandatory = $true)][string]$GameDirectory)
+
+    $Resolved = ConvertTo-PoeGameDirectoryPath -Path $GameDirectory
+    if ([string]::IsNullOrWhiteSpace($Resolved)) {
+        return $null
+    }
+
+    $Leaf = Split-Path -Leaf $Resolved
+    if ($Leaf -match '(?i)(?:Path\s+of\s+Exile\s*(?:2|II)|流放之路\s*(?:2|[:：]?\s*降临)|(?:^|[^A-Z0-9])POE\s*2(?:[^A-Z0-9]|$))') {
+        return "poe2"
+    }
+    if ($Leaf -match '(?i)(?:^Path\s+of\s+Exile(?:\s*\(\d+\))?$|^流放之路(?:\(\d+\))?$|^POE\s*1$)') {
+        return "poe1"
+    }
+    if (Test-Path -LiteralPath (Join-Path $Resolved "poe2_helper_sdk.dll") -PathType Leaf) {
+        return "poe2"
+    }
+
+    $MajorVersion = Get-PoeExecutableMajorVersion -GameDirectory $Resolved
+    if ($MajorVersion -eq 3) {
+        return "poe1"
+    }
+    if ($MajorVersion -ge 4) {
+        return "poe2"
+    }
+
+    $IndexPath = Join-Path $Resolved "Bundles2\_.index.bin"
+    $Detector = Join-Path $PSScriptRoot "BundleExtractor\BundleExtractor.exe"
+    if ((Test-Path -LiteralPath $IndexPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $Detector -PathType Leaf)) {
+        try {
+            $Output = @(& $Detector --detect-game $IndexPath 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+                $Detected = [string]($Output | Select-Object -Last 1)
+                $Detected = $Detected.Trim().ToLowerInvariant()
+                if ($Detected -in @("poe1", "poe2")) {
+                    return $Detected
+                }
+            }
+        }
+        catch {
+            # Older extractors do not expose --detect-game; name/version checks remain valid.
+        }
+    }
+    return $null
+}
+
+function Get-Poe1LanguageInfoFromCode {
+    param(
+        [string]$LanguageCode,
+        [string]$DefaultLanguageCode = "zh-TW"
+    )
+
+    $CodeText = if ([string]::IsNullOrWhiteSpace($LanguageCode)) { $DefaultLanguageCode } else { $LanguageCode.Trim() }
+    $Code = $CodeText.ToLowerInvariant().Replace("_", "-")
+    $Info = $null
+    if ($Code -in @("en", "en-us", "en-gb", "english")) {
+        $Info = @("English", "data/baseitemtypes.datc64", "en")
+    }
+    elseif ($Code -in @("zh-tw", "zh-hant", "traditional chinese", "traditional-chinese", "tc")) {
+        $Info = @("Traditional Chinese", "data/traditional chinese/baseitemtypes.datc64", "zh-TW")
+    }
+    elseif ($Code -in @("zh-cn", "zh-hans", "simplified chinese", "simplified-chinese", "sc")) {
+        $Info = @("Simplified Chinese", "data/simplified chinese/baseitemtypes.datc64", "zh-CN")
+    }
+    elseif ($Code -like "ja*") { $Info = @("Japanese", "data/japanese/baseitemtypes.datc64", $CodeText) }
+    elseif ($Code -like "ko*") { $Info = @("Korean", "data/korean/baseitemtypes.datc64", $CodeText) }
+    elseif ($Code -like "ru*") { $Info = @("Russian", "data/russian/baseitemtypes.datc64", $CodeText) }
+    elseif ($Code -like "fr*") { $Info = @("French", "data/french/baseitemtypes.datc64", $CodeText) }
+    elseif ($Code -like "de*") { $Info = @("German", "data/german/baseitemtypes.datc64", $CodeText) }
+    elseif ($Code -like "es*") { $Info = @("Spanish", "data/spanish/baseitemtypes.datc64", $CodeText) }
+    elseif ($Code -like "pt*") { $Info = @("Portuguese", "data/portuguese/baseitemtypes.datc64", $CodeText) }
+    elseif ($Code -like "th*") { $Info = @("Thai", "data/thai/baseitemtypes.datc64", $CodeText) }
+
+    if ($null -eq $Info) {
+        $Fallback = Get-Poe1LanguageInfoFromCode -LanguageCode $DefaultLanguageCode -DefaultLanguageCode "en"
+        $Fallback.Defaulted = $true
+        $Fallback.DefaultReason = "无法识别 POE1 语言代码 '$CodeText'，已回退到 $($Fallback.Name)。可通过 POE1_PATCH_LANGUAGE 手动指定语言。"
+        return $Fallback
+    }
+    return [pscustomobject]@{
+        Name = $Info[0]
+        Path = $Info[1]
+        Code = $Info[2]
+        Defaulted = [string]::IsNullOrWhiteSpace($LanguageCode)
+        DefaultReason = $(if ([string]::IsNullOrWhiteSpace($LanguageCode)) { "未读取到 POE1 语言配置，已回退到 $($Info[0])。可通过 POE1_PATCH_LANGUAGE 手动指定语言。" } else { "" })
+    }
+}
+
+function Get-Poe1ConfigLanguage {
+    param([string]$GameDirectory = "")
+
+    if (-not [string]::IsNullOrWhiteSpace($env:POE1_PATCH_LANGUAGE)) {
+        return $env:POE1_PATCH_LANGUAGE
+    }
+    if (-not [string]::IsNullOrWhiteSpace($GameDirectory) -and
+        (Test-Poe2ChinaClient -Poe2Dir $GameDirectory)) {
+        return "zh-CN"
+    }
+
+    $MyGames = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "My Games\Path of Exile"
+    if (-not (Test-Path -LiteralPath $MyGames -PathType Container)) {
+        return $null
+    }
+    $ConfigFiles = @(Get-ChildItem -LiteralPath $MyGames -File -Filter "production*_Config.ini" -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc -Descending)
+    foreach ($Config in $ConfigFiles) {
+        $InLanguageSection = $false
+        foreach ($Line in (Get-Content -LiteralPath $Config.FullName -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+            $Trimmed = $Line.Trim()
+            if ($Trimmed -match '^\[(.+)\]$') {
+                $InLanguageSection = ($Matches[1] -ieq "LANGUAGE")
+                continue
+            }
+            if ($InLanguageSection -and $Trimmed -match '^language\s*=\s*(.+)$') {
+                return $Matches[1].Trim()
+            }
+        }
+    }
+    return $null
+}
+
+function Get-Poe1InstallInfo {
+    param([Parameter(Mandatory = $true)][string]$GameDirectory)
+
+    $Resolved = ConvertTo-PoeGameDirectoryPath -Path $GameDirectory
+    if ([string]::IsNullOrWhiteSpace($Resolved)) {
+        throw "无法检测 POE1 游戏目录：请选择直接包含 Content.ggpk 或 Bundles2\_.index.bin 的游戏根目录。"
+    }
+    $DetectedVersion = Get-PoeDetectedGameVersion -GameDirectory $Resolved
+    if (-not [string]::IsNullOrWhiteSpace($DetectedVersion) -and $DetectedVersion -ne "poe1") {
+        throw "所选目录是 POE2 客户端，不是 POE1：$Resolved"
+    }
+
+    $Mode = Get-Poe2GameMode -Poe2Dir $Resolved
+    $IsChina = Test-Poe2ChinaClient -Poe2Dir $Resolved
+    $ConfigLanguage = Get-Poe1ConfigLanguage -GameDirectory $Resolved
+    $DefaultLanguageCode = if ($IsChina) { "zh-CN" } else { "zh-TW" }
+    $LanguageInfo = Get-Poe1LanguageInfoFromCode -LanguageCode $ConfigLanguage -DefaultLanguageCode $DefaultLanguageCode
+    if ($IsChina) {
+        $LanguageInfo = Get-Poe1LanguageInfoFromCode -LanguageCode "zh-CN"
+        $ConfigLanguage = "zh-CN"
+    }
+
+    $InstallKind = "POE1-Intl-Bundles2"
+    $DisplayName = "POE1 国际服 Steam Bundles2"
+    if ($Mode -eq "GGPK") {
+        $InstallKind = "POE1-Intl-Standalone-GGPK"
+        $DisplayName = "POE1 国际服官方 GGPK"
+    }
+    elseif ($IsChina) {
+        $InstallKind = "POE1-CN-WeGame-Bundles2"
+        $DisplayName = "POE1 国服 WeGame Bundles2"
+    }
+
+    $WordsPath = $LanguageInfo.Path -replace 'baseitemtypes\.datc64$', 'words.datc64'
+    return [pscustomobject]@{
+        GameVersion = "poe1"
+        GameName = "Path of Exile 1"
+        Mode = $Mode
+        InstallKind = $InstallKind
+        DisplayName = $DisplayName
+        IsChina = $IsChina
+        ConfigLanguage = $(if ([string]::IsNullOrWhiteSpace($ConfigLanguage)) { $LanguageInfo.Code } else { $ConfigLanguage })
+        EnBaseItemsPath = "data/baseitemtypes.datc64"
+        TcBaseItemsPath = $LanguageInfo.Path
+        EnWordsPath = "data/words.datc64"
+        TcWordsPath = $WordsPath
+        TcEndgameMapsPath = ""
+        UniqueNameIndexPath = ""
+        LanguageName = $LanguageInfo.Name
+        LanguageFileSlug = ($LanguageInfo.Path -replace '/', '_')
+        WordsFileSlug = ($WordsPath -replace '/', '_')
+        EndgameMapsFileSlug = ""
+        LanguageDefaulted = [bool]$LanguageInfo.Defaulted
+        LanguageDefaultReason = [string]$LanguageInfo.DefaultReason
+        SupportsEndgameMaps = $false
+        PersistentStateDirectoryName = ".poe1-price-patch"
+        OutputDirectoryName = "poe1_price_patch_latest"
+    }
+}
+
+function Get-PoePatchInstallInfo {
+    param(
+        [ValidateSet("poe1", "poe2")]
+        [string]$GameVersion,
+        [Parameter(Mandatory = $true)][string]$GameDirectory
+    )
+
+    if ($GameVersion -eq "poe1") {
+        return (Get-Poe1InstallInfo -GameDirectory $GameDirectory)
+    }
+    $Info = Get-Poe2InstallInfo -Poe2Dir $GameDirectory
+    Add-Member -InputObject $Info -NotePropertyName GameVersion -NotePropertyValue "poe2" -Force
+    Add-Member -InputObject $Info -NotePropertyName GameName -NotePropertyValue "Path of Exile 2" -Force
+    Add-Member -InputObject $Info -NotePropertyName EnWordsPath -NotePropertyValue "data/balance/words.datc64" -Force
+    Add-Member -InputObject $Info -NotePropertyName UniqueNameIndexPath -NotePropertyValue "data/balance/uniquegoldprices.datc64" -Force
+    Add-Member -InputObject $Info -NotePropertyName SupportsEndgameMaps -NotePropertyValue $true -Force
+    Add-Member -InputObject $Info -NotePropertyName PersistentStateDirectoryName -NotePropertyValue ".poe2-price-patch" -Force
+    Add-Member -InputObject $Info -NotePropertyName OutputDirectoryName -NotePropertyValue "poe2_price_patch_latest" -Force
+    return $Info
+}
+
+function Get-Poe1GameDirectoryCandidates {
+    param(
+        [string]$PreferredRoot = "",
+        [string[]]$AdditionalPaths = @(),
+        [string]$SettingsPath = "",
+        [switch]$IgnoreSavedDirectory,
+        [switch]$SkipSystemGameDiscovery
+    )
+
+    $Results = New-Object System.Collections.ArrayList
+    $Seen = @{}
+    function Add-Poe1Candidate {
+        param([string]$Path, [string]$Source, [int]$Priority)
+
+        $Resolved = ConvertTo-PoeGameDirectoryPath -Path $Path
+        if ([string]::IsNullOrWhiteSpace($Resolved)) { return }
+        $Detected = Get-PoeDetectedGameVersion -GameDirectory $Resolved
+        if (-not [string]::IsNullOrWhiteSpace($Detected) -and $Detected -ne "poe1") { return }
+        $Key = $Resolved.ToUpperInvariant()
+        if ($Seen.ContainsKey($Key)) { return }
+        try { $Info = Get-Poe1InstallInfo -GameDirectory $Resolved } catch { return }
+        $Seen[$Key] = $true
+        [void]$Results.Add([pscustomobject]@{
+                GameVersion = "poe1"
+                Path = $Resolved
+                Source = $Source
+                Priority = $Priority
+                InstallInfo = $Info
+            })
+    }
+
+    Add-Poe1Candidate -Path $PreferredRoot -Source "补丁文件夹上一级" -Priority 0
+    foreach ($Path in @($AdditionalPaths)) {
+        Add-Poe1Candidate -Path $Path -Source "附加候选路径" -Priority 5
+    }
+    if (-not $IgnoreSavedDirectory) {
+        Add-Poe1Candidate -Path (Get-PoePatchSavedGameDirectory -GameVersion poe1 -SettingsPath $SettingsPath) -Source "最近使用的 POE1 目录" -Priority 8
+    }
+    foreach ($Name in @("POE1_GAME_DIR", "POE1_DIR")) {
+        Add-Poe1Candidate -Path ([Environment]::GetEnvironmentVariable($Name)) -Source "环境变量 $Name" -Priority 6
+    }
+    if ($SkipSystemGameDiscovery) {
+        return @($Results | Sort-Object Priority, Path)
+    }
+
+    $UninstallRoots = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    foreach ($Root in $UninstallRoots) {
+        foreach ($Entry in @(Get-ItemProperty -Path $Root -ErrorAction SilentlyContinue)) {
+            $Name = [string]$Entry.DisplayName
+            if ($Name -notmatch '(?i)(?:^Path\s+of\s+Exile(?:\s+Steam)?$|^流放之路(?:\s*\(\d+\))?$)') { continue }
+            foreach ($Property in @("InstallLocation", "DisplayIcon", "InstallSource")) {
+                Add-Poe1Candidate -Path ([string]$Entry.$Property) -Source "已安装程序：$Name" -Priority 20
+            }
+        }
+    }
+
+    foreach ($Drive in @([System.IO.DriveInfo]::GetDrives())) {
+        try {
+            if (-not $Drive.IsReady -or $Drive.DriveType -notin @([System.IO.DriveType]::Fixed, [System.IO.DriveType]::Removable)) { continue }
+            foreach ($Relative in @(
+                    "SteamLibrary\steamapps\common\Path of Exile",
+                    "Program Files (x86)\Steam\steamapps\common\Path of Exile",
+                    "Program Files\Steam\steamapps\common\Path of Exile",
+                    "WeGameApps\rail_apps\流放之路(511)",
+                    "Grinding Gear Games\Path of Exile"
+                )) {
+                Add-Poe1Candidate -Path (Join-Path $Drive.Root $Relative) -Source "常见游戏目录" -Priority 30
+            }
+            $RailRoot = Join-Path $Drive.Root "WeGameApps\rail_apps"
+            if (Test-Path -LiteralPath $RailRoot -PathType Container) {
+                foreach ($Directory in @(Get-ChildItem -LiteralPath $RailRoot -Directory -ErrorAction SilentlyContinue)) {
+                    if ($Directory.Name -match '^流放之路(?:\(\d+\))?$') {
+                        Add-Poe1Candidate -Path $Directory.FullName -Source "WeGame 游戏库" -Priority 25
+                    }
+                }
+            }
+        }
+        catch {
+            continue
+        }
+    }
+    return @($Results | Sort-Object Priority, Path)
+}
+
+function Get-PoePatchGameDirectoryCandidates {
+    param(
+        [ValidateSet("auto", "poe1", "poe2")]
+        [string]$GameVersion = "auto",
+        [string]$PreferredRoot = "",
+        [string[]]$AdditionalPaths = @(),
+        [switch]$SkipSystemGameDiscovery
+    )
+
+    $Results = New-Object System.Collections.ArrayList
+    if ($GameVersion -in @("auto", "poe1")) {
+        foreach ($Candidate in @(Get-Poe1GameDirectoryCandidates -PreferredRoot $PreferredRoot -AdditionalPaths $AdditionalPaths -SkipSystemGameDiscovery:$SkipSystemGameDiscovery)) {
+            [void]$Results.Add($Candidate)
+        }
+    }
+    if ($GameVersion -in @("auto", "poe2")) {
+        foreach ($Candidate in @(Get-Poe2GameDirectoryCandidates -PreferredRoot $PreferredRoot -AdditionalPaths $AdditionalPaths -SkipSystemGameDiscovery:$SkipSystemGameDiscovery)) {
+            try {
+                # The generic POE2 Bundles2 scanner also sees POE1 clients.
+                # Re-check the index before merging so one physical directory
+                # cannot appear once as POE1 and again as POE2.
+                $DetectedVersion = Get-PoeDetectedGameVersion -GameDirectory $Candidate.Path
+                if ($DetectedVersion -eq "poe1") {
+                    continue
+                }
+                $Info = Get-PoePatchInstallInfo -GameVersion poe2 -GameDirectory $Candidate.Path
+                [void]$Results.Add([pscustomobject]@{
+                        GameVersion = "poe2"
+                        Path = $Candidate.Path
+                        Source = $Candidate.Source
+                        Priority = $Candidate.Priority
+                        InstallInfo = $Info
+                    })
+            }
+            catch {
+                continue
+            }
+        }
+    }
+
+    $Seen = @{}
+    return @($Results | Sort-Object Priority, GameVersion, Path | Where-Object {
+            $Key = "$($_.GameVersion)|$($_.Path.ToUpperInvariant())"
+            if ($Seen.ContainsKey($Key)) { return $false }
+            $Seen[$Key] = $true
+            return $true
+        })
+}
+
+function Resolve-PoePatchManualSelection {
+    param(
+        [ValidateSet("auto", "poe1", "poe2")]
+        [string]$RequestedGameVersion,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $Resolved = ConvertTo-PoeGameDirectoryPath -Path $Path
+    if ([string]::IsNullOrWhiteSpace($Resolved)) {
+        throw "请选择直接包含 Content.ggpk 或 Bundles2\_.index.bin 的游戏根目录。"
+    }
+    $Detected = Get-PoeDetectedGameVersion -GameDirectory $Resolved
+    $GameVersion = if ($RequestedGameVersion -eq "auto") { $Detected } else { $RequestedGameVersion }
+    if ([string]::IsNullOrWhiteSpace($GameVersion)) {
+        throw "无法自动判断这是 POE1 还是 POE2，请在顶部明确选择游戏版本。"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Detected) -and $Detected -ne $GameVersion) {
+        throw "所选目录属于 $($Detected.ToUpperInvariant())，与当前 $($GameVersion.ToUpperInvariant()) 选择不一致。"
+    }
+    $Info = Get-PoePatchInstallInfo -GameVersion $GameVersion -GameDirectory $Resolved
+    return [pscustomobject]@{
+        GameVersion = $GameVersion
+        Path = $Resolved
+        Source = "手动选择"
+        Priority = 0
+        InstallInfo = $Info
+    }
+}

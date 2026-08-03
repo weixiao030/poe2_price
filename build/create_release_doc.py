@@ -8,7 +8,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.4.9.7"
+PATCH_VERSION = "v0.5.0"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -25,10 +25,13 @@ def copy_template_doc() -> bool:
     doc = Document(TEMPLATE_DOC)
     replacements = {
         "POE2 三服合一物价补丁使用文档": (
-            f"POE2 三服合一物价补丁使用文档 {PATCH_VERSION}"
+            f"POE1 / POE2 物价补丁使用文档 {PATCH_VERSION}"
         ),
         "程序会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2。": (
-            "更新和还原都会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。"
+            "更新和还原都会自动识别 POE1 / POE2、国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。"
+        ),
+        "更新和还原都会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。": (
+            "更新和还原都会自动识别 POE1 / POE2、国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。"
         ),
         "把整个“物价补丁”文件夹放到 POE2 游戏根目录。脚本会自动识别上一级目录，不写死盘符。": (
             "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录和各平台游戏库，也可以手动浏览。"
@@ -50,11 +53,31 @@ def copy_template_doc() -> bool:
             "3. 在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；更新器还需选择补丁范围。随后程序提取英文表和当前客户端目标语言表。"
         ),
         "2. 双击“一键还原物价补丁.exe”。": (
-            "2. 双击“一键还原物价补丁.exe”，在还原窗口中确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录。"
+            "2. 双击“物价补丁.exe”，确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录；点击底部“还原物价补丁”执行还原。"
+        ),
+        "2. 双击“一键更新物价补丁.exe”。": (
+            "2. 双击“物价补丁.exe”，确认自动识别的路径和客户端类型，或手动选择要更新的游戏目录；点击底部“开始/更新物价补丁”执行更新。"
+        ),
+        "2. 双击“一键还原物价补丁.exe”，在还原窗口中确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录。": (
+            "2. 双击“物价补丁.exe”，确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录；点击底部“还原物价补丁”执行还原。"
+        ),
+        "三、一键启动/更新": "三、统一操作入口",
+        "四、一键还原": "四、还原物价补丁",
+        r"<POE2游戏根目录>\物价补丁\一键更新物价补丁.exe": (
+            r"<POE2游戏根目录>\物价补丁\物价补丁.exe"
+        ),
+        r"<POE2游戏根目录>\物价补丁\一键还原物价补丁.exe": (
+            r"<POE2游戏根目录>\物价补丁\物价补丁.exe"
+        ),
+        "一键更新物价补丁.exe：抓价、生成补丁并写入游戏包。": (
+            "物价补丁.exe：统一 GUI 入口；可选择更新或还原、POE1 或 POE2、自动识别或手动路径。"
+        ),
+        "一键还原物价补丁.exe：还原对应 BaseItemTypes。": (
+            "物价补丁.exe：统一 GUI 入口；可选择更新或还原、POE1 或 POE2、自动识别或手动路径。"
         ),
         "4. 程序会抓取 poe2scout 国际服价格，并把价格追加为“=数字D/E”。": (
-            "4. 程序会按客户端类型抓取价格：国际服优先 poe2scout，国服优先 poecurrency.top；"
-            "异常分类会自动降级，D/E 比例使用当前数据源实时值。"
+            "4. 程序会按版本和客户端类型抓取价格：POE1 国际服使用 poe.ninja，POE1 国服使用 poecurrency.top，POE2 国际服优先 poe2scout；"
+            "异常分类会自动降级，POE1 使用 C/D，POE2 使用 D/E，比例使用当前数据源实时值。"
             "同一个显示名对应多个游戏元数据路径时会为全部别名写入价格；国服翻译重名时使用 engname 英文别名消歧，避免漏价或串价。"
         ),
         "5. 程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”。": (
@@ -104,7 +127,7 @@ def copy_template_doc() -> bool:
     for paragraph in doc.paragraphs:
         original = paragraph.text.strip()
         if original == title_key or original.startswith(f"{title_key} v"):
-            replacement = f"{title_key} {PATCH_VERSION}"
+            replacement = f"POE1 / POE2 物价补丁使用文档 {PATCH_VERSION}"
             matched.add(title_key)
         else:
             replacement = replacements.get(original)
@@ -148,11 +171,11 @@ def copy_template_doc() -> bool:
         for paragraph in section.footer.paragraphs:
             if paragraph.text.strip().startswith("POE2 三服合一物价补丁"):
                 if paragraph.runs:
-                    paragraph.runs[0].text = f"POE2 三服合一物价补丁 {PATCH_VERSION}"
+                    paragraph.runs[0].text = f"POE1 / POE2 物价补丁 {PATCH_VERSION}"
                     for run in paragraph.runs[1:]:
                         run.text = ""
                 else:
-                    paragraph.add_run(f"POE2 三服合一物价补丁 {PATCH_VERSION}")
+                    paragraph.add_run(f"POE1 / POE2 物价补丁 {PATCH_VERSION}")
 
     generated = OUT_DIR / "使用文档.docx"
     doc.save(generated)
@@ -224,7 +247,7 @@ def build():
 
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r = title.add_run(f"POE2 三服合一物价补丁使用文档 {PATCH_VERSION}")
+    r = title.add_run(f"POE1 / POE2 物价补丁使用文档 {PATCH_VERSION}")
     set_font(r)
     r.font.size = Pt(20)
     r.font.bold = True
@@ -232,7 +255,7 @@ def build():
     for line in [
         "重要提示：打补丁会修改游戏文件，存在封号或校验风险。",
         "请在关闭游戏后运行，并自行确认可以接受风险。",
-        "更新和还原都会自动识别国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。",
+        "更新和还原都会自动识别 POE1 / POE2、国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。",
     ]:
         para(doc, line, 14, True, (192, 0, 0), WD_ALIGN_PARAGRAPH.CENTER, 2, 1.0)
 
@@ -243,8 +266,7 @@ def build():
         [
             r"<POE2游戏根目录>\Content.ggpk",
             r"<POE2游戏根目录>\Bundles2\_.index.bin",
-            r"<POE2游戏根目录>\物价补丁\一键更新物价补丁.exe",
-            r"<POE2游戏根目录>\物价补丁\一键还原物价补丁.exe",
+            r"<POE2游戏根目录>\物价补丁\物价补丁.exe",
         ],
     )
 
@@ -259,13 +281,14 @@ def build():
         ],
     )
 
-    para(doc, "三、一键更新", 13, True, after=4)
+    para(doc, "三、统一操作入口", 13, True, after=4)
     nums(
         doc,
         [
             "关闭游戏。",
-            "双击“一键更新物价补丁.exe”。",
-            "在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；更新器还需选择补丁范围。随后程序提取英文表和当前客户端目标语言表。",
+            "双击“物价补丁.exe”。",
+            "在统一窗口中确认 POE1 / POE2、客户端路径和客户端类型；更新时还需选择补丁范围。",
+            "点击底部“开始/更新物价补丁”执行更新，或点击“还原物价补丁”恢复原版；更新会提取英文表和当前客户端目标语言表，还原会直接使用已验证的还原包或逻辑还原基线。",
             "程序会按客户端类型抓取价格：国际服使用 poe2scout，国服优先使用 poecurrency.top；没有国服数据时使用 poe2scout 兜底，并把价格追加为“=数字D/E”。",
             "D/E 换算比例会从当前价格源实时读取，不使用固定比例。",
             "国服优先使用 latest_buy1 / latest_sell1 最新盘口价，缺失时回退到 buy_avg / sell_avg；双边价差正常时取几何均值，差距过大时取较低一侧以降低过期均价和 OCR 异常价影响。",
@@ -278,12 +301,13 @@ def build():
         ],
     )
 
-    para(doc, "四、一键还原", 13, True, after=4)
+    para(doc, "四、还原物价补丁", 13, True, after=4)
     nums(
         doc,
         [
             "关闭游戏。",
-            "双击“一键还原物价补丁.exe”，在还原窗口中确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录。",
+            "打开“物价补丁.exe”，确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录。",
+            "点击底部“还原物价补丁”执行还原；还原过程中不会抓取价格，也不会写入新的物价标记。",
             "Bundles2 模式会优先验证并使用“真实还原物价补丁.zip”恢复打补丁前的物理文件，不要求先准备 .NET。",
             "GGPK 模式会使用“还原物价补丁.zip”写回当前客户端对应的 BaseItemTypes。",
             "如果没有物理还原包，程序会验证兼容的逻辑还原包；Bundles2 的 Words 和 EndgameMaps 会以当前游戏版本为底板只清理本工具标记。没有安全兼容路径时才会拒绝还原。",
@@ -310,8 +334,7 @@ def build():
     bullets(
         doc,
         [
-            "一键更新物价补丁.exe：抓价、生成补丁并写入游戏包。",
-            "一键还原物价补丁.exe：还原对应 BaseItemTypes。",
+            "物价补丁.exe：统一 GUI 入口；可选择更新或还原、POE1 或 POE2、自动识别或手动路径。",
             "物价补丁.zip：运行时生成的当前物价补丁包。",
             "还原物价补丁.zip：运行时生成或保存的恢复包。",
             "真实还原物价补丁.zip：Bundles2 模式的恢复包；持久副本位于 <游戏根目录>\\.poe2-price-patch。",

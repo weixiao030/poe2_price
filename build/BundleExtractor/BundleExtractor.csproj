@@ -12,6 +12,14 @@
       <HintPath>..\..\物价补丁\一键安装特殊补丁工具\LibBundle3.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="LibBundledGGPK3">
+      <HintPath>..\..\物价补丁\一键安装特殊补丁工具\LibBundledGGPK3.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="LibGGPK3">
+      <HintPath>..\..\物价补丁\一键安装特殊补丁工具\LibGGPK3.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="SystemExtensions">
       <HintPath>..\..\物价补丁\一键安装特殊补丁工具\SystemExtensions.dll</HintPath>
       <Private>true</Private>

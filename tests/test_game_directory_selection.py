@@ -184,6 +184,8 @@ def test_launcher_and_scripts_use_game_scoped_concurrency_guards():
     launcher = LAUNCHER.read_text(encoding="utf-8-sig")
 
     assert '"Local\\Poe2PricePatch-Game-"' in common
+    assert "Poe2PricePatch-Launcher-Game-" in launcher
+    assert "Poe2PricePatch-Game-" not in launcher
     assert "TryReadSavedGameDirectory" in launcher
     assert '"Poe2PricePatch", "settings.json"' in launcher
     assert "IsPoe2GameDirectory(patchParent)" in launcher

@@ -12,15 +12,20 @@ PAYLOAD_ZIP = ROOT / "build" / "payload.zip"
 PAYLOAD_ENC = ROOT / "build" / "Poe2PatchLauncher" / "payload.enc"
 PACKER_PROJECT = ROOT / "build" / "PayloadPacker" / "PayloadPacker.csproj"
 PUBLISHED_LAUNCHER = ROOT / "build" / "publish-self" / "Poe2PatchLauncher.exe"
-SOURCE_UPDATE_LAUNCHER = ROOT / "物价补丁" / "一键更新物价补丁.exe"
-SOURCE_RESTORE_LAUNCHER = ROOT / "物价补丁" / "一键还原物价补丁.exe"
+SOURCE_LAUNCHER = ROOT / "物价补丁" / "物价补丁.exe"
 LAUNCHER_PROJECT = ROOT / "build" / "Poe2PatchLauncher" / "Poe2PatchLauncher.csproj"
 SOURCE_DOC = ROOT / "物价补丁" / "使用文档.docx"
 
 PAYLOAD_FILES = [
     "poe2_patch_common.ps1",
+    "poe_patch_profiles.ps1",
+    "price_patch_gui.ps1",
     "update_price_patch.ps1",
     "restore_price_patch.ps1",
+    "poe1_patch_common.ps1",
+    "update_poe1_price_patch.ps1",
+    "restore_poe1_price_patch.ps1",
+    "build_poe1_price_patch.py",
     "poe2_name_price_patch.py",
     "poe2_island_rumour_patch.py",
     "build_poe2scout_price_patch.py",
@@ -82,8 +87,9 @@ def test_encrypted_payload_matches_payload_zip():
 def test_source_launchers_match_published_launcher():
     assert PUBLISHED_LAUNCHER.exists(), "missing published launcher"
     expected = PUBLISHED_LAUNCHER.read_bytes()
-    assert SOURCE_UPDATE_LAUNCHER.read_bytes() == expected, "stale update launcher"
-    assert SOURCE_RESTORE_LAUNCHER.read_bytes() == expected, "stale restore launcher"
+    assert SOURCE_LAUNCHER.read_bytes() == expected, "stale unified launcher"
+    assert not (ROOT / "物价补丁" / "一键更新物价补丁.exe").exists()
+    assert not (ROOT / "物价补丁" / "一键还原物价补丁.exe").exists()
 
 
 def test_declared_version_is_consistent():
@@ -127,7 +133,8 @@ def test_release_document_describes_fail_safe_behavior():
         "更新和还原都会自动识别",
         "流放之路：降临",
         "如果发现多个客户端",
-        "在还原窗口中确认自动识别的路径",
+        "确认自动识别的路径和客户端类型",
+        "点击底部“还原物价补丁”执行还原",
     ):
         assert expected in text
 

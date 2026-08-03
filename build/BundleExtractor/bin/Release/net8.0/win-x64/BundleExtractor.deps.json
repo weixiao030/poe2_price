@@ -11,6 +11,8 @@
         "dependencies": {
           "Microsoft.NET.ILLink.Tasks": "8.0.27",
           "LibBundle3": "2.7.5.0",
+          "LibBundledGGPK3": "2.7.5.0",
+          "LibGGPK3": "2.7.5.0",
           "SystemExtensions": "1.8.0.0",
           "runtimepack.Microsoft.NETCore.App.Runtime.win-x64": "8.0.27"
         },
@@ -747,6 +749,22 @@
           }
         }
       },
+      "LibBundledGGPK3/2.7.5.0": {
+        "runtime": {
+          "LibBundledGGPK3.dll": {
+            "assemblyVersion": "2.7.5.0",
+            "fileVersion": "2.7.5.0"
+          }
+        }
+      },
+      "LibGGPK3/2.7.5.0": {
+        "runtime": {
+          "LibGGPK3.dll": {
+            "assemblyVersion": "2.7.5.0",
+            "fileVersion": "2.7.5.0"
+          }
+        }
+      },
       "SystemExtensions/1.8.0.0": {
         "runtime": {
           "SystemExtensions.dll": {
@@ -776,6 +794,16 @@
       "hashPath": "microsoft.net.illink.tasks.8.0.27.nupkg.sha512"
     },
     "LibBundle3/2.7.5.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "LibBundledGGPK3/2.7.5.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "LibGGPK3/2.7.5.0": {
       "type": "reference",
       "serviceable": false,
       "sha512": ""

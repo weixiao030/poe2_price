@@ -165,7 +165,7 @@ def detect_base_item_layout(data: bytes) -> DatLayout:
         raise ValueError("cannot detect fixed row size in BaseItemTypes.datc64")
 
     row_size = row_bytes // row_count
-    if row_size <= DISPLAY_NAME_FIELD_INDEX * 4 or row_size % 4 != 0:
+    if row_size <= DISPLAY_NAME_FIELD_INDEX * 4:
         raise ValueError(f"unexpected BaseItemTypes row size: {row_size}")
 
     return DatLayout(row_count=row_count, row_size=row_size, string_base=string_base)
@@ -295,7 +295,7 @@ def load_price_rows(path: Path) -> list[dict[str, str]]:
 
 
 _PRICE_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)([A-Za-z]+)\s*$")
-_PATCHED_PRICE_TEXT_RE = r"(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]"
+_PATCHED_PRICE_TEXT_RE = r"(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]"
 
 
 def unique_texts(values: list[str]) -> list[str]:
