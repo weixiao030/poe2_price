@@ -114,7 +114,7 @@ def test_declared_version_is_consistent():
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8-sig")
     changelog = (ROOT / "更新日志.md").read_text(encoding="utf-8-sig")
-    assert f"POE2 物价补丁 v{version}" in readme
+    assert f"POE1/2 物价补丁 v{version}" in readme
     assert f"（v{version}）" in changelog
 
 
