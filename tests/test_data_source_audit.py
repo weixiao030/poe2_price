@@ -177,6 +177,24 @@ class DataSourceAuditTests(unittest.TestCase):
         )
         self.assertEqual(result["categories"][-1]["available_views"], ["stash"])
 
+    def test_site_category_parser_supports_backtick_strings(self):
+        source = (
+            "const views=[{availableViews:[`exchange`,`stash`],"
+            "title:`Runegrafts`,type:`Runegraft`,url:`runegrafts`}];"
+        )
+
+        self.assertEqual(
+            self.audit.parse_poe_ninja_site_categories(source),
+            [
+                {
+                    "available_views": ["exchange", "stash"],
+                    "title": "Runegrafts",
+                    "type": "Runegraft",
+                    "url": "runegrafts",
+                }
+            ],
+        )
+
     def test_site_discovery_falls_back_to_default_page_url(self):
         requested_url = "https://poe.ninja/poe2/economy/futureleague/currency"
         default_url = self.audit.builder.DEFAULT_POE_NINJA_CURRENCY_URL

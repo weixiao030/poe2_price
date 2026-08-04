@@ -8,7 +8,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.5.0"
+PATCH_VERSION = "v0.5.2"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -37,6 +37,8 @@ def copy_template_doc() -> bool:
             "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录和各平台游戏库，也可以手动浏览。"
         ),
         "二、自动识别": "二、选择与自动识别游戏目录",
+        r"<POE2游戏根目录>\Content.ggpk": r"<POE1 或 POE2 游戏根目录>\Content.ggpk",
+        r"<POE2游戏根目录>\Bundles2\_.index.bin": r"<POE1 或 POE2 游戏根目录>\Bundles2\_.index.bin",
         "检测到 Content.ggpk：按国际服官方 GGPK 处理。": (
             "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。"
         ),
@@ -47,10 +49,16 @@ def copy_template_doc() -> bool:
             "检测到 Content.ggpk 时按国际服官方 GGPK 处理；检测到非国服特征的 Bundles2 时按国际服 Steam/Epic 处理。"
         ),
         "国际服会读取当前游戏 language 设置，自动写入对应语言的 BaseItemTypes。": (
-            "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。国际服仍会读取 language 设置。"
+            "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。POE1 还可在 GUI 选择自动识别、汉化补丁、简体中文、繁体中文或跟随游戏配置；自动模式会用最新客户端日志识别第三方汉化补丁。"
+        ),
+        "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。国际服仍会读取 language 设置。": (
+            "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。POE1 还可在 GUI 选择自动识别、汉化补丁、简体中文、繁体中文或跟随游戏配置；自动模式会用最新客户端日志识别第三方汉化补丁。"
         ),
         "3. 程序会提取英文表和当前客户端目标语言表。": (
-            "3. 在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；更新器还需选择补丁范围。随后程序提取英文表和当前客户端目标语言表。"
+            "3. 在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；POE1 还需确认显示语言，更新器还需选择补丁范围。更新与还原必须使用同一目标语言。"
+        ),
+        "3. 在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；更新器还需选择补丁范围。随后程序提取英文表和当前客户端目标语言表。": (
+            "3. 在窗口中确认自动识别的路径和客户端类型，或切换到手动选择；POE1 还需确认显示语言，更新器还需选择补丁范围。更新与还原必须使用同一目标语言。"
         ),
         "2. 双击“一键还原物价补丁.exe”。": (
             "2. 双击“物价补丁.exe”，确认自动识别的路径和客户端类型，或手动选择要还原的游戏目录；点击底部“还原物价补丁”执行还原。"
@@ -64,10 +72,10 @@ def copy_template_doc() -> bool:
         "三、一键启动/更新": "三、统一操作入口",
         "四、一键还原": "四、还原物价补丁",
         r"<POE2游戏根目录>\物价补丁\一键更新物价补丁.exe": (
-            r"<POE2游戏根目录>\物价补丁\物价补丁.exe"
+            r"<POE 游戏根目录>\物价补丁\物价补丁.exe"
         ),
         r"<POE2游戏根目录>\物价补丁\一键还原物价补丁.exe": (
-            r"<POE2游戏根目录>\物价补丁\物价补丁.exe"
+            r"<POE 游戏根目录>\物价补丁\物价补丁.exe"
         ),
         "一键更新物价补丁.exe：抓价、生成补丁并写入游戏包。": (
             "物价补丁.exe：统一 GUI 入口；可选择更新或还原、POE1 或 POE2、自动识别或手动路径。"
@@ -76,13 +84,14 @@ def copy_template_doc() -> bool:
             "物价补丁.exe：统一 GUI 入口；可选择更新或还原、POE1 或 POE2、自动识别或手动路径。"
         ),
         "4. 程序会抓取 poe2scout 国际服价格，并把价格追加为“=数字D/E”。": (
-            "4. 程序会按版本和客户端类型抓取价格：POE1 国际服使用 poe.ninja，POE1 国服使用 poecurrency.top，POE2 国际服优先 poe2scout；"
-            "异常分类会自动降级，POE1 使用 C/D，POE2 使用 D/E，比例使用当前数据源实时值。"
+            "4. 程序会按版本和客户端类型抓取价格：POE1 国际服使用 poe.ninja 主源，再由 poe2scout 和 PoEDB 逐物品补缺；"
+            "POE1 国服使用 poecurrency.top 主源，再按 poe.ninja、poe2scout、PoEDB 的顺序补缺；POE2 数据源和 D/E 规则保持不变。"
+            "各来源独立失败和降级，POE1 使用 C/D，POE2 使用 D/E，比例使用当前数据源实时值。"
             "同一个显示名对应多个游戏元数据路径时会为全部别名写入价格；国服翻译重名时使用 engname 英文别名消歧，避免漏价或串价。"
         ),
         "5. 程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”。": (
             "5. 程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”，"
-            "并在游戏根目录的 .poe2-price-patch 文件夹保存持久副本。旧版备份丢失时，会先在临时沙盒清理并校验，成功前不修改真实游戏。"
+            "POE1 和 POE2 分别在游戏根目录的 .poe1-price-patch 与 .poe2-price-patch 文件夹保存持久副本。旧版备份丢失时，会先在临时沙盒清理并校验，成功前不修改真实游戏。"
         ),
         "6. 程序会把补丁写回对应游戏包。": (
             "6. 价格文件会先在隔离目录生成并校验；实时数据失败时仅使用当前范围和模式的兼容核心缓存。"
@@ -104,7 +113,16 @@ def copy_template_doc() -> bool:
             "Bundles2 还原优先恢复安装前备份的 _.index.bin 和 LibGGPK3；迁移基线则恢复到语义上干净的物价层。"
         ),
         "真实还原物价补丁.zip：Bundles2 模式的物理级恢复包。": (
-            "真实还原物价补丁.zip：Bundles2 模式的恢复包；持久副本位于 <游戏根目录>\\.poe2-price-patch。"
+            "真实还原物价补丁.zip：Bundles2 模式的恢复包；POE1 和 POE2 的持久副本分别位于 <游戏根目录>\\.poe1-price-patch 与 <游戏根目录>\\.poe2-price-patch。"
+        ),
+        "国服 WeGame：data/balance/simplified chinese/baseitemtypes.datc64。": (
+            "国服 WeGame：POE1 写入 data/simplified chinese/baseitemtypes.datc64，POE2 写入 data/balance/simplified chinese/baseitemtypes.datc64。"
+        ),
+        "国际服官方 / Steam / Epic：按当前游戏语言写入，例如繁中为 data/balance/traditional chinese/baseitemtypes.datc64，英文为 data/balance/baseitemtypes.datc64。": (
+            "国际服官方 / Steam / Epic：POE1 繁中路径为 data/traditional chinese/baseitemtypes.datc64；POE2 繁中路径为 data/balance/traditional chinese/baseitemtypes.datc64。其它语言按各自实际资源表写入。"
+        ),
+        "需要手动指定语言时，可设置 POE2_PATCH_LANGUAGE，例如 zh-TW、en、ja。": (
+            "POE1 在 GUI 选择自动识别、汉化补丁、简中、繁中或跟随配置；POE2 可设置 POE2_PATCH_LANGUAGE，例如 zh-TW、en、ja。"
         ),
         r"tools\dotnet-runtime：内置 .NET 8 runtime，不要删除。": (
             r"tools\dotnet-runtime：内置 .NET 8.0.28 runtime，不要删除；发布包另含校验过的离线修复包，只有两者都不可用时才访问 Microsoft 备用源。"
@@ -119,7 +137,7 @@ def copy_template_doc() -> bool:
             "提取或写入失败：程序会等待短暂占用并在写入失败时自动恢复；仍失败时请关闭游戏和可能占用文件的工具后重试。"
         ),
         "缺少价格：可能是 poe2scout 暂无该物品数据，或英文名无法匹配本地物品表。": (
-            "缺少价格：可能是当前数据源暂无该物品，或名称无法匹配本地表。低匹配会保留未命中的旧价格；数据源完全不可用时保留当前补丁。"
+            "缺少价格：可能是当前数据源暂无该物品，或名称无法匹配本地表。POE1 安装第三方汉化补丁时，请把显示语言设为自动识别或汉化补丁；低匹配会保留未命中的旧价格，数据源完全不可用时保留当前补丁。"
         ),
     }
     matched: set[str] = set()
@@ -152,6 +170,21 @@ def copy_template_doc() -> bool:
             "release document template no longer contains expected paragraphs: "
             + " | ".join(missing)
         )
+
+    duplicate_texts = {
+        r"<POE 游戏根目录>\物价补丁\物价补丁.exe",
+        "物价补丁.exe：统一 GUI 入口；可选择更新或还原、POE1 或 POE2、自动识别或手动路径。",
+    }
+    seen_duplicates: set[str] = set()
+    for paragraph in list(doc.paragraphs):
+        text = paragraph.text.strip()
+        if text not in duplicate_texts:
+            continue
+        if text in seen_duplicates:
+            element = paragraph._element
+            element.getparent().remove(element)
+        else:
+            seen_duplicates.add(text)
 
     # The WPS-authored template's contextualSpacing flag makes some
     # LibreOffice versions overlap consecutive list paragraphs after wrapping.
@@ -277,7 +310,7 @@ def build():
             "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。",
             "国服会匹配“流放之路：降临”和 WeGameApps\\rail_apps 游戏库；目录还必须包含 Bundles2\\_.index.bin，并通过 WeGame/Rail/Tencent 特征确认。",
             "检测到 Content.ggpk 时按国际服官方 GGPK 处理；检测到非国服特征的 Bundles2 时按国际服 Steam/Epic 处理。",
-            "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。国际服仍会读取 language 设置。",
+            "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。POE1 还可选择自动识别、汉化补丁、简体中文、繁体中文或跟随游戏配置。",
         ],
     )
 
@@ -287,10 +320,11 @@ def build():
         [
             "关闭游戏。",
             "双击“物价补丁.exe”。",
-            "在统一窗口中确认 POE1 / POE2、客户端路径和客户端类型；更新时还需选择补丁范围。",
+            "在统一窗口中确认 POE1 / POE2、客户端路径和客户端类型；POE1 还需确认显示语言，更新时还需选择补丁范围。",
             "点击底部“开始/更新物价补丁”执行更新，或点击“还原物价补丁”恢复原版；更新会提取英文表和当前客户端目标语言表，还原会直接使用已验证的还原包或逻辑还原基线。",
-            "程序会按客户端类型抓取价格：国际服使用 poe2scout，国服优先使用 poecurrency.top；没有国服数据时使用 poe2scout 兜底，并把价格追加为“=数字D/E”。",
-            "D/E 换算比例会从当前价格源实时读取，不使用固定比例。",
+            "POE1 安装第三方汉化补丁时保留“自动识别”或选择“汉化补丁”；自动模式会检查最新客户端日志，检测到中文区域名后写入繁中表。更新与还原必须使用同一目标语言。",
+            "POE1 国际服使用 poe.ninja 主源，再由 poe2scout、PoEDB 逐物品补缺；POE1 国服使用 poecurrency.top 主源，再按 poe.ninja、poe2scout、PoEDB 的顺序补缺。国服主源已有价格不会被国际服来源覆盖。",
+            "POE1 价格追加为 C/D，Chaos/Divine 比例按各来源实时计算；POE2 继续使用原有 poe2scout、poe.ninja、PoEDB 与 poecurrency.top v2 链路和 D/E 规则。",
             "国服优先使用 latest_buy1 / latest_sell1 最新盘口价，缺失时回退到 buy_avg / sell_avg；双边价差正常时取几何均值，差距过大时取较低一侧以降低过期均价和 OCR 异常价影响。",
             "同一个显示名对应多个游戏元数据路径时会为全部别名写入价格；国服翻译重名时使用 engname 英文别名消歧，避免漏价或串价。",
             "程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”，并在游戏根目录的 .poe2-price-patch 文件夹保存持久副本。",
@@ -322,6 +356,7 @@ def build():
             "国服 WeGame：data/balance/simplified chinese/baseitemtypes.datc64。",
             "国际服官方 / Steam / Epic：按当前游戏语言写入，例如繁中为 data/balance/traditional chinese/baseitemtypes.datc64，英文为 data/balance/baseitemtypes.datc64。",
             "需要手动指定语言时，可设置 POE2_PATCH_LANGUAGE，例如 zh-TW、en、ja。",
+            "POE1 显示语言由 GUI 保存；POE1_PATCH_LANGUAGE 仅在自动模式下继续兼容。不同目标语言使用独立缓存和还原包。",
             "Bundles2 模式会更新 _.index.bin 并写入 LibGGPK3 增量包；_.index.bin 更新时间变化是正常现象。",
             "Bundles2 模式不会直接覆盖 Tiny*.bundle.bin。",
             "Bundles2 还原优先恢复安装物价补丁前备份的 _.index.bin 和 LibGGPK3 状态；旧版本迁移生成的基线会恢复到清除本工具价格/岛屿标记且保留其它兼容补丁的状态。",
@@ -352,6 +387,7 @@ def build():
             "提取或写入失败：请先关闭游戏和可能占用文件的工具。",
             "提示当前 Bundles2 已含标记但找不到还原包：新版会自动搜索旧补丁文件夹和持久目录，并尝试离线沙盒迁移；若迁移失败，真实游戏不会被修改，请先用游戏平台验证或修复。",
             "缺少价格：可能是当前价格源暂无该物品数据，或物品名无法匹配本地物品表。",
+            "POE1 使用 Steam 汉化补丁但没有价格：把“POE1 显示语言”设为自动识别或汉化补丁，然后重新更新。",
             "价格源暂时不可用：程序会优先继续使用兼容缓存；如果没有安全缓存，会保留当前补丁并停止本次更新，可稍后重试。",
             "杀软报毒：自制 exe、加密脚本和修改游戏文件都可能触发敏感提示，需要自行判断风险。",
         ],
@@ -359,7 +395,7 @@ def build():
 
     footer = sec.footer.paragraphs[0]
     footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    fr = footer.add_run(f"POE2 三服合一物价补丁 {PATCH_VERSION}")
+    fr = footer.add_run(f"POE1 / POE2 物价补丁 {PATCH_VERSION}")
     set_font(fr)
     fr.font.size = Pt(9)
     fr.font.color.rgb = RGBColor(128, 128, 128)

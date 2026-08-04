@@ -14,6 +14,69 @@
     return (Join-Path $LocalAppData "PoePricePatch\settings.json")
 }
 
+function Get-PoePatchSettingsState {
+    param([string]$SettingsPath = "")
+
+    $State = [ordered]@{
+        version = 1
+        poe1_game_directory = ""
+        poe2_game_directory = ""
+        poe1_language_mode = "auto"
+        last_game_version = ""
+        saved_at_utc = ""
+    }
+    try {
+        $StatePath = Get-PoePatchSettingsPath -SettingsPath $SettingsPath
+        if ([string]::IsNullOrWhiteSpace($StatePath) -or
+            -not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
+            return $State
+        }
+        $Previous = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($Property in @($Previous.PSObject.Properties)) {
+            $State[$Property.Name] = $Property.Value
+        }
+    }
+    catch {
+        # A corrupt optional preference file must not block an update.
+    }
+    return $State
+}
+
+function Save-PoePatchSettingsState {
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [string]$SettingsPath = ""
+    )
+
+    $StatePath = Get-PoePatchSettingsPath -SettingsPath $SettingsPath
+    if ([string]::IsNullOrWhiteSpace($StatePath)) {
+        return
+    }
+    $StateDir = Split-Path -Parent $StatePath
+    New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+    $TempPath = Join-Path $StateDir ([string]::Concat("settings-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+    try {
+        $Json = $State | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText($TempPath, $Json, (New-Object System.Text.UTF8Encoding($false)))
+        if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+            try {
+                [System.IO.File]::Replace($TempPath, $StatePath, $null)
+            }
+            catch {
+                Move-Item -LiteralPath $TempPath -Destination $StatePath -Force
+            }
+        }
+        else {
+            [System.IO.File]::Move($TempPath, $StatePath)
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempPath -PathType Leaf) {
+            Remove-Item -LiteralPath $TempPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Get-PoePatchSavedGameDirectory {
     param(
         [ValidateSet("poe1", "poe2")]
@@ -22,16 +85,7 @@ function Get-PoePatchSavedGameDirectory {
     )
 
     try {
-        $StatePath = Get-PoePatchSettingsPath -SettingsPath $SettingsPath
-        if ([string]::IsNullOrWhiteSpace($StatePath) -or
-            -not (Test-Path -LiteralPath $StatePath -PathType Leaf)) {
-            if ($GameVersion -eq "poe2") {
-                return (Get-Poe2SavedGameDirectory)
-            }
-            return $null
-        }
-
-        $State = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
         $PropertyName = "${GameVersion}_game_directory"
         $Value = [string]$State.$PropertyName
         if ([string]::IsNullOrWhiteSpace($Value)) {
@@ -77,57 +131,54 @@ function Save-PoePatchGameDirectory {
         throw "所选目录属于 $($DetectedVersion.ToUpperInvariant())，不能保存为 $($GameVersion.ToUpperInvariant())。"
     }
 
-    $StatePath = Get-PoePatchSettingsPath -SettingsPath $SettingsPath
-    if ([string]::IsNullOrWhiteSpace($StatePath)) {
-        return $Resolved
-    }
-
-    $State = [ordered]@{
-        version = 1
-        poe1_game_directory = ""
-        poe2_game_directory = ""
-        last_game_version = $GameVersion
-        saved_at_utc = (Get-Date).ToUniversalTime().ToString("o")
-    }
-    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
-        try {
-            $Previous = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-            foreach ($Name in @("poe1_game_directory", "poe2_game_directory")) {
-                if (-not [string]::IsNullOrWhiteSpace([string]$Previous.$Name)) {
-                    $State[$Name] = [string]$Previous.$Name
-                }
-            }
-        }
-        catch {
-            # A corrupt optional preference file must not block an update.
-        }
-    }
+    $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
+    $State["version"] = 1
     $State["${GameVersion}_game_directory"] = $Resolved
-
-    $StateDir = Split-Path -Parent $StatePath
-    New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
-    $TempPath = Join-Path $StateDir ([string]::Concat("settings-", [Guid]::NewGuid().ToString("N"), ".tmp"))
-    try {
-        $Json = $State | ConvertTo-Json
-        [System.IO.File]::WriteAllText($TempPath, $Json, (New-Object System.Text.UTF8Encoding($false)))
-        if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
-            try {
-                [System.IO.File]::Replace($TempPath, $StatePath, $null)
-            }
-            catch {
-                Move-Item -LiteralPath $TempPath -Destination $StatePath -Force
-            }
-        }
-        else {
-            [System.IO.File]::Move($TempPath, $StatePath)
-        }
-    }
-    finally {
-        if (Test-Path -LiteralPath $TempPath -PathType Leaf) {
-            Remove-Item -LiteralPath $TempPath -Force -ErrorAction SilentlyContinue
-        }
-    }
+    $State["last_game_version"] = $GameVersion
+    $State["saved_at_utc"] = (Get-Date).ToUniversalTime().ToString("o")
+    Save-PoePatchSettingsState -State $State -SettingsPath $SettingsPath
     return $Resolved
+}
+
+function Resolve-Poe1LanguageMode {
+    param([string]$LanguageMode = "auto")
+
+    $Normalized = if ([string]::IsNullOrWhiteSpace($LanguageMode)) {
+        "auto"
+    }
+    else {
+        $LanguageMode.Trim().ToLowerInvariant()
+    }
+    switch ($Normalized) {
+        "auto" { return "auto" }
+        "localization" { return "localization" }
+        "zh-cn" { return "zh-CN" }
+        "zh-tw" { return "zh-TW" }
+        "config" { return "config" }
+        default { return "auto" }
+    }
+}
+
+function Get-Poe1SavedLanguageMode {
+    param([string]$SettingsPath = "")
+
+    $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
+    return (Resolve-Poe1LanguageMode -LanguageMode ([string]$State.poe1_language_mode))
+}
+
+function Save-Poe1LanguageMode {
+    param(
+        [ValidateSet("auto", "localization", "zh-CN", "zh-TW", "config")]
+        [string]$LanguageMode = "auto",
+        [string]$SettingsPath = ""
+    )
+
+    $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
+    $State["version"] = 1
+    $State["poe1_language_mode"] = Resolve-Poe1LanguageMode -LanguageMode $LanguageMode
+    $State["saved_at_utc"] = (Get-Date).ToUniversalTime().ToString("o")
+    Save-PoePatchSettingsState -State $State -SettingsPath $SettingsPath
+    return [string]$State["poe1_language_mode"]
 }
 
 function Test-PoeGameDirectory {
@@ -297,17 +348,17 @@ function Get-Poe1LanguageInfoFromCode {
 }
 
 function Get-Poe1ConfigLanguage {
-    param([string]$GameDirectory = "")
+    param(
+        [string]$GameDirectory = "",
+        [string]$ConfigDirectory = ""
+    )
 
-    if (-not [string]::IsNullOrWhiteSpace($env:POE1_PATCH_LANGUAGE)) {
-        return $env:POE1_PATCH_LANGUAGE
+    $MyGames = if ([string]::IsNullOrWhiteSpace($ConfigDirectory)) {
+        Join-Path ([Environment]::GetFolderPath("MyDocuments")) "My Games\Path of Exile"
     }
-    if (-not [string]::IsNullOrWhiteSpace($GameDirectory) -and
-        (Test-Poe2ChinaClient -Poe2Dir $GameDirectory)) {
-        return "zh-CN"
+    else {
+        $ConfigDirectory
     }
-
-    $MyGames = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "My Games\Path of Exile"
     if (-not (Test-Path -LiteralPath $MyGames -PathType Container)) {
         return $null
     }
@@ -328,8 +379,85 @@ function Get-Poe1ConfigLanguage {
     return $null
 }
 
+function Test-Poe1ChineseLanguageCode {
+    param([string]$LanguageCode)
+
+    if ([string]::IsNullOrWhiteSpace($LanguageCode)) { return $false }
+    $Code = $LanguageCode.Trim().ToLowerInvariant().Replace("_", "-")
+    return ($Code -in @(
+            "zh-cn", "zh-hans", "simplified chinese", "simplified-chinese", "sc",
+            "zh-tw", "zh-hant", "traditional chinese", "traditional-chinese", "tc"
+        ))
+}
+
+function Get-Poe1LocalizationLogEvidence {
+    param(
+        [Parameter(Mandatory = $true)][string]$GameDirectory,
+        [int]$TailLines = 4000
+    )
+
+    $LogDirectory = Join-Path $GameDirectory "logs"
+    $Candidates = New-Object System.Collections.ArrayList
+    $Priority = 0
+    foreach ($Name in @("LatestClient.txt", "Client.txt")) {
+        $Path = Join-Path $LogDirectory $Name
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $File = Get-Item -LiteralPath $Path
+            [void]$Candidates.Add([pscustomobject]@{
+                    Path = $File.FullName
+                    LastWriteTimeUtc = $File.LastWriteTimeUtc
+                    Priority = $Priority
+                })
+        }
+        $Priority += 1
+    }
+    $Candidates = @($Candidates | Sort-Object `
+            @{ Expression = { $_.LastWriteTimeUtc }; Descending = $true }, `
+            @{ Expression = { $_.Priority }; Ascending = $true })
+
+    foreach ($Candidate in $Candidates) {
+        try {
+            $Lines = @(Get-Content -LiteralPath $Candidate.Path -Encoding UTF8 -Tail $TailLines -ErrorAction Stop)
+            for ($Index = $Lines.Count - 1; $Index -ge 0; $Index -= 1) {
+                $Line = [string]$Lines[$Index]
+                $Area = ""
+                if ($Line -match '\[SCENE\]\s+Set Source \[(?<area>[^\]]+)\]') {
+                    $Area = $Matches.area.Trim()
+                }
+                elseif ($Line -match '\[LOADING SCREEN\]\s+\((?<area>[^\)]+)\)') {
+                    $Area = $Matches.area.Trim()
+                }
+                if ([string]::IsNullOrWhiteSpace($Area) -or
+                    $Area -in @("(null)", "(unknown)", "null", "unknown")) {
+                    continue
+                }
+                $HasCjk = [bool]($Area -match '[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]')
+                return [pscustomobject]@{
+                    Detected = $HasCjk
+                    AreaName = $Area
+                    LogPath = [string]$Candidate.Path
+                    LogLastWriteTimeUtc = $Candidate.LastWriteTimeUtc
+                }
+            }
+        }
+        catch {
+            continue
+        }
+    }
+    return [pscustomobject]@{
+        Detected = $false
+        AreaName = ""
+        LogPath = ""
+        LogLastWriteTimeUtc = $null
+    }
+}
+
 function Get-Poe1InstallInfo {
-    param([Parameter(Mandatory = $true)][string]$GameDirectory)
+    param(
+        [Parameter(Mandatory = $true)][string]$GameDirectory,
+        [ValidateSet("auto", "localization", "zh-CN", "zh-TW", "config")]
+        [string]$LanguageMode = "auto"
+    )
 
     $Resolved = ConvertTo-PoeGameDirectoryPath -Path $GameDirectory
     if ([string]::IsNullOrWhiteSpace($Resolved)) {
@@ -342,13 +470,59 @@ function Get-Poe1InstallInfo {
 
     $Mode = Get-Poe2GameMode -Poe2Dir $Resolved
     $IsChina = Test-Poe2ChinaClient -Poe2Dir $Resolved
-    $ConfigLanguage = Get-Poe1ConfigLanguage -GameDirectory $Resolved
+    $LanguageMode = Resolve-Poe1LanguageMode -LanguageMode $LanguageMode
+    $ConfiguredLanguage = Get-Poe1ConfigLanguage -GameDirectory $Resolved
     $DefaultLanguageCode = if ($IsChina) { "zh-CN" } else { "zh-TW" }
-    $LanguageInfo = Get-Poe1LanguageInfoFromCode -LanguageCode $ConfigLanguage -DefaultLanguageCode $DefaultLanguageCode
-    if ($IsChina) {
-        $LanguageInfo = Get-Poe1LanguageInfoFromCode -LanguageCode "zh-CN"
-        $ConfigLanguage = "zh-CN"
+    $TargetLanguageCode = $ConfiguredLanguage
+    $LanguageSelectionReason = "跟随游戏配置。"
+    $LocalizationEvidence = [pscustomobject]@{
+        Detected = $false
+        AreaName = ""
+        LogPath = ""
+        LogLastWriteTimeUtc = $null
     }
+
+    switch ($LanguageMode) {
+        "localization" {
+            $TargetLanguageCode = "zh-TW"
+            $LanguageSelectionReason = "已选择汉化补丁，固定写入繁体中文资源表。"
+        }
+        "zh-CN" {
+            $TargetLanguageCode = "zh-CN"
+            $LanguageSelectionReason = "已固定写入简体中文资源表。"
+        }
+        "zh-TW" {
+            $TargetLanguageCode = "zh-TW"
+            $LanguageSelectionReason = "已固定写入繁体中文资源表。"
+        }
+        "config" {
+            $LanguageSelectionReason = "严格跟随 production_Config.ini。"
+        }
+        default {
+            if ($IsChina) {
+                $TargetLanguageCode = "zh-CN"
+                $LanguageSelectionReason = "自动识别为国服，固定写入简体中文资源表。"
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($env:POE1_PATCH_LANGUAGE)) {
+                $TargetLanguageCode = $env:POE1_PATCH_LANGUAGE
+                $LanguageSelectionReason = "自动模式使用 POE1_PATCH_LANGUAGE 环境变量。"
+            }
+            elseif (Test-Poe1ChineseLanguageCode -LanguageCode $ConfiguredLanguage) {
+                $LanguageSelectionReason = "游戏配置已是中文，直接使用对应中文资源表。"
+            }
+            else {
+                $LocalizationEvidence = Get-Poe1LocalizationLogEvidence -GameDirectory $Resolved
+                if ($LocalizationEvidence.Detected) {
+                    $TargetLanguageCode = "zh-TW"
+                    $LanguageSelectionReason = "客户端配置为非中文，但最新日志显示中文区域：$($LocalizationEvidence.AreaName)。已按汉化补丁写入繁体中文资源表。"
+                }
+                else {
+                    $LanguageSelectionReason = "未检测到汉化补丁，跟随游戏配置。"
+                }
+            }
+        }
+    }
+    $LanguageInfo = Get-Poe1LanguageInfoFromCode -LanguageCode $TargetLanguageCode -DefaultLanguageCode $DefaultLanguageCode
 
     $InstallKind = "POE1-Intl-Bundles2"
     $DisplayName = "POE1 国际服 Steam Bundles2"
@@ -369,7 +543,14 @@ function Get-Poe1InstallInfo {
         InstallKind = $InstallKind
         DisplayName = $DisplayName
         IsChina = $IsChina
-        ConfigLanguage = $(if ([string]::IsNullOrWhiteSpace($ConfigLanguage)) { $LanguageInfo.Code } else { $ConfigLanguage })
+        ConfigLanguage = $(if ([string]::IsNullOrWhiteSpace($ConfiguredLanguage)) { "" } else { $ConfiguredLanguage })
+        ConfiguredLanguage = $(if ([string]::IsNullOrWhiteSpace($ConfiguredLanguage)) { "" } else { $ConfiguredLanguage })
+        EffectiveLanguageCode = [string]$LanguageInfo.Code
+        LanguageMode = $LanguageMode
+        LanguageSelectionReason = $LanguageSelectionReason
+        LocalizationDetected = [bool]$LocalizationEvidence.Detected
+        LocalizationAreaName = [string]$LocalizationEvidence.AreaName
+        LocalizationLogPath = [string]$LocalizationEvidence.LogPath
         EnBaseItemsPath = "data/baseitemtypes.datc64"
         TcBaseItemsPath = $LanguageInfo.Path
         EnWordsPath = "data/words.datc64"
@@ -392,11 +573,13 @@ function Get-PoePatchInstallInfo {
     param(
         [ValidateSet("poe1", "poe2")]
         [string]$GameVersion,
-        [Parameter(Mandatory = $true)][string]$GameDirectory
+        [Parameter(Mandatory = $true)][string]$GameDirectory,
+        [ValidateSet("auto", "localization", "zh-CN", "zh-TW", "config")]
+        [string]$Poe1LanguageMode = "auto"
     )
 
     if ($GameVersion -eq "poe1") {
-        return (Get-Poe1InstallInfo -GameDirectory $GameDirectory)
+        return (Get-Poe1InstallInfo -GameDirectory $GameDirectory -LanguageMode $Poe1LanguageMode)
     }
     $Info = Get-Poe2InstallInfo -Poe2Dir $GameDirectory
     Add-Member -InputObject $Info -NotePropertyName GameVersion -NotePropertyValue "poe2" -Force
@@ -550,7 +733,9 @@ function Resolve-PoePatchManualSelection {
     param(
         [ValidateSet("auto", "poe1", "poe2")]
         [string]$RequestedGameVersion,
-        [Parameter(Mandatory = $true)][string]$Path
+        [Parameter(Mandatory = $true)][string]$Path,
+        [ValidateSet("auto", "localization", "zh-CN", "zh-TW", "config")]
+        [string]$Poe1LanguageMode = "auto"
     )
 
     $Resolved = ConvertTo-PoeGameDirectoryPath -Path $Path
@@ -565,7 +750,8 @@ function Resolve-PoePatchManualSelection {
     if (-not [string]::IsNullOrWhiteSpace($Detected) -and $Detected -ne $GameVersion) {
         throw "所选目录属于 $($Detected.ToUpperInvariant())，与当前 $($GameVersion.ToUpperInvariant()) 选择不一致。"
     }
-    $Info = Get-PoePatchInstallInfo -GameVersion $GameVersion -GameDirectory $Resolved
+    $Info = Get-PoePatchInstallInfo -GameVersion $GameVersion -GameDirectory $Resolved `
+        -Poe1LanguageMode $Poe1LanguageMode
     return [pscustomobject]@{
         GameVersion = $GameVersion
         Path = $Resolved

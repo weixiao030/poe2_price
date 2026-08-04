@@ -1,4 +1,3 @@
-import base64
 import subprocess
 from pathlib import Path
 
@@ -11,15 +10,14 @@ RESTORE = TOOLS / "restore_price_patch.ps1"
 
 
 def run_windows_powershell(script: str, timeout: int = 120) -> str:
-    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
     result = subprocess.run(
         [
             "powershell.exe",
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
-            "-EncodedCommand",
-            encoded,
+            "-Command",
+            script,
         ],
         cwd=ROOT,
         text=True,

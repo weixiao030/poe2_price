@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.0</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.2</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -22,7 +22,9 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.5.0` 新增独立 POE1 物价补丁：支持 poe.ninja 和国服 `poecurrency.top`，使用混沌石 / 神圣石（C/D）标记 BaseItemTypes 与 Words；统一 GUI 可选择 POE1、POE2 或自动识别，支持官方 GGPK、Steam Bundles2 和 WeGame Bundles2。POE1 与 POE2 的缓存、还原包、输出目录和游戏目录互斥锁彼此隔离，POE2 原有功能保持不变。
+`v0.5.2` 将 POE1 升级为逐物品多源补缺：国际服按 poe.ninja、poe2scout、PoEDB 的顺序合并，国服按 poecurrency.top、poe.ninja、poe2scout、PoEDB 的顺序合并。后面的来源只补当前缺少的元数据路径，不覆盖前面来源已有的价格；各来源并行抓取、独立失败，POE2 代码和数据源顺序保持不变。
+
+poe.ninja 页面上依赖等级、品质、词缀或具体变体定价的 Skill Gems、Base Types、Cluster Jewels、Valdo Maps、Forbidden Jewels、Wombgifts 等分类不会写成一个固定物品名价格，避免把不同变体串成同一价格。
 
 POE2 同名元数据仍会全部写入价格，国服翻译重名时继续使用 `engname` 精确消歧。
 
@@ -43,6 +45,24 @@ POE2 同名元数据仍会全部写入价格，国服翻译重名时继续使用
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/8/4 更新（v0.5.2）
+
+- POE1 国际服从单一 poe.ninja 主数据升级为 `poe.ninja → poe2scout → PoEDB` 逐物品补缺；POE1 国服使用 `poecurrency.top → poe.ninja → poe2scout → PoEDB`，国服已有价格不会被国际服来源覆盖。
+
+- 新接入 poe2scout 的 POE1 `pc` realm，使用 `BaseItemTypeId` 精确匹配 DAT 元数据路径；PoEDB 使用 `/us/Economy` 国际服价格和 `/cn/Economy` 简中名称，并按 Chaos/Divine 换算，不混入 `/tw/Economy` 台湾服价格。
+
+- poe.ninja 新增 Runegrafts、Djinn Coins、Ducats、Enshrouding Crystals、Astrolabes、Invitations、Vials 等可安全映射分类；变体决定价格的分类继续排除。2026-08-04 最终真实客户端验证快照中，Steam 基础价格覆盖为 829 条，国服为 840 条；覆盖数会随赛季市场数据和各来源当前可用条目变化。
+
+### 26/8/4 更新（v0.5.1）
+
+- 修复 POE1 Steam 客户端配置为法语等非中文语言、但第三方汉化补丁实际显示繁中资源时，价格被写入原配置语言表而游戏内不可见的问题。
+
+- GUI 新增“POE1 显示语言”：支持自动识别、汉化补丁、简体中文、繁体中文、跟随游戏配置，并将选择保存到 `%LOCALAPPDATA%\PoePricePatch\settings.json`。
+
+- 自动模式下国服固定简中；国际服配置已是中文时直接使用，非中文时检查最新客户端日志中的区域名，检测到中文区域则写入繁中表。`POE1_PATCH_LANGUAGE` 仅在自动模式下继续兼容。
+
+- POE1 缓存、逻辑还原包和 Bundles2 物理还原包按实际写入语言隔离；更新与还原显式传递同一语言模式，并兼容查找旧版物理还原包文件名。
 
 ### 26/8/4 更新（v0.5.0）
 
@@ -133,8 +153,9 @@ POE2 同名元数据仍会全部写入价格，国服翻译重名时继续使用
 
 - 🔍 **自动读取** 游戏 `Content.ggpk`（官服）或 `Bundles2`（Steam/Epic/国服）中的物品名表
 - 🎮 **双版本 GUI** 统一选择 POE1、POE2 或自动识别，POE1 与 POE2 的输出、缓存和还原包彼此隔离
-- 💰 **联网抓取** POE1 国际服 poe.ninja、POE1 国服 poecurrency.top v1；POE2 保持 poe2scout + poe.ninja / poecurrency.top v2
-- 🛟 **备用兜底** 国际服优先合并 poe2scout 与 poe.ninja，二者都失败时再使用 Poe2DB Economy；国服主源成功时参考源失败也会继续生成
+- 🌐 **汉化兼容** POE1 可自动识别第三方汉化补丁，也可固定简中/繁中或严格跟随 `production_Config.ini`
+- 💰 **POE1 多源价格** 国际服按 poe.ninja → poe2scout → PoEDB 补缺；国服按 poecurrency.top v1 → poe.ninja → poe2scout → PoEDB 补缺
+- 🛟 **独立降级** 各来源并行抓取并独立失败，后续来源只补空缺；POE2 继续使用原有 poe2scout、poe.ninja、PoEDB / poecurrency.top v2 链路
 - 📡 **实时进度** 抓价、重试、分类分页、匹配和生成补丁包都会在窗口中显示进度
 - 🏷️ **自动标注** 将价格追加到物品名中，游戏内一目了然
 - 🧭 **岛屿提示** 可选给岛屿传言追加对应地图提示，方便跑图时判断目标
@@ -171,7 +192,7 @@ POE2 同名元数据仍会全部写入价格，国服翻译重名时继续使用
 
 1. **关闭游戏**
 2. 双击 `物价补丁.exe`
-3. 在统一 GUI 中选择 POE1、POE2 或自动识别，确认客户端路径和服区正确；更新时还需选择更新范围
+3. 在统一 GUI 中选择 POE1、POE2 或自动识别，确认客户端路径和服区正确；POE1 如安装汉化补丁，保留“自动识别”或选择“汉化补丁”，更新时还需选择更新范围
 4. 点击底部“开始/更新物价补丁”执行更新，或点击旁边的“还原物价补丁”恢复原版文件。窗口中的 `[进度]` 会显示当前数据源、分类分页、重试和生成补丁包状态
 
 ---
@@ -270,6 +291,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build\make_release.ps1 -Sk
 | `-PatchScope uniques` | 只打传奇装备价格补丁，并保留干净 BaseItemTypes |
 | `-IslandRumourHints` | 额外生成岛屿传言提示补丁 |
 | `-Poe1Dir <路径>` | 手动指定 POE1 游戏根目录（默认自动检测） |
+| `-Poe1LanguageMode <模式>` | POE1 显示语言：`auto`、`localization`、`zh-CN`、`zh-TW` 或 `config` |
 | `-Poe2Dir <路径>` | 手动指定游戏根目录（默认自动检测） |
 
 ---

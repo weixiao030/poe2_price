@@ -45,7 +45,11 @@ function Get-Poe1LogicalRestoreZipName {
     param([Parameter(Mandatory = $true)]$InstallInfo)
 
     $Kind = ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_')
-    $Language = ([string]$InstallInfo.ConfigLanguage -replace '[^A-Za-z0-9_-]+', '_')
+    $LanguageCode = [string]$InstallInfo.EffectiveLanguageCode
+    if ([string]::IsNullOrWhiteSpace($LanguageCode)) {
+        $LanguageCode = [string]$InstallInfo.ConfigLanguage
+    }
+    $Language = ($LanguageCode -replace '[^A-Za-z0-9_-]+', '_')
     return "POE1还原补丁_${Kind}_${Language}.zip"
 }
 
@@ -53,7 +57,22 @@ function Get-Poe1PhysicalRestoreZipName {
     param([Parameter(Mandatory = $true)]$InstallInfo)
 
     $Kind = ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_')
-    return "POE1真实还原补丁_${Kind}.zip"
+    $LanguageCode = [string]$InstallInfo.EffectiveLanguageCode
+    if ([string]::IsNullOrWhiteSpace($LanguageCode)) {
+        $LanguageCode = [string]$InstallInfo.ConfigLanguage
+    }
+    $Language = ($LanguageCode -replace '[^A-Za-z0-9_-]+', '_')
+    return "POE1真实还原补丁_${Kind}_${Language}.zip"
+}
+
+function Get-Poe1PhysicalRestoreZipCandidateNames {
+    param([Parameter(Mandatory = $true)]$InstallInfo)
+
+    $Kind = ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_')
+    return @(
+        (Get-Poe1PhysicalRestoreZipName -InstallInfo $InstallInfo),
+        "POE1真实还原补丁_${Kind}.zip"
+    ) | Select-Object -Unique
 }
 
 function Write-Poe1JsonAtomically {

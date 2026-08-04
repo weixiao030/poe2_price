@@ -185,12 +185,18 @@ def _ninja_field_sets(payloads: Mapping[str, Any]) -> dict[str, list[str]]:
 
 POE_NINJA_VIEW_RE = re.compile(
     r"availableViews:\[(?P<views>[^\]]*)\]"
-    r"(?:(?!availableViews:).)*?title:\"(?P<title>(?:\\.|[^\"\\])*)\""
-    r",type:\"(?P<type>(?:\\.|[^\"\\])*)\""
-    r",url:\"(?P<url>(?:\\.|[^\"\\])*)\"",
+    r"(?:(?!availableViews:).)*?title:(?P<title_q>[\"'`])"
+    r"(?P<title>(?:\\.|(?!(?P=title_q)).)*)(?P=title_q)"
+    r",type:(?P<type_q>[\"'`])"
+    r"(?P<type>(?:\\.|(?!(?P=type_q)).)*)(?P=type_q)"
+    r",url:(?P<url_q>[\"'`])"
+    r"(?P<url>(?:\\.|(?!(?P=url_q)).)*)(?P=url_q)",
     flags=re.S,
 )
-JS_STRING_RE = re.compile(r'\"((?:\\.|[^\"\\])*)\"')
+JS_STRING_RE = re.compile(
+    r"(?P<quote>[\"'`])(?P<value>(?:\\.|(?!(?P=quote)).)*)(?P=quote)",
+    flags=re.S,
+)
 
 
 def poe_ninja_economy_page_url(league_name: str) -> str:
@@ -220,7 +226,10 @@ def parse_poe_ninja_site_categories(source: str) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     by_type: dict[str, dict[str, Any]] = {}
     for match in POE_NINJA_VIEW_RE.finditer(source):
-        views = [_js_string(item.group(1)) for item in JS_STRING_RE.finditer(match.group("views"))]
+        views = [
+            _js_string(item.group("value"))
+            for item in JS_STRING_RE.finditer(match.group("views"))
+        ]
         entry = {
             "available_views": views,
             "title": _js_string(match.group("title")),

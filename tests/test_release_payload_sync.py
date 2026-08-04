@@ -135,6 +135,8 @@ def test_release_document_describes_fail_safe_behavior():
         "如果发现多个客户端",
         "确认自动识别的路径和客户端类型",
         "点击底部“还原物价补丁”执行还原",
+        "自动识别、汉化补丁、简体中文、繁体中文或跟随游戏配置",
+        "更新与还原必须使用同一目标语言",
     ):
         assert expected in text
 
@@ -175,7 +177,7 @@ def test_release_quick_start_keeps_directory_selection_instructions():
         encoding="utf-8-sig"
     )
 
-    for expected in ("可以放在任意位置", "手动选择", "流放之路：降临", "多个客户端"):
+    for expected in ("可以放在任意位置", "手动选择", "流放之路：降临", "多个客户端", "汉化补丁"):
         assert expected in release
         assert expected in quick_start
     assert "把整个物价补丁文件夹放到 POE2 游戏根目录" not in release

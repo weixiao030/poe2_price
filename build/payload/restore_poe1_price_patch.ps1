@@ -1,5 +1,7 @@
 ﻿param(
     [string]$Poe1Dir = "",
+    [ValidateSet("auto", "localization", "zh-CN", "zh-TW", "config")]
+    [string]$Poe1LanguageMode = "auto",
     [string]$RestoreZip = "",
     [string]$PhysicalRestoreZip = "",
     [switch]$NoInstall,
@@ -19,7 +21,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.0"
+$script:PatchVersion = "v0.5.2"
 $script:GameDirectoryMutex = $null
 $ValidationDir = ""
 
@@ -44,18 +46,20 @@ try {
     }
     try {
         Save-PoePatchGameDirectory -GameVersion poe1 -GameDirectory $Poe1Dir | Out-Null
+        Save-Poe1LanguageMode -LanguageMode $Poe1LanguageMode | Out-Null
     }
     catch {
         Write-Warning "无法保存最近使用的 POE1 目录，本次还原仍会继续：$($_.Exception.Message)"
     }
 
-    $InstallInfo = Get-Poe1InstallInfo -GameDirectory $Poe1Dir
+    $InstallInfo = Get-Poe1InstallInfo -GameDirectory $Poe1Dir -LanguageMode $Poe1LanguageMode
     $OutputKey = Get-Poe1PatchOutputKey -Poe1Dir $Poe1Dir
     $ClientOutputRoot = Join-Path $RepoRoot ("output\poe1\" + $OutputKey)
     $RestoreDir = Join-Path $ClientOutputRoot "restore"
     $PersistentDir = Join-Path $Poe1Dir ".poe1-price-patch"
     $LogicalRestoreName = Get-Poe1LogicalRestoreZipName -InstallInfo $InstallInfo
     $PhysicalRestoreName = Get-Poe1PhysicalRestoreZipName -InstallInfo $InstallInfo
+    $PhysicalRestoreNames = @(Get-Poe1PhysicalRestoreZipCandidateNames -InstallInfo $InstallInfo)
     $ValidationDir = Join-Path $ClientOutputRoot ([string]::Concat(".restore-validation-", [Guid]::NewGuid().ToString("N")))
     New-Item -ItemType Directory -Force -Path $ValidationDir | Out-Null
 
@@ -63,6 +67,8 @@ try {
     Write-Host "游戏目录：$Poe1Dir"
     Write-Host "客户端  ：$($InstallInfo.DisplayName)" -ForegroundColor Cyan
     Write-Host "安装模式：$($InstallInfo.Mode)" -ForegroundColor Cyan
+    Write-Host "还原语言：$(Get-Poe1DisplayLanguageName -Name $InstallInfo.LanguageName) ($($InstallInfo.EffectiveLanguageCode))" -ForegroundColor Cyan
+    Write-Host "语言模式：$($InstallInfo.LanguageMode)；$($InstallInfo.LanguageSelectionReason)" -ForegroundColor Cyan
 
     Write-Poe1Step "读取当前 POE1 DAT 并验证还原包兼容性"
     $Current = Invoke-Poe1ExtractDatFiles -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo `
@@ -76,11 +82,11 @@ try {
             @($PhysicalRestoreZip)
         }
         else {
-            @(
-                (Join-Path $PersistentDir $PhysicalRestoreName),
-                (Join-Path $RestoreDir $PhysicalRestoreName),
-                (Join-Path $RepoRoot $PhysicalRestoreName)
-            )
+            @($PhysicalRestoreNames | ForEach-Object {
+                    Join-Path $PersistentDir $_
+                    Join-Path $RestoreDir $_
+                    Join-Path $RepoRoot $_
+                })
         }
         foreach ($Candidate in $PhysicalCandidates) {
             if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { continue }

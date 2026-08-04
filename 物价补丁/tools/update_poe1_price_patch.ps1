@@ -1,5 +1,7 @@
 ﻿param(
     [string]$Poe1Dir = "",
+    [ValidateSet("auto", "localization", "zh-CN", "zh-TW", "config")]
+    [string]$Poe1LanguageMode = "auto",
     [switch]$SkipExtract,
     [switch]$NoInstall,
     [switch]$SkipGameDirectoryMutex,
@@ -21,7 +23,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.0"
+$script:PatchVersion = "v0.5.2"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -110,13 +112,14 @@ try {
     }
     try {
         Save-PoePatchGameDirectory -GameVersion poe1 -GameDirectory $Poe1Dir | Out-Null
+        Save-Poe1LanguageMode -LanguageMode $Poe1LanguageMode | Out-Null
     }
     catch {
         Write-Warning "无法保存最近使用的 POE1 目录，本次更新仍会继续：$($_.Exception.Message)"
     }
 
     if ([string]::IsNullOrWhiteSpace($PatchScope)) { $PatchScope = "all" }
-    $InstallInfo = Get-Poe1InstallInfo -GameDirectory $Poe1Dir
+    $InstallInfo = Get-Poe1InstallInfo -GameDirectory $Poe1Dir -LanguageMode $Poe1LanguageMode
     $DisplayLanguage = Get-Poe1DisplayLanguageName -Name $InstallInfo.LanguageName
     $PriceSource = if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "POE1-CN-*") {
         "poecurrency-cn"
@@ -131,6 +134,7 @@ try {
     $RestoreDir = Join-Path $ClientOutputRoot "restore"
     $LogicalRestoreName = Get-Poe1LogicalRestoreZipName -InstallInfo $InstallInfo
     $PhysicalRestoreName = Get-Poe1PhysicalRestoreZipName -InstallInfo $InstallInfo
+    $PhysicalRestoreNames = @(Get-Poe1PhysicalRestoreZipCandidateNames -InstallInfo $InstallInfo)
     $LogicalRestoreOut = Join-Path $RestoreDir $LogicalRestoreName
     $PhysicalRestoreOut = Join-Path $RestoreDir $PhysicalRestoreName
     $PersistentDir = Join-Path $Poe1Dir ".poe1-price-patch"
@@ -145,7 +149,10 @@ try {
     Write-Host "游戏目录：$Poe1Dir"
     Write-Host "客户端  ：$($InstallInfo.DisplayName)" -ForegroundColor Cyan
     Write-Host "安装模式：$($InstallInfo.Mode)" -ForegroundColor Cyan
-    Write-Host "游戏语言：$DisplayLanguage ($($InstallInfo.ConfigLanguage))" -ForegroundColor Cyan
+    $ConfiguredLanguageText = if ([string]::IsNullOrWhiteSpace([string]$InstallInfo.ConfiguredLanguage)) { "未读取到" } else { [string]$InstallInfo.ConfiguredLanguage }
+    Write-Host "配置语言：$ConfiguredLanguageText" -ForegroundColor Cyan
+    Write-Host "写入语言：$DisplayLanguage ($($InstallInfo.EffectiveLanguageCode))" -ForegroundColor Cyan
+    Write-Host "语言模式：$($InstallInfo.LanguageMode)；$($InstallInfo.LanguageSelectionReason)" -ForegroundColor Cyan
     Write-Host "价格单位：混沌石 / 神圣石 (C/D)" -ForegroundColor Cyan
     Write-Host "更新范围：$PatchScope" -ForegroundColor Cyan
     Write-Host "数据来源：$PriceSource" -ForegroundColor Cyan
@@ -208,7 +215,12 @@ try {
 
     $PhysicalRestoreZip = ""
     if ($InstallInfo.Mode -eq "Bundles2" -and -not $NoInstall) {
-        foreach ($Candidate in @($PersistentPhysicalRestore, $PhysicalRestoreOut)) {
+        $PhysicalCandidates = New-Object System.Collections.ArrayList
+        foreach ($Name in $PhysicalRestoreNames) {
+            [void]$PhysicalCandidates.Add((Join-Path $PersistentDir $Name))
+            [void]$PhysicalCandidates.Add((Join-Path $RestoreDir $Name))
+        }
+        foreach ($Candidate in $PhysicalCandidates) {
             try {
                 if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
                     Assert-Poe1PhysicalRestoreZip -ZipPath $Candidate -InstallInfo $InstallInfo `
@@ -237,7 +249,7 @@ try {
     $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
     $CacheKey = [string]::Join("_", @(
             ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_'),
-            ([string]$InstallInfo.ConfigLanguage -replace '[^A-Za-z0-9_-]+', '_'),
+            ([string]$InstallInfo.EffectiveLanguageCode -replace '[^A-Za-z0-9_-]+', '_'),
             $PatchScope,
             $PriceSource
         ))

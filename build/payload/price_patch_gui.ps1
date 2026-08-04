@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.5.0"
+$script:PatchVersion = "v0.5.2"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -49,7 +49,7 @@ function Show-PoePatchLauncherDialog {
         Value = $InitialOperation
         CanChange = ($Operation -eq "select")
     }
-    $Form.ClientSize = New-Object System.Drawing.Size(720, 610)
+    $Form.ClientSize = New-Object System.Drawing.Size(720, 652)
 
     $Accent = [System.Drawing.Color]::FromArgb(30, 105, 92)
     $AccentDark = [System.Drawing.Color]::FromArgb(23, 81, 72)
@@ -110,7 +110,7 @@ function Show-PoePatchLauncherDialog {
     $PathGroup = New-Object System.Windows.Forms.GroupBox
     $PathGroup.Text = "游戏客户端"
     $PathGroup.Location = New-Object System.Drawing.Point(24, 178)
-    $PathGroup.Size = New-Object System.Drawing.Size(672, 184)
+    $PathGroup.Size = New-Object System.Drawing.Size(672, 226)
     $PathGroup.BackColor = $PanelColor
     $Form.Controls.Add($PathGroup)
 
@@ -157,20 +157,50 @@ function Show-PoePatchLauncherDialog {
     $BrowseButton.FlatAppearance.BorderColor = $BorderColor
     $PathGroup.Controls.Add($BrowseButton)
 
+    $LanguageLabel = New-Object System.Windows.Forms.Label
+    $LanguageLabel.Text = "POE1 显示语言"
+    $LanguageLabel.Location = New-Object System.Drawing.Point(18, 139)
+    $LanguageLabel.AutoSize = $true
+    $PathGroup.Controls.Add($LanguageLabel)
+
+    $LanguageCombo = New-Object System.Windows.Forms.ComboBox
+    $LanguageCombo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $LanguageCombo.Location = New-Object System.Drawing.Point(126, 134)
+    $LanguageCombo.Size = New-Object System.Drawing.Size(194, 25)
+    $LanguageCombo.DisplayMember = "Label"
+    $LanguageOptions = @(
+        [pscustomobject]@{ Label = "自动识别"; Mode = "auto" },
+        [pscustomobject]@{ Label = "汉化补丁"; Mode = "localization" },
+        [pscustomobject]@{ Label = "简体中文"; Mode = "zh-CN" },
+        [pscustomobject]@{ Label = "繁体中文"; Mode = "zh-TW" },
+        [pscustomobject]@{ Label = "跟随游戏配置"; Mode = "config" }
+    )
+    $SavedLanguageMode = Get-Poe1SavedLanguageMode
+    $SavedLanguageIndex = 0
+    for ($Index = 0; $Index -lt $LanguageOptions.Count; $Index += 1) {
+        [void]$LanguageCombo.Items.Add($LanguageOptions[$Index])
+        if ([string]$LanguageOptions[$Index].Mode -eq $SavedLanguageMode) {
+            $SavedLanguageIndex = $Index
+        }
+    }
+    $LanguageCombo.SelectedIndex = $SavedLanguageIndex
+    $PathGroup.Controls.Add($LanguageCombo)
+
     $ToolTip = New-Object System.Windows.Forms.ToolTip
     $ToolTip.SetToolTip($BrowseButton, "浏览游戏根目录")
     $ToolTip.SetToolTip($RefreshButton, "重新扫描已安装的 POE 客户端")
+    $ToolTip.SetToolTip($LanguageCombo, "汉化补丁模式会写入 POE1 繁体中文资源表")
 
     $PathStatus = New-Object System.Windows.Forms.Label
-    $PathStatus.Location = New-Object System.Drawing.Point(18, 137)
-    $PathStatus.Size = New-Object System.Drawing.Size(634, 36)
+    $PathStatus.Location = New-Object System.Drawing.Point(18, 170)
+    $PathStatus.Size = New-Object System.Drawing.Size(634, 44)
     $PathStatus.AutoEllipsis = $true
     $PathStatus.ForeColor = $Muted
     $PathGroup.Controls.Add($PathStatus)
 
     $ScopeGroup = New-Object System.Windows.Forms.GroupBox
     $ScopeGroup.Text = "更新内容"
-    $ScopeGroup.Location = New-Object System.Drawing.Point(24, 378)
+    $ScopeGroup.Location = New-Object System.Drawing.Point(24, 420)
     $ScopeGroup.Size = New-Object System.Drawing.Size(672, 96)
     $ScopeGroup.BackColor = $PanelColor
     $ScopeGroup.Visible = ($OperationState.Value -eq "update")
@@ -206,7 +236,7 @@ function Show-PoePatchLauncherDialog {
 
     $WarningLabel = New-Object System.Windows.Forms.Label
     $WarningLabel.Text = "运行前请关闭游戏和对应启动器；工具会先建立可验证的还原包。"
-    $WarningLabel.Location = New-Object System.Drawing.Point(26, 490)
+    $WarningLabel.Location = New-Object System.Drawing.Point(26, 532)
     $WarningLabel.Size = New-Object System.Drawing.Size(660, 24)
     $WarningLabel.ForeColor = [System.Drawing.Color]::FromArgb(121, 82, 31)
     $Form.Controls.Add($WarningLabel)
@@ -215,7 +245,7 @@ function Show-PoePatchLauncherDialog {
     $RepositoryLink.Text = "GitHub：weixiao030/poe2_price"
     $RepositoryLink.Tag = "https://github.com/weixiao030/poe2_price"
     $RepositoryLink.AutoSize = $true
-    $RepositoryLink.Location = New-Object System.Drawing.Point(26, 526)
+    $RepositoryLink.Location = New-Object System.Drawing.Point(26, 568)
     $RepositoryLink.LinkColor = $Accent
     $Form.Controls.Add($RepositoryLink)
 
@@ -223,13 +253,13 @@ function Show-PoePatchLauncherDialog {
     $CaimoguLink.Text = "踩蘑菇：caimogu.cc/post/2403703.html"
     $CaimoguLink.Tag = "https://www.caimogu.cc/post/2403703.html"
     $CaimoguLink.AutoSize = $true
-    $CaimoguLink.Location = New-Object System.Drawing.Point(286, 526)
+    $CaimoguLink.Location = New-Object System.Drawing.Point(286, 568)
     $CaimoguLink.LinkColor = $Accent
     $Form.Controls.Add($CaimoguLink)
 
     $CancelButton = New-Object System.Windows.Forms.Button
     $CancelButton.Text = "取消"
-    $CancelButton.Location = New-Object System.Drawing.Point(330, 556)
+    $CancelButton.Location = New-Object System.Drawing.Point(330, 598)
     $CancelButton.Size = New-Object System.Drawing.Size(96, 36)
     $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $CancelButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -238,7 +268,7 @@ function Show-PoePatchLauncherDialog {
 
     $RestoreButton = New-Object System.Windows.Forms.Button
     $RestoreButton.Text = "还原物价补丁"
-    $RestoreButton.Location = New-Object System.Drawing.Point(438, 556)
+    $RestoreButton.Location = New-Object System.Drawing.Point(438, 598)
     $RestoreButton.Size = New-Object System.Drawing.Size(96, 36)
     $RestoreButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $RestoreButton.FlatAppearance.BorderColor = $BorderColor
@@ -248,7 +278,7 @@ function Show-PoePatchLauncherDialog {
 
     $StartButton = New-Object System.Windows.Forms.Button
     $StartButton.Text = "开始/更新物价补丁"
-    $StartButton.Location = New-Object System.Drawing.Point(546, 556)
+    $StartButton.Location = New-Object System.Drawing.Point(546, 598)
     $StartButton.Size = New-Object System.Drawing.Size(150, 36)
     $StartButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $StartButton.FlatAppearance.BorderSize = 0
@@ -261,10 +291,10 @@ function Show-PoePatchLauncherDialog {
     $SetOperationLayout = {
         $IsUpdate = ($OperationState.Value -eq "update")
         $ScopeGroup.Visible = $IsUpdate
-        $Form.ClientSize = New-Object System.Drawing.Size(720, $(if ($IsUpdate) { 610 } else { 500 }))
-        $BottomY = if ($IsUpdate) { 556 } else { 446 }
-        $WarningY = if ($IsUpdate) { 490 } else { 382 }
-        $LinkY = if ($IsUpdate) { 526 } else { 418 }
+        $Form.ClientSize = New-Object System.Drawing.Size(720, $(if ($IsUpdate) { 652 } else { 542 }))
+        $BottomY = if ($IsUpdate) { 598 } else { 488 }
+        $WarningY = if ($IsUpdate) { 532 } else { 424 }
+        $LinkY = if ($IsUpdate) { 568 } else { 460 }
         $WarningLabel.Location = New-Object System.Drawing.Point(26, $WarningY)
         $RepositoryLink.Location = New-Object System.Drawing.Point(26, $LinkY)
         $CaimoguLink.Location = New-Object System.Drawing.Point(286, $LinkY)
@@ -282,10 +312,56 @@ function Show-PoePatchLauncherDialog {
         return "auto"
     }
 
+    $GetSelectedLanguageMode = {
+        if ($LanguageCombo.SelectedItem) {
+            return [string]$LanguageCombo.SelectedItem.Mode
+        }
+        return "auto"
+    }
+
     $SetStatus = {
         param([string]$Text, [bool]$IsError)
         $PathStatus.Text = $Text
         $PathStatus.ForeColor = if ($IsError) { $ErrorColor } else { $Muted }
+    }
+
+    $UpdateLanguageControl = {
+        $Version = & $GetRequestedGameVersion
+        if ($Version -eq "auto" -and $ClientCombo.SelectedItem) {
+            $Version = [string]$ClientCombo.SelectedItem.Candidate.GameVersion
+        }
+        $ShowLanguage = ($Version -eq "poe1")
+        $LanguageLabel.Visible = $ShowLanguage
+        $LanguageCombo.Visible = $ShowLanguage
+        $LanguageCombo.Enabled = $ShowLanguage
+    }
+
+    $ShowCandidateStatus = {
+        param($Candidate)
+
+        $Info = $Candidate.InstallInfo
+        if ([string]$Candidate.GameVersion -eq "poe1") {
+            $Info = Get-Poe1InstallInfo -GameDirectory $Candidate.Path `
+                -LanguageMode (& $GetSelectedLanguageMode)
+            $LanguageText = switch ([string]$Info.LanguageName) {
+                "Traditional Chinese" { "繁体中文" }
+                "Simplified Chinese" { "简体中文" }
+                "English" { "英文" }
+                "French" { "法文" }
+                "German" { "德文" }
+                "Japanese" { "日文" }
+                "Korean" { "韩文" }
+                default { [string]$Info.LanguageName }
+            }
+            $LocalizationText = if ($Info.LocalizationDetected) { "；已识别汉化补丁" } else { "" }
+            & $SetStatus "$($Info.DisplayName)；写入：$LanguageText$LocalizationText" $false
+            $ToolTip.SetToolTip($PathStatus, [string]$Info.LanguageSelectionReason)
+        }
+        else {
+            & $SetStatus "$($Info.DisplayName)；$($Info.LanguageName)" $false
+            $ToolTip.SetToolTip($PathStatus, "")
+        }
+        return $Info
     }
 
     $UpdateGameButtonStyle = {
@@ -316,6 +392,7 @@ function Show-PoePatchLauncherDialog {
         else {
             $ScopeStatus.Text = "POE2 使用崇高石 / 神圣石计价。"
         }
+        & $UpdateLanguageControl
     }
 
     $CandidateCache = @{}
@@ -427,8 +504,24 @@ function Show-PoePatchLauncherDialog {
             if ($ClientCombo.SelectedItem) {
                 $Candidate = $ClientCombo.SelectedItem.Candidate
                 $PathTextBox.Text = [string]$Candidate.Path
-                & $SetStatus "$($Candidate.InstallInfo.DisplayName)；$($Candidate.InstallInfo.LanguageName)" $false
                 & $UpdateScopeForGame
+                & $ShowCandidateStatus $Candidate | Out-Null
+            }
+        })
+    $LanguageCombo.Add_SelectedIndexChanged({
+            if ($ClientCombo.SelectedItem -and
+                [string]$ClientCombo.SelectedItem.Candidate.GameVersion -eq "poe1") {
+                & $ShowCandidateStatus $ClientCombo.SelectedItem.Candidate | Out-Null
+            }
+            elseif ($ManualPathRadio.Checked -and (Test-Path -LiteralPath $PathTextBox.Text -PathType Container)) {
+                try {
+                    $Candidate = Resolve-PoePatchManualSelection `
+                        -RequestedGameVersion (& $GetRequestedGameVersion) `
+                        -Path $PathTextBox.Text `
+                        -Poe1LanguageMode (& $GetSelectedLanguageMode)
+                    & $ShowCandidateStatus $Candidate | Out-Null
+                }
+                catch { }
             }
         })
     $BrowseButton.Add_Click({
@@ -444,8 +537,11 @@ function Show-PoePatchLauncherDialog {
             if ($Dialog.ShowDialog($Form) -eq [System.Windows.Forms.DialogResult]::OK) {
                 $PathTextBox.Text = $Dialog.SelectedPath
                 try {
-                    $Candidate = Resolve-PoePatchManualSelection -RequestedGameVersion (& $GetRequestedGameVersion) -Path $PathTextBox.Text
-                    & $SetStatus "$($Candidate.InstallInfo.DisplayName)；$($Candidate.InstallInfo.LanguageName)" $false
+                    $Candidate = Resolve-PoePatchManualSelection `
+                        -RequestedGameVersion (& $GetRequestedGameVersion) `
+                        -Path $PathTextBox.Text `
+                        -Poe1LanguageMode (& $GetSelectedLanguageMode)
+                    & $ShowCandidateStatus $Candidate | Out-Null
                     if ((& $GetRequestedGameVersion) -eq "auto") {
                         & $UpdateScopeForGame
                     }
@@ -490,7 +586,15 @@ function Show-PoePatchLauncherDialog {
                 else {
                     $Candidate = Resolve-PoePatchManualSelection `
                         -RequestedGameVersion (& $GetRequestedGameVersion) `
-                        -Path $PathTextBox.Text
+                        -Path $PathTextBox.Text `
+                        -Poe1LanguageMode (& $GetSelectedLanguageMode)
+                }
+
+                $SelectedLanguageMode = & $GetSelectedLanguageMode
+                $SelectedInstallInfo = $Candidate.InstallInfo
+                if ([string]$Candidate.GameVersion -eq "poe1") {
+                    $SelectedInstallInfo = Get-Poe1InstallInfo -GameDirectory $Candidate.Path `
+                        -LanguageMode $SelectedLanguageMode
                 }
 
                 $PatchScope = "all"
@@ -506,7 +610,8 @@ function Show-PoePatchLauncherDialog {
                     Operation = $RequestedOperation
                     GameVersion = [string]$Candidate.GameVersion
                     GameDirectory = [string]$Candidate.Path
-                    InstallInfo = $Candidate.InstallInfo
+                    InstallInfo = $SelectedInstallInfo
+                    Poe1LanguageMode = $SelectedLanguageMode
                     PathMode = $(if ($AutoPathRadio.Checked) { "auto" } else { "manual" })
                     PatchScope = $PatchScope
                     IslandRumourHints = [bool]($Candidate.GameVersion -eq "poe2" -and $IslandCheck.Checked)
@@ -553,6 +658,9 @@ try {
     Save-PoePatchGameDirectory `
         -GameVersion $Selection.GameVersion `
         -GameDirectory $Selection.GameDirectory | Out-Null
+    if ($Selection.GameVersion -eq "poe1") {
+        Save-Poe1LanguageMode -LanguageMode $Selection.Poe1LanguageMode | Out-Null
+    }
 }
 catch {
     Write-Warning "无法保存最近使用的游戏目录，本次操作仍会继续：$($_.Exception.Message)"
@@ -562,12 +670,14 @@ if ($Selection.Operation -eq "update" -and $Selection.GameVersion -eq "poe1") {
     $ScriptName = "update_poe1_price_patch.ps1"
     $ScriptParameters = @{
         Poe1Dir = [string]$Selection.GameDirectory
+        Poe1LanguageMode = [string]$Selection.Poe1LanguageMode
     }
 }
 elseif ($Selection.Operation -eq "restore" -and $Selection.GameVersion -eq "poe1") {
     $ScriptName = "restore_poe1_price_patch.ps1"
     $ScriptParameters = @{
         Poe1Dir = [string]$Selection.GameDirectory
+        Poe1LanguageMode = [string]$Selection.Poe1LanguageMode
     }
 }
 elseif ($Selection.Operation -eq "update") {

@@ -38,9 +38,14 @@ DEFAULT_POE_NINJA_EXCHANGE_API = (
 DEFAULT_POE_NINJA_ITEM_API = (
     "https://poe.ninja/poe1/api/economy/stash/current/item/overview"
 )
+DEFAULT_POE2SCOUT_API = "https://api.poe2scout.com"
+DEFAULT_POE2SCOUT_REALM = "pc"
+DEFAULT_POEDB_US_ECONOMY_URL = "https://poedb.tw/us/Economy"
+DEFAULT_POEDB_CN_ECONOMY_URL = "https://poedb.tw/cn/Economy"
 DEFAULT_POE_NINJA_LEAGUE = "Standard"
 PATCH_SCOPES = ("all", "currency", "uniques", "none")
 PRICE_SOURCES = ("poe-ninja", "poecurrency-cn")
+FALLBACK_PRICE_SOURCES = ("poe2scout", "poedb-economy")
 UNIQUE_PRICE_LABEL_MODES = ("markup", "overlay", "newline", "off")
 
 POE_NINJA_EXCHANGE_TYPES = (
@@ -57,6 +62,20 @@ POE_NINJA_EXCHANGE_TYPES = (
     "AllflameEmber",
     "Omen",
     "Tattoo",
+    "Runegraft",
+    "DjinnCoin",
+    "Ducat",
+    "EnshroudingCrystal",
+    "Astrolabe",
+)
+# These stash views have one stable market name per game item. Categories such
+# as gems, cluster jewels, base types, Wombgifts, and Valdo maps are excluded:
+# their price depends on variants that cannot be represented by one DAT name.
+POE_NINJA_BASE_ITEM_TYPES = (
+    "Incubator",
+    "Invitation",
+    "Memory",
+    "Vial",
 )
 POE_NINJA_UNIQUE_TYPES = (
     "UniqueWeapon",
@@ -115,6 +134,7 @@ class Poe1Price:
     source_pair: str
     is_unique: bool = False
     display_price: str = ""
+    metadata_path: str = ""
 
 
 def to_decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
@@ -216,13 +236,15 @@ def discover_poe_ninja_league(
         return DEFAULT_POE_NINJA_LEAGUE, "known-fallback", warnings
 
 
-def _validate_exchange_payload(payload: Any, item_type: str) -> dict[str, Any]:
+def _validate_exchange_payload(
+    payload: Any, item_type: str, *, allow_empty: bool = False
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"poe.ninja {item_type} root is not an object")
     lines = payload.get("lines")
     items = payload.get("items")
     core = payload.get("core")
-    if not isinstance(lines, list) or not lines:
+    if not isinstance(lines, list) or (not lines and not allow_empty):
         raise ValueError(f"poe.ninja {item_type} lines is empty or invalid")
     if not isinstance(items, list):
         raise ValueError(f"poe.ninja {item_type} items is not an array")
@@ -231,11 +253,13 @@ def _validate_exchange_payload(payload: Any, item_type: str) -> dict[str, Any]:
     return payload
 
 
-def _validate_unique_payload(payload: Any, item_type: str) -> dict[str, Any]:
+def _validate_unique_payload(
+    payload: Any, item_type: str, *, allow_empty: bool = False
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"poe.ninja {item_type} root is not an object")
     lines = payload.get("lines")
-    if not isinstance(lines, list) or not lines:
+    if not isinstance(lines, list) or (not lines and not allow_empty):
         raise ValueError(f"poe.ninja {item_type} lines is empty or invalid")
     return payload
 
@@ -350,6 +374,43 @@ def _parse_unique_prices(
     return {item.api_id: item for item, _volume in by_name.values()}
 
 
+def _parse_stash_base_prices(
+    payloads: dict[str, dict[str, Any]], divine_chaos: Decimal
+) -> dict[str, Poe1Price]:
+    by_name: dict[str, tuple[Poe1Price, Decimal]] = {}
+    for item_type, payload in payloads.items():
+        for line in payload.get("lines") or []:
+            if not isinstance(line, dict):
+                continue
+            name = str(line.get("name") or "").strip()
+            normalized = normalize_english(name)
+            if not normalized:
+                continue
+            value = to_decimal(line.get("chaosValue"))
+            if value <= 0:
+                value = to_decimal(line.get("divineValue")) * divine_chaos
+            if value <= 0:
+                continue
+            volume = to_decimal(line.get("listingCount") or line.get("count"))
+            details_id = str(line.get("detailsId") or line.get("id") or normalized)
+            observation = Poe1Price(
+                api_id=f"ninja:{item_type.lower()}:{details_id}",
+                en_name=name,
+                localized_name="",
+                category=item_type,
+                price_chaos=value,
+                volume=volume,
+                source_pair=(
+                    f"poe.ninja/{item_type}/{name}; "
+                    f"detailsId={line.get('detailsId') or ''}"
+                ),
+            )
+            previous = by_name.get(normalized)
+            if previous is None or (volume, -value) > (previous[1], -previous[0].price_chaos):
+                by_name[normalized] = (observation, volume)
+    return {item.api_id: item for item, _volume in by_name.values()}
+
+
 def fetch_poe_ninja_prices(
     client: RetryingRequests,
     exchange_api: str,
@@ -357,9 +418,14 @@ def fetch_poe_ninja_prices(
     league: str,
     include_uniques: bool,
     exchange_types: Iterable[str] = POE_NINJA_EXCHANGE_TYPES,
+    base_item_types: Iterable[str] = POE_NINJA_BASE_ITEM_TYPES,
     unique_types: Iterable[str] = POE_NINJA_UNIQUE_TYPES,
 ) -> tuple[dict[str, Any], dict[str, Poe1Price], Decimal]:
     specs = [("exchange", item_type, api_url(exchange_api, league, item_type)) for item_type in exchange_types]
+    specs.extend(
+        ("base-item", item_type, api_url(item_api, league, item_type))
+        for item_type in base_item_types
+    )
     if include_uniques:
         specs.extend(
             ("unique", item_type, api_url(item_api, league, item_type))
@@ -368,6 +434,7 @@ def fetch_poe_ninja_prices(
     progress(f"poe.ninja：开始抓取 {len(specs)} 个 POE1 分类")
 
     exchange_payloads: dict[str, dict[str, Any]] = {}
+    base_item_payloads: dict[str, dict[str, Any]] = {}
     unique_payloads: dict[str, dict[str, Any]] = {}
     errors: dict[str, str] = {}
     stats: list[dict[str, Any]] = []
@@ -383,16 +450,26 @@ def fetch_poe_ninja_prices(
             try:
                 payload = future.result()
                 if kind == "exchange":
-                    exchange_payloads[item_type] = _validate_exchange_payload(payload, item_type)
+                    exchange_payloads[item_type] = _validate_exchange_payload(
+                        payload,
+                        item_type,
+                        allow_empty=item_type != "Currency",
+                    )
+                elif kind == "base-item":
+                    base_item_payloads[item_type] = _validate_unique_payload(
+                        payload, item_type, allow_empty=True
+                    )
                 else:
-                    unique_payloads[item_type] = _validate_unique_payload(payload, item_type)
+                    unique_payloads[item_type] = _validate_unique_payload(
+                        payload, item_type, allow_empty=True
+                    )
                 line_count = len(payload.get("lines") or [])
                 stats.append(
                     {
                         "kind": kind,
                         "type": item_type,
                         "url": url,
-                        "status": "ok",
+                        "status": "ok" if line_count else "empty",
                         "lines": line_count,
                     }
                 )
@@ -421,6 +498,7 @@ def fetch_poe_ninja_prices(
         )
     divine_chaos = _divine_chaos_from_currency(currency)
     prices = _parse_exchange_prices(exchange_payloads, divine_chaos)
+    prices.update(_parse_stash_base_prices(base_item_payloads, divine_chaos))
     prices.update(_parse_unique_prices(unique_payloads, divine_chaos))
     if len(prices) < 20:
         raise ValueError(f"poe.ninja returned too few usable POE1 prices: {len(prices)}")
@@ -435,8 +513,302 @@ def fetch_poe_ninja_prices(
         "failed_categories": failed,
         "category_stats": sorted(stats, key=lambda row: (row["kind"], row["type"])),
         "exchange_payloads": exchange_payloads,
+        "base_item_payloads": base_item_payloads,
         "unique_payloads": unique_payloads,
     }
+    return raw, prices, divine_chaos
+
+
+def _object_list(value: Any, label: str, *, allow_empty: bool = False) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise ValueError(f"{label} is not an array of objects")
+    if not value and not allow_empty:
+        raise ValueError(f"{label} is empty")
+    return value
+
+
+def discover_poe2scout_poe1_league(
+    client: RetryingRequests,
+    api_base: str,
+    preferred_league: str,
+    realm: str = DEFAULT_POE2SCOUT_REALM,
+) -> tuple[str, list[dict[str, Any]], list[str]]:
+    leagues = _object_list(
+        client.get_json(f"{api_base.rstrip('/')}/{realm}/Leagues"),
+        "poe2scout POE1 leagues",
+    )
+    warnings: list[str] = []
+    preferred = str(preferred_league or "").strip().casefold()
+    if preferred:
+        for row in leagues:
+            values = {
+                str(row.get("Value") or "").strip().casefold(),
+                str(row.get("ShortName") or "").strip().casefold(),
+            }
+            if preferred in values:
+                return str(row.get("Value") or preferred_league), leagues, warnings
+
+    current_softcore = [
+        row
+        for row in leagues
+        if _bool_value(row.get("IsCurrent"))
+        and "hardcore" not in str(row.get("Value") or "").casefold()
+    ]
+    if current_softcore:
+        selected = str(current_softcore[0].get("Value") or "").strip()
+        if preferred and selected.casefold() != preferred:
+            warnings.append(
+                f"poe2scout current league {selected} differs from poe.ninja {preferred_league}"
+            )
+        return selected, leagues, warnings
+
+    standard = next(
+        (
+            str(row.get("Value") or "").strip()
+            for row in leagues
+            if str(row.get("Value") or "").strip().casefold() == "standard"
+        ),
+        "",
+    )
+    if standard:
+        warnings.append("poe2scout has no current softcore POE1 league; using Standard")
+        return standard, leagues, warnings
+    raise ValueError("poe2scout returned no usable POE1 league")
+
+
+def fetch_poe2scout_poe1_prices(
+    client: RetryingRequests,
+    api_base: str,
+    preferred_league: str,
+    realm: str = DEFAULT_POE2SCOUT_REALM,
+) -> tuple[dict[str, Any], dict[str, Poe1Price], Decimal]:
+    league, leagues, warnings = discover_poe2scout_poe1_league(
+        client, api_base, preferred_league, realm
+    )
+    league_path = urllib.parse.quote(league, safe="")
+    root = f"{api_base.rstrip('/')}/{realm}/Leagues/{league_path}"
+    progress(f"poe2scout：开始抓取 POE1 PC {league} 价格")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reference_future = pool.submit(client.get_json, f"{root}/ReferenceCurrencies")
+        pairs_future = pool.submit(client.get_json, f"{root}/SnapshotPairs")
+        reference_currencies = _object_list(
+            reference_future.result(), "poe2scout POE1 reference currencies"
+        )
+        snapshot_pairs = _object_list(
+            pairs_future.result(), "poe2scout POE1 snapshot pairs"
+        )
+
+    observations = shared.collect_price_observations(snapshot_pairs)
+    best = shared.choose_best_prices(observations, reference_currencies)
+    metadata_by_api_id: dict[str, str] = {}
+    for pair in snapshot_pairs:
+        for key in ("CurrencyOne", "CurrencyTwo"):
+            currency = pair.get(key)
+            if not isinstance(currency, dict):
+                continue
+            api_id = str(currency.get("ApiId") or "").strip()
+            metadata_path = str(currency.get("BaseItemTypeId") or "").strip()
+            if api_id and metadata_path:
+                metadata_by_api_id.setdefault(api_id, metadata_path)
+
+    prices: dict[str, Poe1Price] = {}
+    for api_id, observation in best.items():
+        price_chaos = to_decimal(observation.price_exalted)
+        if not api_id or not observation.en_name or price_chaos <= 0:
+            continue
+        prices[api_id] = Poe1Price(
+            api_id=api_id,
+            en_name=observation.en_name,
+            localized_name="",
+            category=observation.category,
+            price_chaos=price_chaos,
+            volume=to_decimal(observation.value_traded),
+            source_pair=f"poe2scout/{observation.source_pair}",
+            metadata_path=metadata_by_api_id.get(api_id, ""),
+        )
+    divine = prices.get("divine")
+    divine_chaos = divine.price_chaos if divine else Decimal("0")
+    if divine_chaos <= 0:
+        raise ValueError("cannot determine poe2scout POE1 Divine/Chaos ratio")
+    if len(prices) < 20:
+        raise ValueError(f"poe2scout returned too few POE1 prices: {len(prices)}")
+
+    raw = {
+        "source": "poe2scout-poe1-pc",
+        "status": "ok",
+        "realm": realm,
+        "league": league,
+        "league_warnings": warnings,
+        "league_count": len(leagues),
+        "reference_currencies": reference_currencies,
+        "snapshot_pair_count": len(snapshot_pairs),
+        "price_count": len(prices),
+        "metadata_path_count": sum(bool(item.metadata_path) for item in prices.values()),
+    }
+    progress(f"poe2scout：POE1 已整理 {len(prices)} 条价格")
+    return raw, prices, divine_chaos
+
+
+def poe1_poedb_divine_price_chaos(rows: dict[str, shared.Poe2dbEconomyRow]) -> Decimal:
+    divine = rows.get("divine")
+    if divine and divine.left_key == "chaos" and divine.right_qty > 0:
+        return divine.left_qty / divine.right_qty
+    chaos = rows.get("chaos")
+    if chaos and chaos.left_key == "divine" and chaos.left_qty > 0:
+        return chaos.right_qty / chaos.left_qty
+    raise ValueError("cannot determine PoEDB POE1 Divine/Chaos ratio")
+
+
+def poe1_poedb_row_price_chaos(
+    row: shared.Poe2dbEconomyRow, divine_chaos: Decimal
+) -> Decimal:
+    if row.right_qty <= 0:
+        return Decimal("0")
+    left_price = row.left_qty / row.right_qty
+    if row.left_key == "chaos":
+        return left_price
+    if row.left_key == "divine":
+        return left_price * divine_chaos
+    return Decimal("0")
+
+
+def fetch_poedb_poe1_prices(
+    client: RetryingRequests,
+    us_url: str,
+    cn_url: str,
+) -> tuple[dict[str, Any], dict[str, Poe1Price], Decimal]:
+    progress("PoEDB：读取 POE1 经济分类入口")
+    us_html = client.get(us_url).text
+    cn_html = client.get(cn_url).text
+    us_initial = shared.poe2db_economy_initial_pages(us_url)
+    cn_initial = shared.poe2db_economy_initial_pages(cn_url)
+    pages = shared.discover_poe2db_economy_category_pages(us_html)
+    for page in shared.discover_poe2db_economy_category_pages(cn_html):
+        if page not in pages:
+            pages.append(page)
+    if not pages:
+        raise ValueError("PoEDB POE1 Economy exposed no category pages")
+
+    def fetch_page(
+        page: str,
+    ) -> tuple[dict[str, shared.Poe2dbEconomyRow], dict[str, shared.Poe2dbEconomyRow], dict[str, Any]]:
+        us_page_url = us_url if page in us_initial else shared.poe2db_economy_category_url(us_url, page)
+        cn_page_url = cn_url if page in cn_initial else shared.poe2db_economy_category_url(cn_url, page)
+        try:
+            page_us_html = us_html if page in us_initial else client.get(us_page_url).text
+            us_rows = shared.parse_poe2db_economy_rows(page_us_html)
+            if not us_rows:
+                raise ValueError("US table is empty")
+        except Exception as exc:
+            return {}, {}, {
+                "page": page,
+                "status": "failed",
+                "us_url": us_page_url,
+                "cn_url": cn_page_url,
+                "us_rows": 0,
+                "cn_rows": 0,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        cn_error = ""
+        try:
+            page_cn_html = cn_html if page in cn_initial else client.get(cn_page_url).text
+            cn_rows = shared.parse_poe2db_economy_rows(page_cn_html)
+        except Exception as exc:
+            cn_rows = {}
+            cn_error = f"{type(exc).__name__}: {exc}"
+        return us_rows, cn_rows, {
+            "page": page,
+            "status": "ok" if cn_rows else "partial",
+            "us_url": us_page_url,
+            "cn_url": cn_page_url,
+            "us_rows": len(us_rows),
+            "cn_rows": len(cn_rows),
+            "error": cn_error,
+        }
+
+    fetched: dict[
+        str,
+        tuple[
+            dict[str, shared.Poe2dbEconomyRow],
+            dict[str, shared.Poe2dbEconomyRow],
+            dict[str, Any],
+        ],
+    ] = {}
+    with ThreadPoolExecutor(max_workers=min(6, len(pages))) as pool:
+        futures = {pool.submit(fetch_page, page): page for page in pages}
+        for future in as_completed(futures):
+            page = futures[future]
+            fetched[page] = future.result()
+
+    us_rows: dict[str, shared.Poe2dbEconomyRow] = {}
+    cn_rows: dict[str, shared.Poe2dbEconomyRow] = {}
+    row_pages: dict[str, str] = {}
+    page_stats: list[dict[str, Any]] = []
+    for page in pages:
+        page_us_rows, page_cn_rows, stat = fetched[page]
+        for key, row in page_us_rows.items():
+            us_rows[key] = row
+            row_pages[key] = page
+        cn_rows.update(page_cn_rows)
+        page_stats.append(stat)
+
+    core_page = "Economy_Currency"
+    core_stat = next((item for item in page_stats if item.get("page") == core_page), None)
+    if core_stat and core_stat.get("status") == "failed":
+        raise ValueError(f"PoEDB POE1 core category failed: {core_stat.get('error')}")
+    if not us_rows:
+        raise ValueError("PoEDB POE1 US Economy rows are empty")
+    divine_chaos = poe1_poedb_divine_price_chaos(us_rows)
+
+    prices: dict[str, Poe1Price] = {}
+    for key, us_row in us_rows.items():
+        if key == "chaos":
+            price_chaos = Decimal("1")
+            api_id = "chaos"
+        elif key == "divine":
+            price_chaos = divine_chaos
+            api_id = "divine"
+        else:
+            price_chaos = poe1_poedb_row_price_chaos(us_row, divine_chaos)
+            api_id = f"poedb:{key}"
+        if price_chaos <= 0 or not us_row.name:
+            continue
+        localized = cn_rows.get(key)
+        prices[api_id] = Poe1Price(
+            api_id=api_id,
+            en_name=us_row.name,
+            localized_name=localized.name if localized else "",
+            category=row_pages.get(key, "poedb-economy"),
+            price_chaos=price_chaos,
+            volume=us_row.volume,
+            source_pair=(
+                f"PoEDB POE1/{row_pages.get(key, 'Economy')}/{us_row.name}; "
+                f"value={us_row.left_qty}/{us_row.right_qty} {us_row.left_key}"
+            ),
+        )
+
+    failed_pages = [
+        str(item.get("page")) for item in page_stats if item.get("status") == "failed"
+    ]
+    partial_pages = [
+        str(item.get("page")) for item in page_stats if item.get("status") == "partial"
+    ]
+    raw = {
+        "source": "poedb-poe1-economy",
+        "status": "partial" if failed_pages or partial_pages else "ok",
+        "us_url": us_url,
+        "cn_url": cn_url,
+        "category_pages": pages,
+        "category_count": len(pages),
+        "failed_categories": failed_pages,
+        "localized_partial_categories": partial_pages,
+        "category_page_stats": page_stats,
+        "us_rows": len(us_rows),
+        "cn_rows": len(cn_rows),
+        "price_count": len(prices),
+        "divine_price_chaos": str(divine_chaos),
+    }
+    progress(f"PoEDB：POE1 已整理 {len(prices)} 条价格")
     return raw, prices, divine_chaos
 
 
@@ -569,9 +941,12 @@ def match_base_items(
     base_pairs: list[BaseItemPair],
     prefer_localized: bool,
 ) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    by_path: dict[str, BaseItemPair] = {}
     by_en: dict[str, list[BaseItemPair]] = {}
     by_localized: dict[str, list[BaseItemPair]] = {}
     for pair in base_pairs:
+        if pair.metadata_path:
+            by_path[pair.metadata_path] = pair
         if pair.en_name:
             by_en.setdefault(normalize_english(pair.en_name), []).append(pair)
         if pair.tc_name:
@@ -585,8 +960,12 @@ def match_base_items(
         if price.price_chaos < Decimal("1") or not price.display_price:
             continue
         candidates: list[BaseItemPair] = []
+        if price.metadata_path and price.metadata_path in by_path:
+            candidates = [by_path[price.metadata_path]]
         if prefer_localized and price.localized_name:
-            candidates = by_localized.get(normalize_localized(price.localized_name), [])
+            candidates = candidates or by_localized.get(
+                normalize_localized(price.localized_name), []
+            )
         if not candidates and price.en_name:
             candidates = by_en.get(normalize_english(price.en_name), [])
         if not candidates:
@@ -595,7 +974,11 @@ def match_base_items(
                     "api_id": price.api_id,
                     "en_name": price.en_name,
                     "localized_name": price.localized_name,
-                    "reason": "not found in local POE1 BaseItemTypes",
+                    "reason": (
+                        f"metadata path {price.metadata_path} and names not found in local POE1 BaseItemTypes"
+                        if price.metadata_path
+                        else "not found in local POE1 BaseItemTypes"
+                    ),
                 }
             )
             continue
@@ -739,6 +1122,22 @@ def derive_words_game_path(base_items_game_path: str) -> str:
     )
 
 
+def parse_fallback_sources(value: str) -> list[str]:
+    sources: list[str] = []
+    for raw in str(value or "").split(","):
+        source = raw.strip().lower()
+        if not source or source == "none":
+            continue
+        if source not in FALLBACK_PRICE_SOURCES:
+            allowed = ", ".join(FALLBACK_PRICE_SOURCES)
+            raise argparse.ArgumentTypeError(
+                f"unsupported POE1 fallback source {source!r}; expected {allowed} or none"
+            )
+        if source not in sources:
+            sources.append(source)
+    return sources
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch POE1 prices and generate a C/D item-name patch."
@@ -748,6 +1147,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--poe-ninja-index-url", default=DEFAULT_POE_NINJA_INDEX_URL)
     parser.add_argument("--poe-ninja-exchange-api", default=DEFAULT_POE_NINJA_EXCHANGE_API)
     parser.add_argument("--poe-ninja-item-api", default=DEFAULT_POE_NINJA_ITEM_API)
+    parser.add_argument("--poe2scout-api-base", default=DEFAULT_POE2SCOUT_API)
+    parser.add_argument("--poe2scout-realm", default=DEFAULT_POE2SCOUT_REALM)
+    parser.add_argument("--poedb-us-economy-url", default=DEFAULT_POEDB_US_ECONOMY_URL)
+    parser.add_argument("--poedb-cn-economy-url", default=DEFAULT_POEDB_CN_ECONOMY_URL)
+    parser.add_argument(
+        "--fallback-price-sources",
+        type=parse_fallback_sources,
+        default=list(FALLBACK_PRICE_SOURCES),
+        help="Comma-separated POE1 base-item fallback chain or none.",
+    )
     parser.add_argument("--league")
     parser.add_argument("--en-baseitems", type=Path, default=DEFAULT_EN_BASEITEMS)
     parser.add_argument("--tc-baseitems", type=Path, default=DEFAULT_TC_BASEITEMS)
@@ -837,60 +1246,187 @@ def main(argv: list[str]) -> int:
     ninja_prices: dict[str, Poe1Price] = {}
     ninja_error = ""
     ninja_divine_chaos = Decimal("0")
+    scout_raw: dict[str, Any] = {}
+    scout_prices: dict[str, Poe1Price] = {}
+    scout_error = ""
+    scout_divine_chaos = Decimal("0")
+    poedb_raw: dict[str, Any] = {}
+    poedb_prices: dict[str, Poe1Price] = {}
+    poedb_error = ""
+    poedb_divine_chaos = Decimal("0")
+    poecurrency_quality: dict[str, Any] = {}
+    poecurrency_raw: Any = None
+    poecurrency_prices: dict[str, Poe1Price] = {}
+    poecurrency_divine_chaos = Decimal("0")
+    poecurrency_error = ""
+
     if fetch_prices:
-        try:
-            ninja_raw, ninja_prices, ninja_divine_chaos = fetch_poe_ninja_prices(
-                client,
-                args.poe_ninja_exchange_api,
-                args.poe_ninja_item_api,
-                league,
-                include_uniques=patch_unique_words,
-            )
+        source_futures: dict[Any, str] = {}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            source_futures[
+                pool.submit(
+                    fetch_poe_ninja_prices,
+                    client,
+                    args.poe_ninja_exchange_api,
+                    args.poe_ninja_item_api,
+                    league,
+                    patch_unique_words,
+                    POE_NINJA_EXCHANGE_TYPES,
+                    POE_NINJA_BASE_ITEM_TYPES if patch_base_items else (),
+                    POE_NINJA_UNIQUE_TYPES,
+                )
+            ] = "poe-ninja"
+            if patch_base_items and "poe2scout" in args.fallback_price_sources:
+                source_futures[
+                    pool.submit(
+                        fetch_poe2scout_poe1_prices,
+                        client,
+                        args.poe2scout_api_base,
+                        league,
+                        args.poe2scout_realm,
+                    )
+                ] = "poe2scout"
+            if patch_base_items and "poedb-economy" in args.fallback_price_sources:
+                source_futures[
+                    pool.submit(
+                        fetch_poedb_poe1_prices,
+                        client,
+                        args.poedb_us_economy_url,
+                        args.poedb_cn_economy_url,
+                    )
+                ] = "poedb-economy"
+            if args.price_source == "poecurrency-cn":
+                source_futures[
+                    pool.submit(client.get_json, args.poecurrency_summary_url)
+                ] = "poecurrency-cn"
+
+            source_results: dict[str, Any] = {}
+            source_errors: dict[str, str] = {}
+            for future in as_completed(source_futures):
+                source = source_futures[future]
+                try:
+                    source_results[source] = future.result()
+                except Exception as exc:
+                    source_errors[source] = f"{type(exc).__name__}: {exc}"
+
+        if "poe-ninja" in source_results:
+            ninja_raw, ninja_prices, ninja_divine_chaos = source_results["poe-ninja"]
             (args.out_dir / "poe_ninja_raw.json").write_text(
                 json.dumps(ninja_raw, ensure_ascii=False, indent=2), encoding="utf-8"
             )
-        except Exception as exc:
-            ninja_error = f"{type(exc).__name__}: {exc}"
+        else:
+            ninja_error = source_errors.get("poe-ninja", "poe.ninja was not requested")
             (args.out_dir / "poe_ninja_error.json").write_text(
                 json.dumps({"status": "failed", "error": ninja_error}, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            if args.price_source == "poe-ninja" or patch_unique_words:
-                raise
             print(f"warning: POE1 poe.ninja unavailable: {ninja_error}", file=sys.stderr)
+
+        if "poe2scout" in source_results:
+            scout_raw, scout_prices, scout_divine_chaos = source_results["poe2scout"]
+            (args.out_dir / "poe2scout_raw.json").write_text(
+                json.dumps(scout_raw, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        elif "poe2scout" in args.fallback_price_sources and patch_base_items:
+            scout_error = source_errors.get("poe2scout", "poe2scout was not requested")
+            (args.out_dir / "poe2scout_error.json").write_text(
+                json.dumps({"status": "failed", "error": scout_error}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(f"warning: POE1 poe2scout unavailable: {scout_error}", file=sys.stderr)
+
+        if "poedb-economy" in source_results:
+            poedb_raw, poedb_prices, poedb_divine_chaos = source_results["poedb-economy"]
+            (args.out_dir / "poedb_economy_raw.json").write_text(
+                json.dumps(poedb_raw, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        elif "poedb-economy" in args.fallback_price_sources and patch_base_items:
+            poedb_error = source_errors.get("poedb-economy", "PoEDB was not requested")
+            (args.out_dir / "poedb_economy_error.json").write_text(
+                json.dumps({"status": "failed", "error": poedb_error}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(f"warning: POE1 PoEDB unavailable: {poedb_error}", file=sys.stderr)
+
+        if "poecurrency-cn" in source_results:
+            poecurrency_raw = source_results["poecurrency-cn"]
+            (args.out_dir / "poecurrency_cn_raw.json").write_text(
+                json.dumps(poecurrency_raw, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        elif args.price_source == "poecurrency-cn":
+            poecurrency_error = source_errors.get(
+                "poecurrency-cn", "poecurrency.top was not requested"
+            )
+            (args.out_dir / "poecurrency_cn_error.json").write_text(
+                json.dumps(
+                    {"status": "failed", "error": poecurrency_error},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
 
     primary_prices = ninja_prices
     primary_divine_chaos = ninja_divine_chaos
     primary_status = "ok" if ninja_prices else "disabled"
     primary_warning = ninja_error
-    poecurrency_quality: dict[str, Any] = {}
-    poecurrency_raw: Any = None
-    if fetch_prices and args.price_source == "poecurrency-cn":
+    primary_source_used = "poe-ninja" if ninja_prices else ""
+    if fetch_prices and args.price_source == "poecurrency-cn" and poecurrency_raw is not None:
         try:
-            poecurrency_raw = client.get_json(args.poecurrency_summary_url)
-            (args.out_dir / "poecurrency_cn_raw.json").write_text(
-                json.dumps(poecurrency_raw, ensure_ascii=False, indent=2), encoding="utf-8"
+            poecurrency_prices, poecurrency_divine_chaos, poecurrency_quality = collect_poecurrency_prices(
+                poecurrency_raw,
+                ninja_divine_chaos or scout_divine_chaos or poedb_divine_chaos,
             )
-            primary_prices, primary_divine_chaos, poecurrency_quality = collect_poecurrency_prices(
-                poecurrency_raw, ninja_divine_chaos
-            )
+            primary_prices = poecurrency_prices
+            primary_divine_chaos = poecurrency_divine_chaos
             primary_status = "ok"
             primary_warning = ""
+            primary_source_used = "poecurrency-cn"
         except Exception as exc:
-            primary_status = "fallback"
-            primary_warning = f"poecurrency version=1 failed: {type(exc).__name__}: {exc}"
+            poecurrency_error = f"poecurrency version=1 failed: {type(exc).__name__}: {exc}"
+    elif fetch_prices and args.price_source == "poecurrency-cn":
+        poecurrency_error = poecurrency_error or "poecurrency version=1 returned no data"
+
+    fallback_candidates = [
+        ("poe-ninja", ninja_prices, ninja_divine_chaos),
+        ("poe2scout", scout_prices, scout_divine_chaos),
+        ("poedb-economy", poedb_prices, poedb_divine_chaos),
+    ]
+    if not primary_prices:
+        for source, prices, source_divine in fallback_candidates:
+            if prices:
+                primary_prices = prices
+                primary_divine_chaos = source_divine
+                primary_status = "fallback"
+                primary_source_used = source
+                break
+    if args.price_source == "poecurrency-cn" and primary_source_used != "poecurrency-cn":
+        primary_status = "fallback" if primary_prices else "failed"
+        primary_warning = poecurrency_error
+        if primary_warning:
             print(f"warning: {primary_warning}", file=sys.stderr)
-            if not ninja_prices:
-                raise
-            primary_prices = ninja_prices
-            primary_divine_chaos = ninja_divine_chaos
+    elif args.price_source == "poe-ninja" and primary_source_used != "poe-ninja":
+        primary_status = "fallback" if primary_prices else "failed"
+        primary_warning = ninja_error
 
     if fetch_prices and not primary_prices:
         raise ValueError("all enabled POE1 price sources failed")
+    if patch_unique_words and not ninja_prices and not patch_base_items:
+        raise ValueError(f"POE1 unique prices require poe.ninja: {ninja_error}")
     divine_chaos = primary_divine_chaos or ninja_divine_chaos
-    apply_display_prices(primary_prices, divine_chaos)
-    if ninja_prices is not primary_prices:
-        apply_display_prices(ninja_prices, ninja_divine_chaos or divine_chaos)
+    source_price_sets = {
+        "poe-ninja": (ninja_prices, ninja_divine_chaos),
+        "poe2scout": (scout_prices, scout_divine_chaos),
+        "poedb-economy": (poedb_prices, poedb_divine_chaos),
+    }
+    if args.price_source == "poecurrency-cn":
+        source_price_sets["poecurrency-cn"] = (
+            poecurrency_prices,
+            poecurrency_divine_chaos,
+        )
+    for prices, source_divine in source_price_sets.values():
+        if prices:
+            apply_display_prices(prices, source_divine or divine_chaos)
 
     if args.en_baseitems.exists():
         base_pairs = shared.load_base_item_pairs(args.en_baseitems, args.tc_baseitems)
@@ -899,18 +1435,49 @@ def main(argv: list[str]) -> int:
     rows: list[dict[str, str]] = []
     missing: list[dict[str, str]] = []
     fallback_rows_added = 0
+    source_matched_items: dict[str, int] = {}
+    source_rows_added: dict[str, int] = {}
+    fallback_rows_added_by_source: dict[str, int] = {}
     if patch_base_items:
-        rows, missing = match_base_items(
-            primary_prices,
-            base_pairs,
-            prefer_localized=args.price_source == "poecurrency-cn" and primary_status == "ok",
+        source_order = (
+            ["poecurrency-cn", "poe-ninja", "poe2scout", "poedb-economy"]
+            if args.price_source == "poecurrency-cn"
+            else ["poe-ninja", "poe2scout", "poedb-economy"]
         )
-        if args.price_source == "poecurrency-cn" and ninja_prices and primary_prices is not ninja_prices:
-            ninja_rows, ninja_missing = match_base_items(
-                ninja_prices, base_pairs, prefer_localized=False
+        for source in source_order:
+            prices, _source_divine = source_price_sets.get(
+                source, ({}, Decimal("0"))
             )
-            rows, fallback_rows_added = merge_fallback_rows(rows, ninja_rows)
-            missing.extend(ninja_missing)
+            if not prices:
+                continue
+            source_rows, source_missing = match_base_items(
+                prices,
+                base_pairs,
+                prefer_localized=(
+                    args.price_source == "poecurrency-cn"
+                    and source in {"poecurrency-cn", "poedb-economy"}
+                ),
+            )
+            source_matched_items[source] = len(source_rows)
+            missing.extend(source_missing)
+            if not rows:
+                rows = source_rows
+                source_rows_added[source] = len(source_rows)
+                continue
+            rows, added = merge_fallback_rows(rows, source_rows)
+            source_rows_added[source] = added
+            fallback_rows_added_by_source[source] = added
+            fallback_rows_added += added
+
+        deduped_missing: dict[tuple[str, str, str], dict[str, str]] = {}
+        for item in missing:
+            key = (
+                item.get("api_id", ""),
+                item.get("en_name", ""),
+                item.get("reason", ""),
+            )
+            deduped_missing[key] = item
+        missing = list(deduped_missing.values())
         if len(base_pairs) >= 100 and len(rows) < 10:
             raise ValueError(
                 f"POE1 local match gate failed: matched={len(rows)}, base_items={len(base_pairs)}"
@@ -950,6 +1517,14 @@ def main(argv: list[str]) -> int:
     unique_words_available = 0
     unique_words_patched = 0
     feature_degradations: list[dict[str, str]] = []
+    if patch_unique_words and not ninja_prices:
+        feature_degradations.append(
+            {
+                "feature": "unique-words",
+                "status": "unavailable",
+                "reason": f"poe.ninja unavailable: {ninja_error}",
+            }
+        )
     if not args.no_build_patch:
         if not args.game_path:
             raise SystemExit("--game-path is required when building a POE1 patch")
@@ -975,7 +1550,12 @@ def main(argv: list[str]) -> int:
                 else:
                     unique_names = {}
                 unique_words_available = len(unique_names)
-                if patch_unique_words and unique_names and args.unique_price_label_mode != "off":
+                if (
+                    patch_unique_words
+                    and ninja_prices
+                    and unique_names
+                    and args.unique_price_label_mode != "off"
+                ):
                     unique_observations = to_shared_unique_observations(ninja_prices)
                     unique_words_patched, raw_rows, raw_missing = shared.patch_unique_word_prices(
                         tc_words_path=args.tc_words,
@@ -1039,8 +1619,10 @@ def main(argv: list[str]) -> int:
     summary = {
         "game_version": "poe1",
         "price_source": args.price_source,
+        "primary_source_used": primary_source_used,
         "primary_source_status": primary_status,
         "primary_source_warning": primary_warning,
+        "fallback_price_sources": args.fallback_price_sources,
         "patch_scope": args.patch_scope,
         "league": league,
         "league_selection_source": league_source,
@@ -1050,9 +1632,15 @@ def main(argv: list[str]) -> int:
         "display_units": ["C", "D"],
         "source_prices": len(primary_prices),
         "ninja_prices": len(ninja_prices),
+        "poe2scout_prices": len(scout_prices),
+        "poedb_prices": len(poedb_prices),
+        "poecurrency_prices": len(poecurrency_prices),
         "matched_items": len(rows),
         "missing_items": len(missing),
         "fallback_matched_items": fallback_rows_added,
+        "fallback_matched_items_by_source": fallback_rows_added_by_source,
+        "source_matched_items": source_matched_items,
+        "source_rows_added": source_rows_added,
         "unique_words_available": unique_words_available,
         "unique_words_patched": unique_words_patched,
         "missing_unique_word_prices": len(unique_missing),
@@ -1060,6 +1648,37 @@ def main(argv: list[str]) -> int:
         "poecurrency_quality": poecurrency_quality,
         "poe_ninja_status": ninja_raw.get("status") if ninja_raw else "failed",
         "poe_ninja_error": ninja_error,
+        "poe2scout_status": scout_raw.get("status") if scout_raw else "failed",
+        "poe2scout_error": scout_error,
+        "poedb_status": poedb_raw.get("status") if poedb_raw else "failed",
+        "poedb_error": poedb_error,
+        "poecurrency_error": poecurrency_error,
+        "source_statuses": {
+            "poe-ninja": {
+                "status": ninja_raw.get("status") if ninja_raw else "failed",
+                "prices": len(ninja_prices),
+                "error": ninja_error,
+            },
+            "poe2scout": {
+                "status": scout_raw.get("status") if scout_raw else "disabled",
+                "prices": len(scout_prices),
+                "error": scout_error,
+            },
+            "poedb-economy": {
+                "status": poedb_raw.get("status") if poedb_raw else "disabled",
+                "prices": len(poedb_prices),
+                "error": poedb_error,
+            },
+            "poecurrency-cn": {
+                "status": (
+                    "ok"
+                    if poecurrency_prices
+                    else ("failed" if args.price_source == "poecurrency-cn" else "disabled")
+                ),
+                "prices": len(poecurrency_prices),
+                "error": poecurrency_error,
+            },
+        },
         "feature_degradations": feature_degradations,
         "http_request_count": len(client.request_metrics()),
         "http_requests": client.request_metrics(),
