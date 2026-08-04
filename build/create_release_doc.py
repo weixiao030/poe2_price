@@ -8,7 +8,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.5.2"
+PATCH_VERSION = "v0.5.3"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -34,13 +34,19 @@ def copy_template_doc() -> bool:
             "更新和还原都会自动识别 POE1 / POE2、国服 WeGame、国际服官方 GGPK、国际服 Steam/Epic Bundles2，也可以手动选择游戏目录。"
         ),
         "把整个“物价补丁”文件夹放到 POE2 游戏根目录。脚本会自动识别上一级目录，不写死盘符。": (
-            "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录和各平台游戏库，也可以手动浏览。"
+            "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录、GGG 官服注册表和各平台游戏库，也可以手动浏览。"
+        ),
+        "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录和各平台游戏库，也可以手动浏览。": (
+            "“物价补丁”文件夹可以放在任意位置。放在游戏根目录下仍可最快识别；放在其它位置时，程序会检查最近目录、GGG 官服注册表和各平台游戏库，也可以手动浏览。"
         ),
         "二、自动识别": "二、选择与自动识别游戏目录",
         r"<POE2游戏根目录>\Content.ggpk": r"<POE1 或 POE2 游戏根目录>\Content.ggpk",
         r"<POE2游戏根目录>\Bundles2\_.index.bin": r"<POE1 或 POE2 游戏根目录>\Bundles2\_.index.bin",
         "检测到 Content.ggpk：按国际服官方 GGPK 处理。": (
-            "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。"
+            "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、GGG 官服注册表、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。"
+        ),
+        "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。": (
+            "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、GGG 官服注册表、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。"
         ),
         "检测到 Bundles2 且有 WeGame/腾讯文件特征：按国服 WeGame Bundles2 处理。": (
             "国服会匹配“流放之路：降临”和 WeGameApps\\rail_apps 游戏库；目录还必须包含 Bundles2\\_.index.bin，并通过 WeGame/Rail/Tencent 特征确认。"
@@ -307,7 +313,7 @@ def build():
     bullets(
         doc,
         [
-            "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。",
+            "自动模式依次检查补丁文件夹上一级、环境变量、最近有效目录、GGG 官服注册表、已安装程序、WeGame/Steam 游戏库、Epic 清单和常见位置。",
             "国服会匹配“流放之路：降临”和 WeGameApps\\rail_apps 游戏库；目录还必须包含 Bundles2\\_.index.bin，并通过 WeGame/Rail/Tencent 特征确认。",
             "检测到 Content.ggpk 时按国际服官方 GGPK 处理；检测到非国服特征的 Bundles2 时按国际服 Steam/Epic 处理。",
             "如果发现多个客户端，程序不会猜测，请切换到手动选择。确认后的有效目录会保存，更新与还原下次可复用。POE1 还可选择自动识别、汉化补丁、简体中文、繁体中文或跟随游戏配置。",

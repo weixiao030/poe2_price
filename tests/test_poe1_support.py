@@ -406,6 +406,28 @@ def test_poe1_language_setting_survives_game_directory_save(tmp_path: Path):
     assert Path(state["poe1_game_directory"]) == game.resolve()
 
 
+def test_poe1_official_registry_install_location_is_discovered(tmp_path: Path):
+    game = tmp_path / "Path of Exile"
+    game.mkdir()
+    (game / "Content.ggpk").write_bytes(b"ggpk")
+    normalized_game = str(game.resolve()).rstrip("\\")
+
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; . {ps_quote(PROFILES)}; "
+        "function global:Get-ItemProperty { "
+        "param([string]$LiteralPath, [string]$Path, [object]$ErrorAction); "
+        "$key = if (-not [string]::IsNullOrWhiteSpace($LiteralPath)) { $LiteralPath } else { $Path }; "
+        "if ($key -eq 'HKCU:\\Software\\GrindingGearGames\\Path of Exile') { "
+        f"return [pscustomobject]@{{ InstallLocation = {ps_quote(game)} }} "
+        "} }; "
+        f"$candidate = @(Get-Poe1GameDirectoryCandidates -IgnoreSavedDirectory | Where-Object {{ $_.Path.TrimEnd('\\') -eq {ps_quote(normalized_game)} }}); "
+        "if ($candidate.Count -ne 1) { throw 'official registry candidate missing' }; "
+        'Write-Output "$($candidate[0].Source)`n$($candidate[0].InstallInfo.Mode)`n$($candidate[0].Priority)"'
+    )
+
+    assert output.splitlines() == ["GGG 官服注册表", "GGPK", "15"]
+
+
 def test_poe1_gui_and_scripts_forward_language_mode_and_isolate_restore_names():
     gui = (TOOLS / "price_patch_gui.ps1").read_text(encoding="utf-8-sig")
     update = (TOOLS / "update_poe1_price_patch.ps1").read_text(encoding="utf-8-sig")

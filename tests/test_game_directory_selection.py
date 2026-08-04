@@ -157,6 +157,55 @@ def test_environment_directory_overrides_saved_auto_choice(tmp_path: Path):
     assert output == str(env_game.resolve())
 
 
+def test_poe2_official_registry_install_location_is_discovered(tmp_path: Path):
+    game = tmp_path / "Path of Exile 2"
+    game.mkdir()
+    (game / "Content.ggpk").write_bytes(b"ggpk")
+    normalized_game = str(game.resolve()).rstrip("\\")
+
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; "
+        "function global:Get-ItemProperty { "
+        "param([string]$LiteralPath, [string]$Path, [object]$ErrorAction); "
+        "$key = if (-not [string]::IsNullOrWhiteSpace($LiteralPath)) { $LiteralPath } else { $Path }; "
+        "if ($key -eq 'HKCU:\\Software\\GrindingGearGames\\Path of Exile 2') { "
+        f"return [pscustomobject]@{{ InstallLocation = {ps_quote(game)} }} "
+        "} }; "
+        f"$candidate = @(Get-Poe2GameDirectoryCandidates -IgnoreSavedDirectory | Where-Object {{ $_.Path.TrimEnd('\\') -eq {ps_quote(normalized_game)} }}); "
+        "if ($candidate.Count -ne 1) { throw 'official registry candidate missing' }; "
+        'Write-Output "$($candidate[0].Source)`n$($candidate[0].Mode)`n$($candidate[0].Priority)"'
+    )
+
+    assert output.splitlines() == ["GGG 官服注册表", "GGPK", "15"]
+
+
+def test_saved_and_registry_paths_with_trailing_separator_are_deduplicated(
+    tmp_path: Path,
+):
+    game = tmp_path / "Path of Exile 2"
+    settings = tmp_path / "state" / "settings.json"
+    game.mkdir()
+    (game / "Content.ggpk").write_bytes(b"ggpk")
+    normalized_game = str(game.resolve()).rstrip("\\")
+    registry_game = normalized_game + "\\"
+
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; "
+        f"Save-Poe2GameDirectory -Poe2Dir {ps_quote(game)} -SettingsPath {ps_quote(settings)} | Out-Null; "
+        "function global:Get-ItemProperty { "
+        "param([string]$LiteralPath, [string]$Path, [object]$ErrorAction); "
+        "$key = if (-not [string]::IsNullOrWhiteSpace($LiteralPath)) { $LiteralPath } else { $Path }; "
+        "if ($key -eq 'HKCU:\\Software\\GrindingGearGames\\Path of Exile 2') { "
+        f"return [pscustomobject]@{{ InstallLocation = {ps_quote(registry_game)} }} "
+        "} }; "
+        f"$candidate = @(Get-Poe2GameDirectoryCandidates -SettingsPath {ps_quote(settings)} | Where-Object {{ $_.Path.TrimEnd('\\') -eq {ps_quote(normalized_game)} }}); "
+        "if ($candidate.Count -ne 1) { throw 'duplicate official registry candidate' }; "
+        'Write-Output "$($candidate[0].Source)`n$($candidate[0].Priority)"'
+    )
+
+    assert output.splitlines() == ["最近使用的游戏目录", "8"]
+
+
 def test_gui_exposes_auto_and_manual_directory_modes():
     update = UPDATE.read_text(encoding="utf-8-sig")
     for expected in (

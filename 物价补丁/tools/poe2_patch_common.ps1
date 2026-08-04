@@ -165,6 +165,41 @@ function Test-Poe2GameDirectory {
     }
 }
 
+function Get-PoeGggRegistryInstallLocations {
+    param(
+        [ValidateSet("poe1", "poe2")]
+        [string]$GameVersion
+    )
+
+    $SubKey = if ($GameVersion -eq "poe1") { "Path of Exile" } else { "Path of Exile 2" }
+    $RegistryPaths = @(
+        "HKCU:\Software\GrindingGearGames\$SubKey",
+        "HKLM:\SOFTWARE\GrindingGearGames\$SubKey",
+        "HKLM:\SOFTWARE\WOW6432Node\GrindingGearGames\$SubKey"
+    )
+    $Results = New-Object System.Collections.ArrayList
+
+    foreach ($RegistryPath in $RegistryPaths) {
+        $Entry = Get-ItemProperty -LiteralPath $RegistryPath -ErrorAction SilentlyContinue
+        if ($null -eq $Entry) {
+            continue
+        }
+        foreach ($PropertyName in @("InstallLocation", "InstallPath", "Path", "GamePath")) {
+            $Value = [string]$Entry.$PropertyName
+            if ([string]::IsNullOrWhiteSpace($Value)) {
+                continue
+            }
+            [void]$Results.Add([pscustomobject]@{
+                    Path         = $Value
+                    RegistryPath = $RegistryPath
+                    PropertyName = $PropertyName
+                })
+        }
+    }
+
+    return @($Results)
+}
+
 function ConvertTo-Poe2GameDirectoryPath {
     param([string]$Path)
 
@@ -350,7 +385,10 @@ function Get-Poe2GameDirectoryCandidates {
             return
         }
 
-        $Key = $Resolved.ToUpperInvariant()
+        $Key = $Resolved.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).ToUpperInvariant()
+        if ([string]::IsNullOrWhiteSpace($Key)) {
+            $Key = $Resolved.ToUpperInvariant()
+        }
         if ($SeenPaths.ContainsKey($Key)) {
             return
         }
@@ -384,6 +422,15 @@ function Get-Poe2GameDirectoryCandidates {
             -Path ([Environment]::GetEnvironmentVariable($VariableName)) `
             -Source "环境变量 $VariableName" `
             -Priority 6
+    }
+
+    if (-not $SkipSystemGameDiscovery) {
+        foreach ($Entry in @(Get-PoeGggRegistryInstallLocations -GameVersion poe2)) {
+            Add-Poe2GameDirectoryCandidate `
+                -Path ([string]$Entry.Path) `
+                -Source "GGG 官服注册表" `
+                -Priority 15
+        }
     }
 
     $UninstallRoots = @(

@@ -610,7 +610,8 @@ function Get-Poe1GameDirectoryCandidates {
         if ([string]::IsNullOrWhiteSpace($Resolved)) { return }
         $Detected = Get-PoeDetectedGameVersion -GameDirectory $Resolved
         if (-not [string]::IsNullOrWhiteSpace($Detected) -and $Detected -ne "poe1") { return }
-        $Key = $Resolved.ToUpperInvariant()
+        $Key = $Resolved.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar).ToUpperInvariant()
+        if ([string]::IsNullOrWhiteSpace($Key)) { $Key = $Resolved.ToUpperInvariant() }
         if ($Seen.ContainsKey($Key)) { return }
         try { $Info = Get-Poe1InstallInfo -GameDirectory $Resolved } catch { return }
         $Seen[$Key] = $true
@@ -635,6 +636,10 @@ function Get-Poe1GameDirectoryCandidates {
     }
     if ($SkipSystemGameDiscovery) {
         return @($Results | Sort-Object Priority, Path)
+    }
+
+    foreach ($Entry in @(Get-PoeGggRegistryInstallLocations -GameVersion poe1)) {
+        Add-Poe1Candidate -Path ([string]$Entry.Path) -Source "GGG 官服注册表" -Priority 15
     }
 
     $UninstallRoots = @(

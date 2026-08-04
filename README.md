@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.2</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.3</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -22,7 +22,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.5.2` 将 POE1 升级为逐物品多源补缺：国际服按 poe.ninja、poe2scout、PoEDB 的顺序合并，国服按 poecurrency.top、poe.ninja、poe2scout、PoEDB 的顺序合并。后面的来源只补当前缺少的元数据路径，不覆盖前面来源已有的价格；各来源并行抓取、独立失败，POE2 代码和数据源顺序保持不变。
+`v0.5.3` 修复官服 GGPK 安装在 `D:\poe2` 等非默认目录时，首次运行无法自动识别的问题。程序现在会读取 GGG 官方注册表中的 `InstallLocation`，同时覆盖 POE1 与 POE2；已有 Steam、WeGame、Epic、环境变量和最近目录规则保持不变。
 
 poe.ninja 页面上依赖等级、品质、词缀或具体变体定价的 Skill Gems、Base Types、Cluster Jewels、Valdo Maps、Forbidden Jewels、Wombgifts 等分类不会写成一个固定物品名价格，避免把不同变体串成同一价格。
 
@@ -44,6 +44,12 @@ POE2 同名元数据仍会全部写入价格，国服翻译重名时继续使用
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/8/4 更新（v0.5.3）
+
+- 自动识别新增 GGG 官服注册表安装目录，支持从 `HKCU\Software\GrindingGearGames\Path of Exile 2\InstallLocation` 找到 `D:\poe2` 等非默认 GGPK 路径；POE1 官服使用相同规则。
+
+- 候选仍会校验目录实际包含 `Content.ggpk` 或 `Bundles2\_.index.bin`，无效或残留注册表路径会被忽略；补充 POE1/POE2 首次运行回归测试并重新生成统一启动器。
 
 ### 26/8/4 更新（v0.5.2）
 
