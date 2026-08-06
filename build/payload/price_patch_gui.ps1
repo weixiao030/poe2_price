@@ -20,6 +20,24 @@ else {
     Split-Path -Parent (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 
+function Test-PoePatchExistingDirectory {
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $false
+    }
+    try {
+        return [bool](Test-Path -LiteralPath $Path -PathType Container -ErrorAction Stop)
+    }
+    catch {
+        return $false
+    }
+}
+
 function Show-PoePatchLauncherDialog {
     param(
         [ValidateSet("select", "update", "restore")]
@@ -513,7 +531,8 @@ function Show-PoePatchLauncherDialog {
                 [string]$ClientCombo.SelectedItem.Candidate.GameVersion -eq "poe1") {
                 & $ShowCandidateStatus $ClientCombo.SelectedItem.Candidate | Out-Null
             }
-            elseif ($ManualPathRadio.Checked -and (Test-Path -LiteralPath $PathTextBox.Text -PathType Container)) {
+            elseif ($ManualPathRadio.Checked -and
+                (Test-PoePatchExistingDirectory -Path $PathTextBox.Text)) {
                 try {
                     $Candidate = Resolve-PoePatchManualSelection `
                         -RequestedGameVersion (& $GetRequestedGameVersion) `
@@ -525,32 +544,42 @@ function Show-PoePatchLauncherDialog {
             }
         })
     $BrowseButton.Add_Click({
-            $Dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-            $Dialog.Description = "选择 Path of Exile 游戏根目录"
-            $Dialog.ShowNewFolderButton = $false
-            if (Test-Path -LiteralPath $PathTextBox.Text -PathType Container) {
-                $Dialog.SelectedPath = $PathTextBox.Text
-            }
-            elseif (Test-Path -LiteralPath $PreferredGameRoot -PathType Container) {
-                $Dialog.SelectedPath = $PreferredGameRoot
-            }
-            if ($Dialog.ShowDialog($Form) -eq [System.Windows.Forms.DialogResult]::OK) {
-                $PathTextBox.Text = $Dialog.SelectedPath
-                try {
-                    $Candidate = Resolve-PoePatchManualSelection `
-                        -RequestedGameVersion (& $GetRequestedGameVersion) `
-                        -Path $PathTextBox.Text `
-                        -Poe1LanguageMode (& $GetSelectedLanguageMode)
-                    & $ShowCandidateStatus $Candidate | Out-Null
-                    if ((& $GetRequestedGameVersion) -eq "auto") {
-                        & $UpdateScopeForGame
+            $Dialog = $null
+            try {
+                $Dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+                $Dialog.Description = "选择 Path of Exile 游戏根目录"
+                $Dialog.ShowNewFolderButton = $false
+                if (Test-PoePatchExistingDirectory -Path $PathTextBox.Text) {
+                    $Dialog.SelectedPath = $PathTextBox.Text
+                }
+                elseif (Test-PoePatchExistingDirectory -Path $PreferredGameRoot) {
+                    $Dialog.SelectedPath = $PreferredGameRoot
+                }
+                if ($Dialog.ShowDialog($Form) -eq [System.Windows.Forms.DialogResult]::OK) {
+                    $PathTextBox.Text = $Dialog.SelectedPath
+                    try {
+                        $Candidate = Resolve-PoePatchManualSelection `
+                            -RequestedGameVersion (& $GetRequestedGameVersion) `
+                            -Path $PathTextBox.Text `
+                            -Poe1LanguageMode (& $GetSelectedLanguageMode)
+                        & $ShowCandidateStatus $Candidate | Out-Null
+                        if ((& $GetRequestedGameVersion) -eq "auto") {
+                            & $UpdateScopeForGame
+                        }
+                    }
+                    catch {
+                        & $SetStatus $_.Exception.Message $true
                     }
                 }
-                catch {
-                    & $SetStatus $_.Exception.Message $true
+            }
+            catch {
+                & $SetStatus "无法打开游戏目录选择窗口：$($_.Exception.Message)" $true
+            }
+            finally {
+                if ($null -ne $Dialog) {
+                    try { $Dialog.Dispose() } catch { }
                 }
             }
-            $Dialog.Dispose()
         })
     $OpenLink = {
         param($Sender, $EventArgs)
