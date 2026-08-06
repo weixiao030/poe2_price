@@ -9,6 +9,8 @@ UPDATE = ROOT / "物价补丁" / "tools" / "update_price_patch.ps1"
 PAYLOAD_UPDATE = ROOT / "build" / "payload" / "update_price_patch.ps1"
 RESTORE = ROOT / "物价补丁" / "tools" / "restore_price_patch.ps1"
 PAYLOAD_RESTORE = ROOT / "build" / "payload" / "restore_price_patch.ps1"
+GUI = ROOT / "物价补丁" / "tools" / "price_patch_gui.ps1"
+PAYLOAD_GUI = ROOT / "build" / "payload" / "price_patch_gui.ps1"
 LAUNCHER = ROOT / "build" / "Poe2PatchLauncher" / "Program.cs"
 
 
@@ -268,6 +270,77 @@ def test_gui_controls_construct_without_opening_window(tmp_path: Path):
     assert output == "GUI_OK"
 
 
+def test_gui_optional_directory_check_accepts_empty_and_invalid_paths(tmp_path: Path):
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    missing = tmp_path / "missing"
+
+    output = run_powershell(
+        "$tokens = $null; $errors = $null; "
+        f"$ast = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(GUI)}, [ref]$tokens, [ref]$errors); "
+        "$definition = $ast.FindAll({ param($node) "
+        "$node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and "
+        "$node.Name -eq 'Test-PoePatchExistingDirectory' }, $true) | Select-Object -First 1; "
+        "if ($null -eq $definition) { throw 'missing optional directory guard' }; "
+        ". ([scriptblock]::Create($definition.Extent.Text)); "
+        "$results = @("
+        "(Test-PoePatchExistingDirectory -Path $null), "
+        "(Test-PoePatchExistingDirectory -Path ''), "
+        "(Test-PoePatchExistingDirectory -Path '   '), "
+        f"(Test-PoePatchExistingDirectory -Path {ps_quote(missing)}), "
+        f"(Test-PoePatchExistingDirectory -Path {ps_quote(existing)})"
+        "); Write-Output ($results -join ',')"
+    )
+
+    assert output == "False,False,False,False,True"
+
+
+def test_poe1_browse_and_language_handlers_ignore_empty_optional_paths():
+    output = run_powershell(
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$tokens = $null; $errors = $null; "
+        f"$ast = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(GUI)}, [ref]$tokens, [ref]$errors); "
+        "$definition = $ast.FindAll({ param($node) "
+        "$node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and "
+        "$node.Name -eq 'Test-PoePatchExistingDirectory' }, $true) | Select-Object -First 1; "
+        "if ($null -ne $definition) { . ([scriptblock]::Create($definition.Extent.Text)) }; "
+        "function Get-GuiHandler([string]$Control, [string]$Member) { "
+        "$node = $ast.FindAll({ param($candidate) "
+        "$candidate -is [System.Management.Automation.Language.ScriptBlockExpressionAst] -and "
+        "$candidate.Parent -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and "
+        "$candidate.Parent.Expression.Extent.Text -eq $Control -and "
+        "$candidate.Parent.Member.Value -eq $Member }, $true) | Select-Object -First 1; "
+        "if ($null -eq $node) { throw \"missing handler: $Control.$Member\" }; "
+        "return $node.ScriptBlock.EndBlock.Extent.Text }; "
+        "$browseText = (Get-GuiHandler '$BrowseButton' 'Add_Click').Replace("
+        "'$Dialog.ShowDialog($Form)', '[System.Windows.Forms.DialogResult]::Cancel'); "
+        "$browseHandler = [scriptblock]::Create($browseText); "
+        "$languageHandler = [scriptblock]::Create("
+        "(Get-GuiHandler '$LanguageCombo' 'Add_SelectedIndexChanged')); "
+        "$PathTextBox = New-Object System.Windows.Forms.TextBox; $PathTextBox.Text = ''; "
+        "$PreferredGameRoot = ''; "
+        "$Form = New-Object System.Windows.Forms.Form; "
+        "$ClientCombo = New-Object System.Windows.Forms.ComboBox; "
+        "$ManualPathRadio = New-Object System.Windows.Forms.RadioButton; "
+        "$ManualPathRadio.Checked = $true; "
+        "$status = [pscustomobject]@{ Text = ''; IsError = $false }; "
+        "$SetStatus = { param([string]$Text, [bool]$IsError) "
+        "$status.Text = $Text; $status.IsError = $IsError }; "
+        "$GetRequestedGameVersion = { 'poe1' }; "
+        "$GetSelectedLanguageMode = { 'auto' }; "
+        "try { "
+        "& $browseHandler; "
+        "if ($status.IsError) { throw $status.Text }; "
+        "& $languageHandler; "
+        "if ($status.IsError) { throw $status.Text }; "
+        "Write-Output 'EMPTY_PATH_OK' "
+        "} finally { $Form.Dispose(); $PathTextBox.Dispose(); "
+        "$ClientCombo.Dispose(); $ManualPathRadio.Dispose() }"
+    )
+
+    assert output == "EMPTY_PATH_OK"
+
+
 def test_restore_directory_dialog_constructs_without_opening_window(tmp_path: Path):
     game = tmp_path / "restore gui game"
     (game / "Bundles2").mkdir(parents=True)
@@ -295,3 +368,4 @@ def test_release_payload_copies_stay_in_sync():
     assert COMMON.read_bytes() == PAYLOAD_COMMON.read_bytes()
     assert UPDATE.read_bytes() == PAYLOAD_UPDATE.read_bytes()
     assert RESTORE.read_bytes() == PAYLOAD_RESTORE.read_bytes()
+    assert GUI.read_bytes() == PAYLOAD_GUI.read_bytes()
