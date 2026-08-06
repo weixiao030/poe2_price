@@ -28,13 +28,18 @@ on:
       - "restore-seeds/**"
       - "tests/**"
 
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
 jobs:
   build-release:
     name: Build release package
-    runs-on: windows-latest
+    runs-on: windows-2022
+    timeout-minutes: 45
 
     steps:
       - name: Checkout

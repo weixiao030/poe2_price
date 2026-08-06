@@ -15,6 +15,7 @@ PUBLISHED_LAUNCHER = ROOT / "build" / "publish-self" / "Poe2PatchLauncher.exe"
 SOURCE_LAUNCHER = ROOT / "物价补丁" / "物价补丁.exe"
 LAUNCHER_PROJECT = ROOT / "build" / "Poe2PatchLauncher" / "Poe2PatchLauncher.csproj"
 SOURCE_DOC = ROOT / "物价补丁" / "使用文档.docx"
+RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "build-release.yml"
 
 PAYLOAD_FILES = [
     "poe2_patch_common.ps1",
@@ -154,6 +155,13 @@ def test_release_document_describes_fail_safe_behavior():
         "更新与还原必须使用同一目标语言",
     ):
         assert expected in text
+
+
+def test_release_workflow_uses_stable_windows_runner_and_waits_for_inflight_runs():
+    workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8-sig")
+    assert "runs-on: windows-2022" in workflow
+    assert "timeout-minutes: 45" in workflow
+    assert "cancel-in-progress: false" in workflow
 
 
 def test_runtime_downloads_prefer_domestic_mirrors_with_official_fallback():
