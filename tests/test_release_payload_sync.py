@@ -97,6 +97,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
+    assert version == "0.5.3"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -105,12 +106,26 @@ def test_declared_version_is_consistent():
     assert restore_match, "missing restore PatchVersion"
     assert restore_match.group(1) == version
 
+    for script_name in (
+        "price_patch_gui.ps1",
+        "update_poe1_price_patch.ps1",
+        "restore_poe1_price_patch.ps1",
+    ):
+        script = (TOOLS / script_name).read_text(encoding="utf-8-sig")
+        assert f'PatchVersion = "v{version}"' in script, script_name
+
+    release_doc_script = (ROOT / "build" / "create_release_doc.py").read_text(
+        encoding="utf-8-sig"
+    )
+    assert f'PATCH_VERSION = "v{version}"' in release_doc_script
+
     project = ET.parse(LAUNCHER_PROJECT).getroot()
     properties = {node.tag: (node.text or "").strip() for node in project.iter()}
     assert properties["Version"] == version
     assert properties["AssemblyVersion"] == version
     assert properties["FileVersion"] == version
     assert properties["InformationalVersion"] == version
+    assert properties["IncludeSourceRevisionInInformationalVersion"].lower() == "false"
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8-sig")
     changelog = (ROOT / "更新日志.md").read_text(encoding="utf-8-sig")
