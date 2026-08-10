@@ -678,6 +678,7 @@ function Build-Payload {
         "update_price_patch.ps1",
         "restore_price_patch.ps1",
         "poe1_patch_common.ps1",
+        "localize_poe1.ps1",
         "update_poe1_price_patch.ps1",
         "restore_poe1_price_patch.ps1",
         "build_poe1_price_patch.py",
@@ -729,7 +730,7 @@ function Prepare-ReleaseSeedFiles {
     $script:IntlRestoreSeed = Resolve-FirstExistingFile -Candidates $IntlRestoreSeedCandidates -Name "国际服还原补丁.zip"
     $script:IntlBaseItemsRestoreSeedCandidates = @($script:IntlRestoreSeed) + $IntlBaseItemsRestoreSeedCandidates
 
-    Set-Content -LiteralPath (Join-Path $PatchSourceDir "请先看使用文档.txt") -Encoding UTF8 -Value "请先打开使用文档.docx。物价补丁文件夹可以放在任意位置；关闭游戏后运行物价补丁.exe，在统一窗口确认 POE1 / POE2、客户端路径和服区。POE1 安装第三方汉化补丁时保留显示语言自动识别或选择汉化补丁，更新与还原使用同一语言。点击底部开始/更新物价补丁或还原物价补丁。支持 POE1 / POE2、国服 WeGame（流放之路：降临）、国际服官方 GGPK、国际服 Steam/Epic Bundles2；发现多个客户端时必须手动选择。"
+    Set-Content -LiteralPath (Join-Path $PatchSourceDir "请先看使用文档.txt") -Encoding UTF8 -Value "请先打开使用文档.docx。物价补丁文件夹可以放在任意位置；关闭游戏后运行物价补丁.exe，在统一窗口确认 POE1 / POE2、客户端路径和服区。POE1 国际服可点击一键汉化POE1国际服，程序优先使用国内源，每次下载 PoEDB 推荐的最新 PoeChinese3 汉化补丁，完成后进入游戏选择第二个（法文）国旗。游戏更新会覆盖补丁，请等待更新完成并关闭游戏和启动器后重新汉化、更新物价；程序会按当前游戏 DAT 动态重建。更新与还原使用同一语言。点击底部开始/更新物价补丁或还原物价补丁。支持 POE1 / POE2、国服 WeGame（流放之路：降临）、国际服官方 GGPK、国际服 Steam/Epic Bundles2；发现多个客户端时必须手动选择。"
 
     foreach ($GeneratedZip in @(
         (Join-Path $PatchSourceDir "物价补丁.zip"),

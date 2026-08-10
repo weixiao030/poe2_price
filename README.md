@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.3</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.4</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -21,6 +21,8 @@
 本补丁主要将通货和传奇装备价值显示在物品名上，项目已开源，可访问 GitHub 查看。
 
 当前版本还是实验阶段，有 bug 请见谅。
+
+`v0.5.4` 修复 POE1 Steam Bundles2 更新时重复加载索引导致 `_.index.bin` 被占用的问题，并在统一 GUI 增加“一键汉化POE1国际服”。按钮每次从 PoEDB 推荐的 LibGGPK3 最新 Release 下载 `PoeChinese3_win-x64.exe`，默认优先国内加速源 `ghfast.top`、`gh-proxy.com`，失败后再用 GitHub 官方源；完成后使用法语入口。汉化只允许国际服，国服不会执行。
 
 `v0.5.3` 修复官服 GGPK 安装在 `D:\poe2` 等非默认目录时，首次运行无法自动识别的问题。程序现在会读取 GGG 官方注册表中的 `InstallLocation`，同时覆盖 POE1 与 POE2；已有 Steam、WeGame、Epic、环境变量和最近目录规则保持不变。
 
@@ -44,6 +46,14 @@ POE2 同名元数据仍会全部写入价格，国服翻译重名时继续使用
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/8/10 更新（v0.5.4）
+
+- 修复 POE1 Steam Bundles2 更新器先提取繁中 DAT、再单独提取英文 DAT 时重复加载数百万条索引的问题；现在以当前游戏 DAT 为底板，将必需英文表和本地化表一次批量提取，对短暂文件占用有限重试。游戏更新会覆盖补丁，但不再依赖固定赛季资源，更新完成并关闭游戏后重新点击更新即可重建并安装。
+
+- 统一 GUI 在选择 POE1 国际服后新增“一键汉化POE1国际服”。每次点击都会从 [PoEDB 中文化说明](https://poedb.tw/cn/chinese) 指向的 [LibGGPK3 最新 Release](https://github.com/aianlinb/LibGGPK3/releases/latest) 下载 `PoeChinese3_win-x64.exe`，元数据与程序均按国内加速源 `ghfast.top`、`gh-proxy.com`、GitHub 官方源的顺序尝试；执行前校验 PE、产品信息、版本号，并将文件 SHA256 与最新 Release 公布值逐字节比对，不会复用旧下载文件。
+
+- 汉化完成后请在 POE1 选择第二个（法文）国旗；程序会尝试写入 `production_Config.ini` 的 `language=fr`。此功能仅支持 POE1 国际服 Steam/Epic Bundles2 和官方 GGPK，修改游戏文件仍有校验、封号和启动风险。
 
 ### 26/8/4 更新（v0.5.3）
 

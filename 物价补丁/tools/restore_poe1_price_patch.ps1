@@ -21,7 +21,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.3"
+$script:PatchVersion = "v0.5.4"
 $script:GameDirectoryMutex = $null
 $ValidationDir = ""
 

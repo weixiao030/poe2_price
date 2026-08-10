@@ -24,6 +24,7 @@ PAYLOAD_FILES = [
     "update_price_patch.ps1",
     "restore_price_patch.ps1",
     "poe1_patch_common.ps1",
+    "localize_poe1.ps1",
     "update_poe1_price_patch.ps1",
     "restore_poe1_price_patch.ps1",
     "build_poe1_price_patch.py",
@@ -98,7 +99,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.5.3"
+    assert version == "0.5.4"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -153,6 +154,12 @@ def test_release_document_describes_fail_safe_behavior():
         "点击底部“还原物价补丁”执行还原",
         "自动识别、汉化补丁、简体中文、繁体中文或跟随游戏配置",
         "更新与还原必须使用同一目标语言",
+        "POE1 国际服一键汉化",
+        "每次都会从 PoEDB 推荐的 LibGGPK3 GitHub 最新 Release 下载",
+        "第二个（法文）国旗",
+        "ghfast.top",
+        "gh-proxy.com",
+        "正常使用不需要联网",
     ):
         assert expected in text
 
@@ -194,13 +201,27 @@ def test_runtime_downloads_prefer_domestic_mirrors_with_official_fallback():
     assert "tools\\downloads\\dotnet-runtime-8.0.28-win-x64.zip" in release
 
 
+def test_localization_payload_matches_domestic_first_download_policy():
+    source = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
+    payload = (PAYLOAD / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
+    assert source == payload
+    for expected in ("ghfast.top", "gh-proxy.com", "GitHub 官方源", "Test-Poe1LocalizationExecutable", "SHA256"):
+        assert expected in source
+    assert source.index('Name = "国内加速源 ghfast.top"') < source.index(
+        'Name = "国内加速源 gh-proxy.com"'
+    )
+    assert source.index('Name = "国内加速源 gh-proxy.com"') < source.index(
+        'Name = "GitHub 官方源"'
+    )
+
+
 def test_release_quick_start_keeps_directory_selection_instructions():
     release = (ROOT / "build" / "make_release.ps1").read_text(encoding="utf-8-sig")
     quick_start = (ROOT / "物价补丁" / "请先看使用文档.txt").read_text(
         encoding="utf-8-sig"
     )
 
-    for expected in ("可以放在任意位置", "手动选择", "流放之路：降临", "多个客户端", "汉化补丁"):
+    for expected in ("可以放在任意位置", "手动选择", "流放之路：降临", "多个客户端", "汉化补丁", "一键汉化POE1国际服"):
         assert expected in release
         assert expected in quick_start
     assert "把整个物价补丁文件夹放到 POE2 游戏根目录" not in release

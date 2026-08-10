@@ -2234,7 +2234,7 @@ function Install-LocalDotNet8Runtime {
         $ZipPath = Join-Path $DownloadDir $RuntimeFile
         $Sources = @(
             @{
-                Name = "Microsoft CDN 备用源"
+                Name = "Microsoft CDN（国内网络可直连时使用）"
                 Url = "https://dotnetcli.azureedge.net/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
                 TimeoutSeconds = 180
             },

@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.5.3"
+$script:PatchVersion = "v0.5.4"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -204,10 +204,23 @@ function Show-PoePatchLauncherDialog {
     $LanguageCombo.SelectedIndex = $SavedLanguageIndex
     $PathGroup.Controls.Add($LanguageCombo)
 
+    $LocalizeButton = New-Object System.Windows.Forms.Button
+    $LocalizeButton.Text = "一键汉化POE1国际服"
+    $LocalizeButton.Location = New-Object System.Drawing.Point(340, 132)
+    $LocalizeButton.Size = New-Object System.Drawing.Size(210, 30)
+    $LocalizeButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $LocalizeButton.FlatAppearance.BorderColor = $Accent
+    $LocalizeButton.BackColor = [System.Drawing.Color]::FromArgb(235, 245, 241)
+    $LocalizeButton.ForeColor = $AccentDark
+    $LocalizeButton.Visible = $false
+    $LocalizeButton.Enabled = $false
+    $PathGroup.Controls.Add($LocalizeButton)
+
     $ToolTip = New-Object System.Windows.Forms.ToolTip
     $ToolTip.SetToolTip($BrowseButton, "浏览游戏根目录")
     $ToolTip.SetToolTip($RefreshButton, "重新扫描已安装的 POE 客户端")
     $ToolTip.SetToolTip($LanguageCombo, "汉化补丁模式会写入 POE1 繁体中文资源表")
+    $ToolTip.SetToolTip($LocalizeButton, "每次点击都会下载 PoEDB 推荐的最新 PoeChinese3，并使用法语入口")
 
     $PathStatus = New-Object System.Windows.Forms.Label
     $PathStatus.Location = New-Object System.Drawing.Point(18, 170)
@@ -343,6 +356,8 @@ function Show-PoePatchLauncherDialog {
         $PathStatus.ForeColor = if ($IsError) { $ErrorColor } else { $Muted }
     }
 
+    $LocalizationState = [pscustomobject]@{ Busy = $false }
+
     $UpdateLanguageControl = {
         $Version = & $GetRequestedGameVersion
         if ($Version -eq "auto" -and $ClientCombo.SelectedItem) {
@@ -382,6 +397,94 @@ function Show-PoePatchLauncherDialog {
         return $Info
     }
 
+    $UpdateLocalizationButton = {
+        $Version = & $GetRequestedGameVersion
+        $Candidate = $null
+        if ($AutoPathRadio.Checked -and $ClientCombo.SelectedItem) {
+            $Candidate = $ClientCombo.SelectedItem.Candidate
+            if ($Version -eq "auto") { $Version = [string]$Candidate.GameVersion }
+        }
+        elseif ($ManualPathRadio.Checked -and $Version -eq "poe1" -and
+            (Test-PoePatchExistingDirectory -Path $PathTextBox.Text)) {
+            try {
+                $Candidate = Resolve-PoePatchManualSelection -RequestedGameVersion poe1 `
+                    -Path $PathTextBox.Text -Poe1LanguageMode localization
+            }
+            catch { $Candidate = $null }
+        }
+        $IsInternational = $false
+        if ($null -ne $Candidate -and [string]$Candidate.GameVersion -eq "poe1") {
+            try {
+                $Info = Get-Poe1InstallInfo -GameDirectory $Candidate.Path -LanguageMode localization
+                $IsInternational = -not [bool]$Info.IsChina
+            }
+            catch { $IsInternational = $false }
+        }
+        $LocalizeButton.Visible = ($Version -eq "poe1")
+        $LocalizeButton.Enabled = $IsInternational -and -not $LocalizationState.Busy
+    }
+
+    $InvokeLocalization = {
+        try {
+            $Candidate = $null
+            if ($AutoPathRadio.Checked) {
+                if (-not $ClientCombo.SelectedItem) { throw "请先选择一个 POE1 国际服客户端。" }
+                $Candidate = $ClientCombo.SelectedItem.Candidate
+            }
+            else {
+                $Candidate = Resolve-PoePatchManualSelection -RequestedGameVersion poe1 `
+                    -Path $PathTextBox.Text -Poe1LanguageMode localization
+            }
+            if ([string]$Candidate.GameVersion -ne "poe1") { throw "一键汉化仅支持 POE1 国际服。" }
+            $Info = Get-Poe1InstallInfo -GameDirectory $Candidate.Path -LanguageMode localization
+            if ([bool]$Info.IsChina) { throw "当前目录识别为 POE1 国服，一键汉化已停止。" }
+            $ScriptPath = Join-Path $PSScriptRoot "localize_poe1.ps1"
+            if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+                throw "内置汉化脚本不存在：$ScriptPath"
+            }
+
+            $LocalizationState.Busy = $true
+            & $UpdateLocalizationButton
+            $Form.UseWaitCursor = $true
+            & $SetStatus "正在下载最新版 PoeChinese3 并汉化 POE1，请稍候..." $false
+            $QuotedScript = '"' + $ScriptPath.Replace('"', '\"') + '"'
+            $QuotedGame = '"' + ([string]$Candidate.Path).Replace('"', '\"') + '"'
+            $Arguments = @(
+                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $QuotedScript,
+                "-Poe1Dir", $QuotedGame
+            )
+            $Process = Start-Process -FilePath "powershell.exe" -ArgumentList $Arguments `
+                -WorkingDirectory ([string]$Candidate.Path) -Wait -PassThru -WindowStyle Normal
+            if ($Process.ExitCode -ne 0) {
+                throw "汉化脚本退出码：$($Process.ExitCode)"
+            }
+            Save-PoePatchGameDirectory -GameVersion poe1 -GameDirectory $Candidate.Path | Out-Null
+            Save-Poe1LanguageMode -LanguageMode localization | Out-Null
+            & $SetStatus "POE1 国际服已完成汉化；已下载并使用最新版 PoeChinese3。" $false
+            [System.Windows.Forms.MessageBox]::Show(
+                $Form,
+                "POE1 国际服汉化完成。进入游戏请选择第二个（法文）国旗。",
+                "汉化完成",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+            & $ShowCandidateStatus $Candidate | Out-Null
+        }
+        catch {
+            & $SetStatus $_.Exception.Message $true
+            [System.Windows.Forms.MessageBox]::Show(
+                $Form, $_.Exception.Message, "汉化失败",
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+        }
+        finally {
+            $Form.UseWaitCursor = $false
+            $LocalizationState.Busy = $false
+            & $UpdateLocalizationButton
+        }
+    }
+
     $UpdateGameButtonStyle = {
         foreach ($Button in $GameButtons) {
             if ($Button.Checked) {
@@ -411,6 +514,7 @@ function Show-PoePatchLauncherDialog {
             $ScopeStatus.Text = "POE2 使用崇高石 / 神圣石计价。"
         }
         & $UpdateLanguageControl
+        if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
     }
 
     $CandidateCache = @{}
@@ -516,6 +620,7 @@ function Show-PoePatchLauncherDialog {
             if ($ManualPathRadio.Checked) {
                 & $SetStatus "请选择游戏根目录。" $false
             }
+            if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
         })
     $RefreshButton.Add_Click({ & $RefreshCandidates $true })
     $ClientCombo.Add_SelectedIndexChanged({
@@ -524,6 +629,7 @@ function Show-PoePatchLauncherDialog {
                 $PathTextBox.Text = [string]$Candidate.Path
                 & $UpdateScopeForGame
                 & $ShowCandidateStatus $Candidate | Out-Null
+                if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
             }
         })
     $LanguageCombo.Add_SelectedIndexChanged({
@@ -542,6 +648,7 @@ function Show-PoePatchLauncherDialog {
                 }
                 catch { }
             }
+            if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
         })
     $BrowseButton.Add_Click({
             $Dialog = $null
@@ -570,6 +677,7 @@ function Show-PoePatchLauncherDialog {
                     catch {
                         & $SetStatus $_.Exception.Message $true
                     }
+                    if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
                 }
             }
             catch {
@@ -581,6 +689,7 @@ function Show-PoePatchLauncherDialog {
                 }
             }
         })
+    $LocalizeButton.Add_Click({ if ($null -ne $InvokeLocalization) { & $InvokeLocalization } })
     $OpenLink = {
         param($Sender, $EventArgs)
 

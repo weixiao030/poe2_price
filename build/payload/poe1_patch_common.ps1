@@ -365,53 +365,91 @@ function Invoke-Poe1ExtractBatch {
         [Parameter(Mandatory = $true)][string]$Extractor,
         [Parameter(Mandatory = $true)][string[]]$Paths,
         [Parameter(Mandatory = $true)][string]$DestinationDirectory,
-        [switch]$Optional
+        [string[]]$OptionalPaths = @(),
+        [switch]$Optional,
+        [int]$Attempts = 3,
+        [int]$RetryDelayMilliseconds = 800
     )
 
     $UniquePaths = @($Paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
     if ($UniquePaths.Count -eq 0) { return @{} }
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
-    $RequestList = Join-Path $DestinationDirectory ([string]::Concat("request-", [Guid]::NewGuid().ToString("N"), ".txt"))
-    $ExtractDir = Join-Path $DestinationDirectory ([string]::Concat("stage-", [Guid]::NewGuid().ToString("N")))
-    [System.IO.File]::WriteAllLines($RequestList, $UniquePaths, (New-Object System.Text.UTF8Encoding($false)))
-    New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
-    try {
-        if ($Mode -eq "Bundles2") {
-            $Source = Join-Path $Poe1Dir "Bundles2\_.index.bin"
-            $ToolOutput = @(& $Extractor --extract-list $Source $RequestList $ExtractDir 2>&1)
-        }
-        else {
-            $Source = Join-Path $Poe1Dir "Content.ggpk"
-            $ToolOutput = @(& $Extractor --extract-ggpk-list $Source $RequestList $ExtractDir 2>&1)
-        }
-        $ExitCode = $LASTEXITCODE
-        $ToolOutput | ForEach-Object { Write-Host $_ }
-        if ($ExitCode -ne 0 -and -not $Optional) {
-            throw "POE1 DAT 批量提取失败，退出码：$ExitCode"
-        }
+    $OptionalSet = @{}
+    if ($Optional) {
+        foreach ($Path in $UniquePaths) { $OptionalSet[$Path] = $true }
+    }
+    foreach ($Path in @($OptionalPaths)) {
+        if (-not [string]::IsNullOrWhiteSpace($Path)) { $OptionalSet[$Path] = $true }
+    }
 
-        $Result = @{}
-        for ($Index = 0; $Index -lt $UniquePaths.Count; $Index += 1) {
-            $SourceFile = Join-Path $ExtractDir ("{0:D6}.bin" -f $Index)
-            if (-not (Test-Path -LiteralPath $SourceFile -PathType Leaf)) {
-                if ($Optional) { continue }
-                throw "POE1 DAT 提取结果缺失：$($UniquePaths[$Index])"
+    $MaxAttempts = [Math]::Max(1, $Attempts)
+    $LastError = $null
+    for ($Attempt = 1; $Attempt -le $MaxAttempts; $Attempt += 1) {
+        $ToolOutput = @()
+        $ExitCode = $null
+        $RequestList = Join-Path $DestinationDirectory ([string]::Concat("request-", [Guid]::NewGuid().ToString("N"), ".txt"))
+        $ExtractDir = Join-Path $DestinationDirectory ([string]::Concat("stage-", [Guid]::NewGuid().ToString("N")))
+        [System.IO.File]::WriteAllLines($RequestList, $UniquePaths, (New-Object System.Text.UTF8Encoding($false)))
+        New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
+        try {
+            if ($Mode -eq "Bundles2") {
+                $Source = Join-Path $Poe1Dir "Bundles2\_.index.bin"
+                $ToolOutput = @(& $Extractor --extract-list $Source $RequestList $ExtractDir 2>&1)
             }
-            $Slug = ($UniquePaths[$Index].Replace('\', '/') -replace '/', '_')
-            $Destination = Join-Path $DestinationDirectory $Slug
-            Copy-Poe2FileAtomically -Source $SourceFile -Destination $Destination | Out-Null
-            $Result[$UniquePaths[$Index]] = $Destination
+            else {
+                $Source = Join-Path $Poe1Dir "Content.ggpk"
+                $ToolOutput = @(& $Extractor --extract-ggpk-list $Source $RequestList $ExtractDir 2>&1)
+            }
+            $ExitCode = $LASTEXITCODE
+            $ToolOutput | ForEach-Object { Write-Host $_ }
+
+            $Result = @{}
+            $MissingRequired = New-Object System.Collections.Generic.List[string]
+            for ($Index = 0; $Index -lt $UniquePaths.Count; $Index += 1) {
+                $SourceFile = Join-Path $ExtractDir ("{0:D6}.bin" -f $Index)
+                if (-not (Test-Path -LiteralPath $SourceFile -PathType Leaf)) {
+                    if (-not $OptionalSet.ContainsKey($UniquePaths[$Index])) {
+                        [void]$MissingRequired.Add($UniquePaths[$Index])
+                    }
+                    continue
+                }
+                $Slug = ($UniquePaths[$Index].Replace('\', '/') -replace '/', '_')
+                $Destination = Join-Path $DestinationDirectory $Slug
+                Copy-Poe2FileAtomically -Source $SourceFile -Destination $Destination | Out-Null
+                $Result[$UniquePaths[$Index]] = $Destination
+            }
+
+            $ToolText = ($ToolOutput -join "`n")
+            $Transient = [bool]($ToolText -match '(?im)(?:IOException|sharing violation|being used by another process|cannot access the file|file is being used)')
+            if ($MissingRequired.Count -gt 0) {
+                throw "POE1 DAT 提取结果缺失：$([string]::Join(', ', $MissingRequired))"
+            }
+            if ($ExitCode -ne 0 -and -not ($ExitCode -eq 2 -and $OptionalSet.Count -gt 0)) {
+                throw "POE1 DAT 批量提取失败，退出码：$ExitCode"
+            }
+            return $Result
         }
-        return $Result
+        catch {
+            $LastError = $_
+            $ToolText = if ($null -eq $ToolOutput) { "" } else { ($ToolOutput -join "`n") }
+            $DiagnosticText = "$ToolText`n$($_.Exception.Message)"
+            $Transient = [bool]($DiagnosticText -match '(?im)(?:IOException|sharing violation|being used by another process|cannot access the file|file is being used|进程无法访问文件|文件正由另一进程使用)')
+            if ($Attempt -ge $MaxAttempts -or -not $Transient) {
+                throw
+            }
+            Write-Warning "POE1 DAT 提取遇到短暂文件占用，等待后重试（$Attempt/$MaxAttempts）：$($_.Exception.Message)"
+            Start-Sleep -Milliseconds ([Math]::Max(100, $RetryDelayMilliseconds * $Attempt))
+        }
+        finally {
+            if (Test-Path -LiteralPath $RequestList -PathType Leaf) {
+                Remove-Item -LiteralPath $RequestList -Force -ErrorAction SilentlyContinue
+            }
+            if (Test-Path -LiteralPath $ExtractDir -PathType Container) {
+                Remove-Item -LiteralPath $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
-    finally {
-        if (Test-Path -LiteralPath $RequestList -PathType Leaf) {
-            Remove-Item -LiteralPath $RequestList -Force -ErrorAction SilentlyContinue
-        }
-        if (Test-Path -LiteralPath $ExtractDir -PathType Container) {
-            Remove-Item -LiteralPath $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
+    throw $LastError
 }
 
 function Invoke-Poe1ExtractDatFiles {
@@ -423,19 +461,22 @@ function Invoke-Poe1ExtractDatFiles {
     )
 
     $Extractor = Resolve-Poe1BundleExtractor -RepoRoot $RepoRoot
-    $Required = Invoke-Poe1ExtractBatch -Mode $InstallInfo.Mode -Poe1Dir $Poe1Dir -Extractor $Extractor `
-        -Paths @($InstallInfo.TcBaseItemsPath, $InstallInfo.TcWordsPath) -DestinationDirectory $DestinationDirectory
-    $Optional = @{}
+    $LocalizedPaths = @($InstallInfo.TcBaseItemsPath, $InstallInfo.TcWordsPath)
     $EnglishPaths = @($InstallInfo.EnBaseItemsPath, $InstallInfo.EnWordsPath) | Where-Object {
-        $_ -notin @($InstallInfo.TcBaseItemsPath, $InstallInfo.TcWordsPath)
+        $_ -notin $LocalizedPaths
     }
-    if (@($EnglishPaths).Count -gt 0) {
-        $Optional = Invoke-Poe1ExtractBatch -Mode $InstallInfo.Mode -Poe1Dir $Poe1Dir -Extractor $Extractor `
-            -Paths $EnglishPaths -DestinationDirectory $DestinationDirectory -Optional
-    }
-    $All = @{}
-    foreach ($Map in @($Required, $Optional)) {
-        foreach ($Key in $Map.Keys) { $All[$Key] = $Map[$Key] }
+    $RequiredPaths = @($LocalizedPaths + @($InstallInfo.EnBaseItemsPath)) | Select-Object -Unique
+    $OptionalPaths = @($InstallInfo.EnWordsPath) | Where-Object { $_ -notin $RequiredPaths }
+    # Loading the multi-million-entry index once is important.  Starting a second
+    # extractor immediately after the localized pair can race the native index
+    # disposal and leave _.index.bin locked on updated Steam clients.
+    $AllPaths = @($LocalizedPaths + $EnglishPaths) | Select-Object -Unique
+    $All = Invoke-Poe1ExtractBatch -Mode $InstallInfo.Mode -Poe1Dir $Poe1Dir -Extractor $Extractor `
+        -Paths $AllPaths -OptionalPaths $OptionalPaths -DestinationDirectory $DestinationDirectory
+    foreach ($Path in $RequiredPaths) {
+        if (-not $All.ContainsKey($Path)) {
+            throw "POE1 必需 DAT 提取结果缺失：$Path。请确认游戏已更新完成并关闭游戏、Steam/Epic 后重试。"
+        }
     }
     return [pscustomobject]@{
         Extractor = $Extractor
@@ -444,6 +485,40 @@ function Invoke-Poe1ExtractDatFiles {
         EnglishBaseItems = [string]$All[$InstallInfo.EnBaseItemsPath]
         EnglishWords = [string]$All[$InstallInfo.EnWordsPath]
     }
+}
+
+function Get-Poe1PhysicalRestoreFileDescriptors {
+    param(
+        [Parameter(Mandatory = $true)][string]$Poe1Dir
+    )
+
+    $Bundles2Dir = (Resolve-Path -LiteralPath (Join-Path $Poe1Dir "Bundles2")).Path
+    $Files = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    foreach ($Name in @("_.index.bin", "_.index.high.bin", "_.index.low.bin", ".index.dbg")) {
+        $Path = Join-Path $Bundles2Dir $Name
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            [void]$Files.Add((Get-Item -LiteralPath $Path))
+        }
+    }
+    $LibDir = Join-Path $Bundles2Dir "LibGGPK3"
+    if (Test-Path -LiteralPath $LibDir -PathType Container) {
+        foreach ($File in @(Get-ChildItem -LiteralPath $LibDir -Recurse -File | Sort-Object FullName)) {
+            [void]$Files.Add($File)
+        }
+    }
+    if (-not ($Files | Where-Object { $_.FullName -ieq (Join-Path $Bundles2Dir "_.index.bin") } | Select-Object -First 1)) {
+        throw "无法读取 POE1 真实还原文件清单：Bundles2\_.index.bin 不存在。"
+    }
+
+    $RootPrefix = $Bundles2Dir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+    return @($Files | Sort-Object FullName | ForEach-Object {
+            $Relative = $_.FullName.Substring($RootPrefix.Length).Replace('\', '/')
+            [pscustomobject][ordered]@{
+                path = "Bundles2/$Relative"
+                length = [long]$_.Length
+                sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+        })
 }
 
 function New-Poe1PhysicalRestoreZip {
@@ -456,32 +531,7 @@ function New-Poe1PhysicalRestoreZip {
     )
 
     $Bundles2Dir = (Resolve-Path -LiteralPath (Join-Path $Poe1Dir "Bundles2")).Path
-    $Files = New-Object System.Collections.Generic.List[object]
-    foreach ($Name in @("_.index.bin", "_.index.high.bin", "_.index.low.bin", ".index.dbg")) {
-        $Path = Join-Path $Bundles2Dir $Name
-        if (Test-Path -LiteralPath $Path -PathType Leaf) {
-            $Files.Add((Get-Item -LiteralPath $Path))
-        }
-    }
-    $LibDir = Join-Path $Bundles2Dir "LibGGPK3"
-    if (Test-Path -LiteralPath $LibDir -PathType Container) {
-        foreach ($File in @(Get-ChildItem -LiteralPath $LibDir -Recurse -File | Sort-Object FullName)) {
-            $Files.Add($File)
-        }
-    }
-    if (-not ($Files | Where-Object { $_.FullName -ieq (Join-Path $Bundles2Dir "_.index.bin") } | Select-Object -First 1)) {
-        throw "无法创建 POE1 真实还原包：Bundles2\_.index.bin 不存在。"
-    }
-
-    $RootPrefix = $Bundles2Dir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-    $Descriptors = @($Files | ForEach-Object {
-            $Relative = $_.FullName.Substring($RootPrefix.Length).Replace('\', '/')
-            [ordered]@{
-                path = "Bundles2/$Relative"
-                length = [long]$_.Length
-                sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            }
-        })
+    $Descriptors = @(Get-Poe1PhysicalRestoreFileDescriptors -Poe1Dir $Poe1Dir)
     $Signature = Get-Poe1BaseItemsSignature -SourceDat $CurrentBaseItems -RepoRoot $RepoRoot
     $Manifest = [ordered]@{
         kind = "poe1-price-patch-physical-restore"
@@ -502,10 +552,12 @@ function New-Poe1PhysicalRestoreZip {
     try {
         $Archive = [System.IO.Compression.ZipFile]::Open($TempZip, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
-            for ($Index = 0; $Index -lt $Files.Count; $Index += 1) {
+            for ($Index = 0; $Index -lt $Descriptors.Count; $Index += 1) {
+                $Relative = ([string]$Descriptors[$Index].path).Substring("Bundles2/".Length).Replace('/', [System.IO.Path]::DirectorySeparatorChar)
+                $SourceFile = Join-Path $Bundles2Dir $Relative
                 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
                     $Archive,
-                    $Files[$Index].FullName,
+                    $SourceFile,
                     [string]$Descriptors[$Index].path,
                     [System.IO.Compression.CompressionLevel]::Optimal
                 ) | Out-Null
@@ -527,12 +579,72 @@ function New-Poe1PhysicalRestoreZip {
     return $OutputFull
 }
 
+function Assert-Poe1PhysicalRestoreCurrent {
+    param(
+        [Parameter(Mandatory = $true)]$Manifest,
+        [Parameter(Mandatory = $true)][string]$Poe1Dir
+    )
+
+    $Expected = @($Manifest.restore_files)
+    $Current = @(Get-Poe1PhysicalRestoreFileDescriptors -Poe1Dir $Poe1Dir)
+    if ($Expected.Count -ne $Current.Count) {
+        throw "POE1 真实还原包与当前 Bundles2 文件列表不一致：备份 $($Expected.Count) 个，当前 $($Current.Count) 个。"
+    }
+
+    $ExpectedByPath = @{}
+    foreach ($Descriptor in $Expected) {
+        $Name = [string]$Descriptor.path
+        if ($Name -notmatch '^Bundles2/(?:_\.index\.bin|_\.index\.(?:high|low)\.bin|\.index\.dbg|LibGGPK3/.+)$') {
+            throw "POE1 真实还原包包含不允许的路径：$Name"
+        }
+        $Key = $Name.ToLowerInvariant()
+        if ($ExpectedByPath.ContainsKey($Key)) {
+            throw "POE1 真实还原包包含重复路径：$Name"
+        }
+        if ([string]$Descriptor.sha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "POE1 真实还原包 SHA256 无效：$Name"
+        }
+        try { $Length = [long]$Descriptor.length } catch { throw "POE1 真实还原包文件长度无效：$Name" }
+        if ($Length -lt 0) { throw "POE1 真实还原包文件长度无效：$Name" }
+        $ExpectedByPath[$Key] = $Descriptor
+    }
+
+    $CurrentByPath = @{}
+    foreach ($Descriptor in $Current) {
+        $CurrentByPath[([string]$Descriptor.path).ToLowerInvariant()] = $Descriptor
+    }
+    foreach ($Key in $ExpectedByPath.Keys) {
+        $ExpectedDescriptor = $ExpectedByPath[$Key]
+        if (-not $CurrentByPath.ContainsKey($Key)) {
+            throw "POE1 真实还原包与当前 Bundles2 文件列表不一致，缺少：$($ExpectedDescriptor.path)"
+        }
+        $CurrentDescriptor = $CurrentByPath[$Key]
+        if ([long]$ExpectedDescriptor.length -ne [long]$CurrentDescriptor.length) {
+            throw "POE1 真实还原包与当前 Bundles2 文件长度不一致：$($ExpectedDescriptor.path)"
+        }
+        if (-not ([string]$ExpectedDescriptor.sha256).Equals(
+                [string]$CurrentDescriptor.sha256,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) {
+            throw "POE1 真实还原包与当前 Bundles2 文件 SHA256 不一致：$($ExpectedDescriptor.path)"
+        }
+    }
+    foreach ($Key in $CurrentByPath.Keys) {
+        if (-not $ExpectedByPath.ContainsKey($Key)) {
+            throw "POE1 真实还原包与当前 Bundles2 文件列表不一致，多出：$($CurrentByPath[$Key].path)"
+        }
+    }
+    return $Current
+}
+
 function Assert-Poe1PhysicalRestoreZip {
     param(
         [Parameter(Mandatory = $true)][string]$ZipPath,
         [Parameter(Mandatory = $true)]$InstallInfo,
         [Parameter(Mandatory = $true)][string]$CurrentBaseItems,
-        [Parameter(Mandatory = $true)][string]$RepoRoot
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$Poe1Dir = "",
+        [switch]$RequireCurrentPhysical
     )
 
     Assert-Poe1File -Path $ZipPath -Name "POE1 真实还原包"
@@ -580,6 +692,12 @@ function Assert-Poe1PhysicalRestoreZip {
         }
         if (-not $Seen.ContainsKey("bundles2/_.index.bin")) {
             throw "POE1 真实还原包缺少 Bundles2/_.index.bin。"
+        }
+        if ($RequireCurrentPhysical) {
+            if ([string]::IsNullOrWhiteSpace($Poe1Dir)) {
+                throw "校验当前 POE1 物理文件时必须提供游戏目录。"
+            }
+            Assert-Poe1PhysicalRestoreCurrent -Manifest $Manifest -Poe1Dir $Poe1Dir | Out-Null
         }
         return $Manifest
     }

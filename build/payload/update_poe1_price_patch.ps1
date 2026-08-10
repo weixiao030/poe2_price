@@ -23,7 +23,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.3"
+$script:PatchVersion = "v0.5.4"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -54,7 +54,6 @@ function Publish-Poe1BuildStage {
         Copy-Poe2FileAtomically -Source $File.FullName -Destination $Target | Out-Null
     }
 }
-
 function Get-Poe1WordsRowCount {
     param([string]$WordsPath, [string]$Python)
 
@@ -66,13 +65,15 @@ function Get-Poe1WordsRowCount {
 
 function Test-Poe1CacheUsable {
     param(
-        [string]$CacheZip,
-        [string]$CacheMetadata,
-        [string]$CurrentBaseItems,
-        [string]$CurrentWords,
-        [string]$Scope,
-        [string]$Source,
-        [string]$Python
+        [Parameter(Mandatory = $true)][string]$CacheZip,
+        [Parameter(Mandatory = $true)][string]$CacheMetadata,
+        [Parameter(Mandatory = $true)][string]$CurrentBaseItems,
+        [Parameter(Mandatory = $true)][string]$CurrentWords,
+        [Parameter(Mandatory = $true)][string]$Scope,
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)]$InstallInfo,
+        [Parameter(Mandatory = $true)][string]$RepoRoot
     )
 
     if (-not (Test-Path -LiteralPath $CacheZip -PathType Leaf) -or
@@ -224,7 +225,8 @@ try {
             try {
                 if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
                     Assert-Poe1PhysicalRestoreZip -ZipPath $Candidate -InstallInfo $InstallInfo `
-                        -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot | Out-Null
+                        -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot `
+                        -Poe1Dir $Poe1Dir -RequireCurrentPhysical | Out-Null
                     $PhysicalRestoreZip = (Resolve-Path -LiteralPath $Candidate).Path
                     break
                 }
@@ -320,7 +322,8 @@ try {
         Write-Warning "实时构建失败：$BuildFailure"
         if (Test-Poe1CacheUsable -CacheZip $CachedPatchZip -CacheMetadata $CacheMetadata `
             -CurrentBaseItems $Extracted.LocalizedBaseItems -CurrentWords $Extracted.LocalizedWords `
-            -Scope $PatchScope -Source $PriceSource -Python $Python) {
+            -Scope $PatchScope -Source $PriceSource -Python $Python `
+            -InstallInfo $InstallInfo -RepoRoot $RepoRoot) {
             Write-Warning "已使用当前客户端、语言和范围完全匹配的 POE1 缓存。"
             Copy-Poe2FileAtomically -Source $CachedPatchZip -Destination $PatchZip | Out-Null
         }

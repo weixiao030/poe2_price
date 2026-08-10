@@ -289,6 +289,36 @@ def test_poe1_scripts_keep_isolated_paths_and_c_d_contract():
     assert '"poe1"' in gui and '"poe2"' in gui and '"auto"' in gui
 
 
+def test_poe1_localization_download_prefers_domestic_accelerators_and_validates_tool():
+    localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
+    assert "ghfast.top" in localize
+    assert "gh-proxy.com" in localize
+    assert localize.index('Name = "国内加速源 ghfast.top"') < localize.index(
+        'Name = "国内加速源 gh-proxy.com"'
+    )
+    assert localize.index('Name = "国内加速源 gh-proxy.com"') < localize.index(
+        'Name = "GitHub 官方源"'
+    )
+    assert "releases/expanded_assets/" in localize
+    assert "Get-Poe1LatestLocalizationRelease" in localize
+    assert "Test-Poe1LocalizationExecutable" in localize
+    assert "Get-FileHash -LiteralPath $Path -Algorithm SHA256" in localize
+    assert "-ExpectedSha256 $Release.Sha256" in localize
+    assert "SHA256 与最新版 Release 公布值不一致" in localize
+    assert "PoeChinese3|LibGGPK3" in localize
+
+
+def test_poe1_current_dat_extraction_uses_one_batch_and_requires_english_baseitems():
+    common = (TOOLS / "poe1_patch_common.ps1").read_text(encoding="utf-8-sig")
+    function = common.split("function Invoke-Poe1ExtractDatFiles", 1)[1].split(
+        "function New-Poe1PhysicalRestoreZip", 1
+    )[0]
+    assert function.count("Invoke-Poe1ExtractBatch") == 1
+    assert "$RequiredPaths = @($LocalizedPaths + @($InstallInfo.EnBaseItemsPath))" in function
+    assert "$OptionalPaths = @($InstallInfo.EnWordsPath)" in function
+    assert "进程无法访问文件|文件正由另一进程使用" in common
+
+
 def test_unified_gui_uses_cached_compact_client_switching_and_both_links():
     gui = (TOOLS / "price_patch_gui.ps1").read_text(encoding="utf-8-sig")
 

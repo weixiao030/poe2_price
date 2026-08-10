@@ -81,7 +81,7 @@
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
-    "version": "0.5.3",
+    "version": "0.5.4",
     "restore": {
       "projectUniqueName": "D:\\备份合集6\\电脑文件备份\\自己写的软件合集\\poe2物价补丁\\poe2_price\\build\\Poe2PatchLauncher\\Poe2PatchLauncher.csproj",
       "projectName": "Poe2PatchLauncher",

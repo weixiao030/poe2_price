@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import shutil
 
 from docx import Document
@@ -8,7 +9,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.5.3"
+PATCH_VERSION = "v0.5.4"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -131,7 +132,7 @@ def copy_template_doc() -> bool:
             "POE1 在 GUI 选择自动识别、汉化补丁、简中、繁中或跟随配置；POE2 可设置 POE2_PATCH_LANGUAGE，例如 zh-TW、en、ja。"
         ),
         r"tools\dotnet-runtime：内置 .NET 8 runtime，不要删除。": (
-            r"tools\dotnet-runtime：内置 .NET 8.0.28 runtime，不要删除；发布包另含校验过的离线修复包，只有两者都不可用时才访问 Microsoft 备用源。"
+            r"tools\dotnet-runtime：内置 .NET 8.0.28 runtime，不要删除；发布包另含校验过的离线修复包，正常使用不需要联网，只有两者都不可用时才访问 Microsoft 源。"
         ),
         r"tools\python：内置 Python 和依赖，不要删除。": (
             r"tools\python：内置 Python 和依赖，不要删除；自动修复时依次尝试华为云、阿里云、南京大学镜像和 Python 官方备用源。"
@@ -215,6 +216,25 @@ def copy_template_doc() -> bool:
                         run.text = ""
                 else:
                     paragraph.add_run(f"POE1 / POE2 物价补丁 {PATCH_VERSION}")
+
+    localization_steps = [
+        "在统一窗口选择 POE1，并确认客户端显示为国际服 Steam Bundles2 或国际服官方 GGPK；国服不会启用汉化按钮。",
+        "点击“一键汉化POE1国际服”。程序每次都会从 PoEDB 推荐的 LibGGPK3 GitHub 最新 Release 下载 PoeChinese3_win-x64.exe；查询和下载均优先使用国内 ghfast.top、gh-proxy.com 加速源，再回退 GitHub 官方源。文件 SHA256 必须匹配最新 Release 公布值，不使用旧缓存。",
+        "汉化工具完成并显示 Done! 中文化完成! 后，进入 POE1 选择第二个（法文）国旗；程序也会尝试把 production_Config.ini 设为 language=fr。",
+        "汉化会修改 POE1 游戏包，请关闭游戏和启动器。游戏更新会覆盖已写入的物价与汉化入口；更新完成后请重新汉化及更新物价，更新器会从当前 DAT 动态重建，不依赖固定赛季文件。遇到校验或启动问题时先使用 Steam 验证游戏文件。",
+    ]
+    paragraphs = list(doc.paragraphs)
+    for index, paragraph in enumerate(paragraphs):
+        if not paragraph.text.strip().startswith("POE1 国际服一键汉化"):
+            continue
+        paragraph._element.getparent().remove(paragraph._element)
+        for following in paragraphs[index + 1 :]:
+            if not re.match(r"^\d+\.\s*", following.text.strip()):
+                break
+            following._element.getparent().remove(following._element)
+        break
+    para(doc, "POE1 国际服一键汉化", 13, True, after=4)
+    nums(doc, localization_steps)
 
     generated = OUT_DIR / "使用文档.docx"
     doc.save(generated)
@@ -379,7 +399,7 @@ def build():
             "物价补丁.zip：运行时生成的当前物价补丁包。",
             "还原物价补丁.zip：运行时生成或保存的恢复包。",
             "真实还原物价补丁.zip：Bundles2 模式的恢复包；持久副本位于 <游戏根目录>\\.poe2-price-patch。",
-            r"tools\dotnet-runtime：内置 .NET 8.0.28 runtime，不要删除；发布包另含校验过的离线修复包，只有两者都不可用时才访问 Microsoft 备用源。",
+            r"tools\dotnet-runtime：内置 .NET 8.0.28 runtime，不要删除；发布包另含校验过的离线修复包，正常使用不需要联网，只有两者都不可用时才访问 Microsoft 源。",
             r"tools\python：内置 Python 和依赖，不要删除；自动修复时依次尝试华为云、阿里云、南京大学镜像和 Python 官方备用源。",
             "一键安装特殊补丁工具：底层写入工具目录，不要删除。",
         ],
