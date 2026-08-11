@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.5.4"
+PATCH_VERSION = "v0.5.5"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -24,6 +24,7 @@ def copy_template_doc() -> bool:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     doc = Document(TEMPLATE_DOC)
+    doc.core_properties.title = f"POE1 / POE2 物价补丁使用文档 {PATCH_VERSION}"
     replacements = {
         "POE2 三服合一物价补丁使用文档": (
             f"POE1 / POE2 物价补丁使用文档 {PATCH_VERSION}"
@@ -199,13 +200,37 @@ def copy_template_doc() -> bool:
     for node in list_style_ppr.findall(qn("w:contextualSpacing")):
         list_style_ppr.remove(node)
 
-    # Keep the compact path examples unchanged; only the long Bundles2 note
-    # needs extra separation from the following bullet after it wraps.
+    # LibreOffice can also collapse adjacent WPS list paragraphs or render a
+    # list marker beside an inline screenshot.  Convert the template lists to
+    # explicit, ordinary paragraphs so every item and image reserves its own
+    # line consistently in Word, WPS and LibreOffice.
+    reference_labels = {"参考放置图", "官服:", "steam服:", "国服:"}
     for paragraph in doc.paragraphs:
-        if paragraph.style.name == "List Bullet":
-            paragraph.paragraph_format.space_after = Pt(
-                6 if paragraph.text.startswith("Bundles2 模式会更新") else 3
-            )
+        if paragraph.style.name != "List Bullet":
+            continue
+        text = paragraph.text.strip()
+        contains_image = bool(paragraph._element.xpath(".//wp:inline"))
+        paragraph.style = doc.styles["Normal"]
+        paragraph.paragraph_format.line_spacing = 1.15
+        if contains_image:
+            paragraph.paragraph_format.left_indent = Pt(0)
+            paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(6)
+            continue
+        if text in reference_labels:
+            paragraph.paragraph_format.left_indent = Pt(0)
+            paragraph.paragraph_format.first_line_indent = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(3)
+            continue
+        paragraph.paragraph_format.left_indent = Pt(18)
+        paragraph.paragraph_format.first_line_indent = Pt(-10)
+        paragraph.paragraph_format.space_after = Pt(
+            6 if text.startswith("Bundles2 模式会更新") else 3
+        )
+        for run in paragraph.runs:
+            if run.text:
+                run.text = "• " + run.text
+                break
 
     for section in doc.sections:
         for paragraph in section.footer.paragraphs:
@@ -293,6 +318,7 @@ def build():
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     doc = Document()
+    doc.core_properties.title = f"POE1 / POE2 物价补丁使用文档 {PATCH_VERSION}"
     sec = doc.sections[0]
     sec.top_margin = Inches(0.75)
     sec.bottom_margin = Inches(0.75)

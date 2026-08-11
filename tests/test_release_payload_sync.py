@@ -4,7 +4,6 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "物价补丁" / "tools"
 PAYLOAD = ROOT / "build" / "payload"
@@ -99,7 +98,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.5.4"
+    assert version == "0.5.5"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -133,6 +132,14 @@ def test_declared_version_is_consistent():
     changelog = (ROOT / "更新日志.md").read_text(encoding="utf-8-sig")
     assert f"POE1/2 物价补丁 v{version}" in readme
     assert f"（v{version}）" in changelog
+
+    with zipfile.ZipFile(SOURCE_DOC, "r") as archive:
+        document = ET.fromstring(archive.read("word/document.xml"))
+        core_properties = ET.fromstring(archive.read("docProps/core.xml"))
+    assert f"POE1 / POE2 物价补丁使用文档 v{version}" in "".join(document.itertext())
+    title = core_properties.find("{http://purl.org/dc/elements/1.1/}title")
+    assert title is not None
+    assert title.text == f"POE1 / POE2 物价补丁使用文档 v{version}"
 
 
 def test_release_document_describes_fail_safe_behavior():

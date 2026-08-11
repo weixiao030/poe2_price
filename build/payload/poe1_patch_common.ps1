@@ -211,6 +211,54 @@ function Get-Poe1ZipEntryTempFile {
     return $Temp
 }
 
+function New-Poe1InstallPayloadZip {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceZip,
+        [Parameter(Mandatory = $true)]$InstallInfo,
+        [Parameter(Mandatory = $true)][string]$OutputZip
+    )
+
+    Assert-Poe1File -Path $SourceZip -Name "POE1 源补丁包"
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $OutputFull = [System.IO.Path]::GetFullPath($OutputZip)
+    $OutputDir = Split-Path -Parent $OutputFull
+    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+    $TempZip = Join-Path $OutputDir ([string]::Concat(".", (Split-Path -Leaf $OutputFull), ".new-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+    $SourceArchive = $null
+    $DestinationArchive = $null
+    try {
+        $SourceArchive = [System.IO.Compression.ZipFile]::OpenRead($SourceZip)
+        $DestinationArchive = [System.IO.Compression.ZipFile]::Open($TempZip, [System.IO.Compression.ZipArchiveMode]::Create)
+        foreach ($Path in @($InstallInfo.TcBaseItemsPath, $InstallInfo.TcWordsPath) | Select-Object -Unique) {
+            $Name = ([string]$Path).Replace('\', '/')
+            $SourceEntry = $SourceArchive.GetEntry($Name)
+            if ($null -eq $SourceEntry) { throw "POE1 源补丁包缺少写入目标：$Name" }
+            $DestinationEntry = $DestinationArchive.CreateEntry($Name, [System.IO.Compression.CompressionLevel]::Optimal)
+            $InputStream = $SourceEntry.Open()
+            $OutputStream = $DestinationEntry.Open()
+            try { $InputStream.CopyTo($OutputStream) }
+            finally {
+                $OutputStream.Dispose()
+                $InputStream.Dispose()
+            }
+        }
+        $DestinationArchive.Dispose()
+        $DestinationArchive = $null
+        $SourceArchive.Dispose()
+        $SourceArchive = $null
+        Move-Poe2FileAtomically -Source $TempZip -Destination $OutputFull | Out-Null
+    }
+    finally {
+        if ($null -ne $DestinationArchive) { $DestinationArchive.Dispose() }
+        if ($null -ne $SourceArchive) { $SourceArchive.Dispose() }
+        if (Test-Path -LiteralPath $TempZip -PathType Leaf) {
+            Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $OutputFull
+}
+
 function New-Poe1LogicalRestoreZip {
     param(
         [Parameter(Mandatory = $true)][string]$BaseItems,
@@ -492,7 +540,7 @@ function Get-Poe1PhysicalRestoreFileDescriptors {
         [Parameter(Mandatory = $true)][string]$Poe1Dir
     )
 
-    $Bundles2Dir = (Resolve-Path -LiteralPath (Join-Path $Poe1Dir "Bundles2")).Path
+    $Bundles2Dir = (Get-Item -LiteralPath (Join-Path $Poe1Dir "Bundles2") -ErrorAction Stop).FullName
     $Files = New-Object System.Collections.Generic.List[System.IO.FileInfo]
     foreach ($Name in @("_.index.bin", "_.index.high.bin", "_.index.low.bin", ".index.dbg")) {
         $Path = Join-Path $Bundles2Dir $Name
@@ -506,8 +554,8 @@ function Get-Poe1PhysicalRestoreFileDescriptors {
             [void]$Files.Add($File)
         }
     }
-    if (-not ($Files | Where-Object { $_.FullName -ieq (Join-Path $Bundles2Dir "_.index.bin") } | Select-Object -First 1)) {
-        throw "无法读取 POE1 真实还原文件清单：Bundles2\_.index.bin 不存在。"
+    if (-not (Test-Path -LiteralPath (Join-Path $Bundles2Dir "_.index.bin") -PathType Leaf)) {
+        throw "无法读取 POE1 真实还原文件清单：$Poe1Dir\Bundles2\_.index.bin 不存在。"
     }
 
     $RootPrefix = $Bundles2Dir.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
@@ -519,6 +567,51 @@ function Get-Poe1PhysicalRestoreFileDescriptors {
                 sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             }
         })
+}
+
+function Get-Poe1Bundles2MutationFingerprint {
+    param([Parameter(Mandatory = $true)][string]$Poe1Dir)
+
+    $Records = @(Get-Poe1PhysicalRestoreFileDescriptors -Poe1Dir $Poe1Dir)
+    $Canonical = [string]::Join("`n", @($Records | ForEach-Object {
+                "{0}|{1}|{2}" -f `
+                    ([string]$_.path).ToLowerInvariant(), `
+                    [long]$_.length, `
+                    ([string]$_.sha256).ToLowerInvariant()
+            }))
+    return [pscustomobject][ordered]@{
+        version = 1
+        algorithm = "path-length-sha256-v1"
+        files = $Records
+        inventory_sha256 = Get-Poe2TextSha256Hex -Text $Canonical
+    }
+}
+
+function Assert-Poe1Bundles2MutationFingerprintCurrent {
+    param(
+        [Parameter(Mandatory = $true)]$Expected,
+        [Parameter(Mandatory = $true)][string]$Poe1Dir
+    )
+
+    if (
+        $null -eq $Expected -or
+        [int]$Expected.version -ne 1 -or
+        [string]$Expected.algorithm -ne "path-length-sha256-v1"
+    ) {
+        throw "POE1 缺少可识别的 Bundles2 写入前状态指纹。"
+    }
+    $Current = Get-Poe1Bundles2MutationFingerprint -Poe1Dir $Poe1Dir
+    if (@($Expected.files).Count -ne @($Current.files).Count) {
+        throw "POE1 Bundles2 状态已并发变化：文件数量与本次写入准备时不同。请等待游戏平台更新完成并完全关闭游戏与启动器后重试。"
+    }
+    $ExpectedHash = [string]$Expected.inventory_sha256
+    if (
+        $ExpectedHash -notmatch '^[0-9a-fA-F]{64}$' -or
+        -not $ExpectedHash.Equals([string]$Current.inventory_sha256, [System.StringComparison]::OrdinalIgnoreCase)
+    ) {
+        throw "POE1 Bundles2 状态已并发变化：索引或 LibGGPK3 内容与本次写入准备时不同。请等待游戏平台更新完成并完全关闭游戏与启动器后重试。"
+    }
+    return $Current
 }
 
 function New-Poe1PhysicalRestoreZip {
@@ -817,7 +910,10 @@ function Test-Poe1ToolOutputFailure {
     param([string]$Text)
 
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
-    return [bool]($Text -match '(?im)(?:^|\s)(?:fatal|unhandled exception|filenotfound|could not load|failed to create mutex|error:)')
+    return [bool](
+        $Text -match '(?im)(?:^|\s)(?:fatal|unhandled exception|filenotfound|could not load|failed to create mutex|error:)' -or
+        $Text -match '(?im)FileNotFoundException|Could not found file in Index'
+    )
 }
 
 function Invoke-Poe1ApplyPatch {
@@ -927,4 +1023,27 @@ function Invoke-Poe1PatchWithRetry {
         }
     }
     throw $LastError
+}
+
+function Invoke-Poe1LogicalRestoreWithRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Poe1Dir,
+        [Parameter(Mandatory = $true)]$InstallInfo,
+        [Parameter(Mandatory = $true)][string]$LogicalRestoreZip,
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][string]$Dotnet,
+        [int]$Attempts = 2
+    )
+
+    $InstallZip = Join-Path $env:TEMP ([string]::Concat("poe1_restore_install_", [Guid]::NewGuid().ToString("N"), ".zip"))
+    try {
+        New-Poe1InstallPayloadZip -SourceZip $LogicalRestoreZip -InstallInfo $InstallInfo -OutputZip $InstallZip | Out-Null
+        Invoke-Poe1PatchWithRetry -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo -PatchZip $InstallZip `
+            -RepoRoot $RepoRoot -Dotnet $Dotnet -Attempts $Attempts
+    }
+    finally {
+        if (Test-Path -LiteralPath $InstallZip -PathType Leaf) {
+            Remove-Item -LiteralPath $InstallZip -Force -ErrorAction SilentlyContinue
+        }
+    }
 }

@@ -21,7 +21,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.4"
+$script:PatchVersion = "v0.5.5"
 $script:GameDirectoryMutex = $null
 $ValidationDir = ""
 
@@ -158,8 +158,8 @@ try {
 
     Write-Poe1Step "写入干净 POE1 DAT 并读回校验"
     $Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
-    Invoke-Poe1PatchWithRetry -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo -PatchZip $SelectedLogical `
-        -RepoRoot $RepoRoot -Dotnet $Dotnet
+    Invoke-Poe1LogicalRestoreWithRetry -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo `
+        -LogicalRestoreZip $SelectedLogical -RepoRoot $RepoRoot -Dotnet $Dotnet
     Write-Host "POE1 物价补丁已还原并通过读回校验。" -ForegroundColor Green
 }
 catch {

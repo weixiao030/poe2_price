@@ -1,4 +1,6 @@
 import re
+import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -214,6 +216,108 @@ Write-Output 'PATCHED_WITHOUT_BACKUP_MIGRATES'
     assert "PATCHED_WITHOUT_BACKUP_MIGRATES" in output
 
 
+def test_repeat_update_state_reuses_backup_and_stale_legacy_state_migrates(
+    tmp_path: Path,
+):
+    candidate = tmp_path / "physical-restore.zip"
+    candidate.write_bytes(b"verified-clean-restore")
+    migrated = tmp_path / "migrated-restore.zip"
+    migrated.write_bytes(b"migrated-clean-restore")
+    state_path = tmp_path / "bundles2-installed-state.json"
+    current_hash = "a" * 64
+    stale_hash = "b" * 64
+    state_path.write_text(
+        json.dumps(
+            {
+                "kind": "poe2-price-patch-bundles2-installed-state",
+                "version": 1,
+                "install_kind": "CN-WeGame-Bundles2",
+                "target_path": "data/chinese/baseitemtypes.datc64",
+                "restore_zip_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
+                "bundles2_fingerprint": {
+                    "version": 1,
+                    "algorithm": "path-length-sha256-v1",
+                    "files": [],
+                    "inventory_sha256": current_hash,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    script = rf"""
+$ErrorActionPreference = 'Stop'
+function Import-SelectedFunction([string]$Path, [string]$Name) {{
+    $Tokens=$null; $Errors=$null
+    $Ast=[System.Management.Automation.Language.Parser]::ParseFile($Path,[ref]$Tokens,[ref]$Errors)
+    if ($Errors.Count) {{ throw $Errors[0] }}
+    $Function=$Ast.Find({{param($Node) $Node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $Node.Name -eq $Name}}, $true)
+    if ($null -eq $Function) {{ throw "missing function: $Name" }}
+    return $Function.Extent.Text
+}}
+$Candidate = '{ps_path(candidate)}'
+$Migrated = '{ps_path(migrated)}'
+$CurrentHash = '{current_hash}'
+$StaleHash = '{stale_hash}'
+$script:MigrationCalls = 0
+function Get-PhysicalRestoreZipCandidates {{ return @($Candidate) }}
+function Test-PhysicalRestoreZipUsable {{ return $true }}
+function Publish-PhysicalRestoreZip {{ param([string]$Source) return $Source }}
+function New-PhysicalRestoreZip {{ throw 'clean-source backup path must not run' }}
+function New-CleanPhysicalRestoreZipFromPatchedSources {{
+    param([string]$OutputZip)
+    $script:MigrationCalls++
+    return $Migrated
+}}
+function Assert-Poe2PhysicalRestoreZip {{
+    return [pscustomobject]@{{
+        write_precondition=[pscustomobject]@{{
+            version=1
+            algorithm='path-length-sha256-v1'
+            files=@()
+            inventory_sha256=$StaleHash
+        }}
+    }}
+}}
+function Assert-Poe2Bundles2MutationFingerprintCurrent {{
+    param($Expected,[string]$Bundles2Dir)
+    if ([string]$Expected.inventory_sha256 -ne $CurrentHash) {{
+        throw 'Bundles2 状态已并发变化：文件数量与创建还原包时不同。'
+    }}
+}}
+$GameMode = 'Bundles2'
+$PhysicalRestoreOutZip = 'unused-output.zip'
+$InstallInfo = [pscustomobject]@{{
+    InstallKind='CN-WeGame-Bundles2'
+    TcBaseItemsPath='data/chinese/baseitemtypes.datc64'
+}}
+$Bundles2Paths = [pscustomobject]@{{Bundles2Dir='mock-bundles'}}
+$script:LastPhysicalRestoreZipError = ''
+Invoke-Expression (Import-SelectedFunction '{ps_path(UPDATE)}' 'Get-Bundles2InstalledState')
+Invoke-Expression (Import-SelectedFunction '{ps_path(UPDATE)}' 'Test-Bundles2InstalledStateCurrent')
+Invoke-Expression (Import-SelectedFunction '{ps_path(UPDATE)}' 'Ensure-PhysicalRestoreZip')
+
+# Old releases have only the pre-first-install fingerprint.  It is stale after
+# their own successful PatchBundle3 write and must trigger a safe migration.
+$Bundles2InstalledStatePath = '{ps_path(tmp_path / "missing-state.json")}'
+$LegacyResult = Ensure-PhysicalRestoreZip -SourceLooksPatched $true
+if ($script:MigrationCalls -ne 1 -or $LegacyResult -ne $Migrated) {{
+    throw "STALE_LEGACY_DID_NOT_MIGRATE:$LegacyResult/$($script:MigrationCalls)"
+}}
+
+# A durable state written after a successful install proves that the current
+# mutation fingerprint is this tool's own state, so the immutable backup can be
+# reused on every later price refresh.
+$script:MigrationCalls = 0
+$Bundles2InstalledStatePath = '{ps_path(state_path)}'
+$RepeatResult = Ensure-PhysicalRestoreZip -SourceLooksPatched $true
+if ($script:MigrationCalls -ne 0 -or $RepeatResult -ne $Candidate) {{
+    throw "REPEAT_UPDATE_DID_NOT_REUSE:$RepeatResult/$($script:MigrationCalls)"
+}}
+Write-Output 'REPEAT_UPDATE_STATE_HANDLED'
+"""
+    assert "REPEAT_UPDATE_STATE_HANDLED" in run_windows_powershell(script)
+
+
 def test_patched_source_has_offline_physical_restore_migration_before_game_write():
     update = read(UPDATE)
     migration_name = "New-CleanPhysicalRestoreZipFromPatchedSources"
@@ -250,6 +354,14 @@ def test_patched_source_has_offline_physical_restore_migration_before_game_write
     )
     assert ensure_call < backup_validation < game_write
     assert backup_validation < game_write_exe
+    assert "$Bundles2WritePrecondition = Get-Poe2Bundles2MutationFingerprint" in update
+    install = update[backup_validation:]
+    assert "-Expected $Bundles2WritePrecondition" in install
+    assert "-Expected $PhysicalRestoreManifest.write_precondition" not in install
+    verify = install.index("Assert-Bundles2PatchApplied")
+    durable_state = install.index("Write-Bundles2InstalledState", verify)
+    success = install.index('Write-Host "补丁已写入 Bundles2。"', durable_state)
+    assert verify < durable_state < success
 
 
 def test_legacy_restore_cleans_missing_endgamemaps_and_validates_words():

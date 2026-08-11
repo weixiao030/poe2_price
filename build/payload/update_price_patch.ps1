@@ -25,7 +25,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.5.4"
+$script:PatchVersion = "v0.5.5"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -1028,6 +1028,80 @@ function Test-PhysicalRestoreZipUsable {
         $script:LastPhysicalRestoreZipError = $_.Exception.Message
         return $false
     }
+}
+
+function Get-Bundles2InstalledState {
+    if ([string]::IsNullOrWhiteSpace($Bundles2InstalledStatePath) -or -not (Test-Path -LiteralPath $Bundles2InstalledStatePath -PathType Leaf)) {
+        return $null
+    }
+
+    try {
+        $State = Get-Content -LiteralPath $Bundles2InstalledStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$State.kind -ne "poe2-price-patch-bundles2-installed-state" -or [int]$State.version -ne 1) {
+            throw "状态文件类型或版本无效。"
+        }
+        if ([string]$State.install_kind -ne [string]$InstallInfo.InstallKind) {
+            throw "状态文件属于其它客户端。"
+        }
+        if ([string]$State.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
+            throw "状态文件属于其它语言目标。"
+        }
+        if ([string]$State.restore_zip_sha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "状态文件缺少有效的还原包 SHA256。"
+        }
+        if (
+            $null -eq $State.bundles2_fingerprint -or
+            [int]$State.bundles2_fingerprint.version -ne 1 -or
+            [string]$State.bundles2_fingerprint.algorithm -ne "path-length-sha256-v1"
+        ) {
+            throw "状态文件缺少有效的 Bundles2 指纹。"
+        }
+        return $State
+    }
+    catch {
+        Write-Warning "忽略无效的上次安装状态：$($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Test-Bundles2InstalledStateCurrent {
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [Parameter(Mandatory = $true)][string]$RestoreZip
+    )
+
+    try {
+        $RestoreHash = (Get-FileHash -LiteralPath $RestoreZip -Algorithm SHA256 -ErrorAction Stop).Hash
+        if (-not $RestoreHash.Equals([string]$State.restore_zip_sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "上次安装状态绑定的真实还原包与当前候选不同。"
+        }
+        Assert-Poe2Bundles2MutationFingerprintCurrent `
+            -Expected $State.bundles2_fingerprint `
+            -Bundles2Dir $Bundles2Paths.Bundles2Dir | Out-Null
+        $script:LastBundles2InstalledStateError = ""
+        return $true
+    }
+    catch {
+        $script:LastBundles2InstalledStateError = $_.Exception.Message
+        return $false
+    }
+}
+
+function Write-Bundles2InstalledState {
+    param([Parameter(Mandatory = $true)][string]$RestoreZip)
+
+    $Fingerprint = Get-Poe2Bundles2MutationFingerprint -Bundles2Dir $Bundles2Paths.Bundles2Dir
+    $RestoreHash = (Get-FileHash -LiteralPath $RestoreZip -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    Write-JsonAtomically -Path $Bundles2InstalledStatePath -Value ([ordered]@{
+            kind = "poe2-price-patch-bundles2-installed-state"
+            version = 1
+            updated_at = (Get-Date).ToUniversalTime().ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+            install_kind = $InstallInfo.InstallKind
+            target_path = $InstallInfo.TcBaseItemsPath
+            restore_zip_sha256 = $RestoreHash
+            bundles2_fingerprint = $Fingerprint
+        })
+    return $Fingerprint
 }
 
 function Get-RestoreZipCandidates {
@@ -2101,13 +2175,61 @@ function Ensure-PhysicalRestoreZip {
     }
 
     if ($UsableCandidates.Count -gt 0) {
-        $CandidatesByHash = @($UsableCandidates | Group-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash })
-        if ($CandidatesByHash.Count -gt 1) {
-            $CandidateList = [string]::Join("；", $UsableCandidates.ToArray())
-            throw "找到多个内容不同、但都能通过校验的真实还原包，无法安全判断应使用哪一个：$CandidateList"
+        # A restore ZIP describes the clean rollback baseline.  Its original
+        # write_precondition describes the state before the first install and
+        # therefore cannot match after PatchBundle3 has successfully written a
+        # price layer.  Bind the immutable ZIP to the post-install state in a
+        # separate durable record so repeat updates can distinguish our own
+        # previous write from an unrelated concurrent/third-party mutation.
+        $InstalledState = Get-Bundles2InstalledState
+        if ($null -ne $InstalledState) {
+            $StateCandidates = @($UsableCandidates | Where-Object {
+                    $CandidateHash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash
+                    $CandidateHash.Equals([string]$InstalledState.restore_zip_sha256, [System.StringComparison]::OrdinalIgnoreCase)
+                })
+            if ($StateCandidates.Count -gt 0) {
+                $Selected = @($StateCandidates | Sort-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } -Descending)[0]
+                if (Test-Bundles2InstalledStateCurrent -State $InstalledState -RestoreZip $Selected) {
+                    return Publish-PhysicalRestoreZip -Source $Selected
+                }
+                Write-Warning "上次安装后 Bundles2 又发生了变化，将基于当前状态刷新安全还原基线：$script:LastBundles2InstalledStateError"
+            }
+            else {
+                Write-Warning "上次安装状态绑定的真实还原包已不存在，将基于当前状态刷新安全还原基线。"
+            }
         }
-        $Selected = @($UsableCandidates | Sort-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } -Descending)[0]
-        return Publish-PhysicalRestoreZip -Source $Selected
+
+        # Compatibility for a freshly-created v2 backup before its first
+        # install.  Old releases did not write the durable post-install state;
+        # their stale precondition must be migrated instead of being treated as
+        # a fatal concurrent file-count change.
+        $CurrentCandidates = New-Object System.Collections.Generic.List[string]
+        foreach ($Candidate in $UsableCandidates) {
+            try {
+                $Manifest = Assert-Poe2PhysicalRestoreZip -Path $Candidate -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo
+                if ($null -ne $Manifest.write_precondition) {
+                    Assert-Poe2Bundles2MutationFingerprintCurrent `
+                        -Expected $Manifest.write_precondition `
+                        -Bundles2Dir $Bundles2Paths.Bundles2Dir | Out-Null
+                    $CurrentCandidates.Add($Candidate)
+                }
+            }
+            catch {
+                # The ZIP itself was already validated above.  A stale write
+                # precondition is handled by the offline clean migration below.
+            }
+        }
+        if ($CurrentCandidates.Count -gt 0) {
+            $CandidatesByHash = @($CurrentCandidates | Group-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash })
+            if ($CandidatesByHash.Count -gt 1) {
+                $CandidateList = [string]::Join("；", $CurrentCandidates.ToArray())
+                throw "找到多个内容不同、但都匹配当前写入前状态的真实还原包，无法安全判断应使用哪一个：$CandidateList"
+            }
+            $Selected = @($CurrentCandidates | Sort-Object { (Get-Item -LiteralPath $_).LastWriteTimeUtc } -Descending)[0]
+            return Publish-PhysicalRestoreZip -Source $Selected
+        }
+
+        Write-Warning "检测到旧版真实还原包的写入前指纹已过期，正在离线重建当前安全还原基线。"
     }
 
     $Reason = if ([string]::IsNullOrWhiteSpace($script:LastPhysicalRestoreZipError)) { "未找到可用文件" } else { $script:LastPhysicalRestoreZipError }
@@ -2568,6 +2690,7 @@ $RestorePatchFolderZip = Join-Path $RepoRoot $RestoreZipName
 $PhysicalRestorePatchFolderZip = Join-Path $RepoRoot $PhysicalRestoreZipName
 $PersistentRestoreDir = Join-Path $Poe2Dir ".poe2-price-patch"
 $PersistentPhysicalRestoreZip = Join-Path $PersistentRestoreDir $PhysicalRestoreZipName
+$Bundles2InstalledStatePath = Join-Path $PersistentRestoreDir "bundles2-installed-state.json"
 $PricePatchZipName = Get-Poe2PatchName "PricePatchZip"
 $PatchZip = Join-Path $OutDir $PricePatchZipName
 $PatchedDat = Join-Path $OutDir "baseitemtypes.patched.datc64"
@@ -2876,6 +2999,11 @@ catch {
 if ($GameMode -eq "Bundles2" -and -not $NoInstall -and -not $NoOpenTool) {
     # A physical write without a verified rollback package is never safe.
     $PhysicalRestoreZip = Ensure-PhysicalRestoreZip -SourceLooksPatched ($SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched)
+    # Capture the live state for this run.  The physical ZIP's historical
+    # precondition remains useful for first install/migration, but a repeat
+    # update must compare against the state observed after selecting or
+    # refreshing its rollback baseline.
+    $Bundles2WritePrecondition = Get-Poe2Bundles2MutationFingerprint -Bundles2Dir $Bundles2Paths.Bundles2Dir
     Write-Host "真实还原包：" -ForegroundColor Green
     Write-Host "  $PhysicalRestoreZip"
 }
@@ -3157,15 +3285,10 @@ if (-not $NoInstall) {
             throw "写入 Bundles2 前找不到已验证的真实还原包，已安全中止。"
         }
         Write-Host "写入前正在复验真实还原包与当前官方底板..." -ForegroundColor Yellow
-        $PhysicalRestoreManifest = Assert-Poe2PhysicalRestoreZip -Path $PhysicalRestoreZip -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo
-        if ($null -ne $PhysicalRestoreManifest.write_precondition) {
-            Assert-Poe2Bundles2MutationFingerprintCurrent `
-                -Expected $PhysicalRestoreManifest.write_precondition `
-                -Bundles2Dir $Bundles2Paths.Bundles2Dir | Out-Null
-        }
-        else {
-            Write-Warning "真实还原包来自旧版本，缺少完整 Bundles2 写入前状态指纹；本次仍使用官方底板和文件锁兼容校验。"
-        }
+        Assert-Poe2PhysicalRestoreZip -Path $PhysicalRestoreZip -Poe2Dir $Poe2Dir -InstallInfo $InstallInfo | Out-Null
+        Assert-Poe2Bundles2MutationFingerprintCurrent `
+            -Expected $Bundles2WritePrecondition `
+            -Bundles2Dir $Bundles2Paths.Bundles2Dir | Out-Null
         # The merge and full backup verification can both take time.  Re-check the
         # game process and exclusive index access immediately before PatchBundle3.
         Assert-Poe2GameFilesAvailable -Poe2Dir $Poe2Dir -IndexPath $Bundles2Paths.IndexBin
@@ -3208,6 +3331,7 @@ if (-not $NoInstall) {
                 $TcWordsPath,
                 $InstallInfo.TcEndgameMapsPath
             )
+            Write-Bundles2InstalledState -RestoreZip $PhysicalRestoreZip | Out-Null
             Write-Host "补丁已写入 Bundles2。" -ForegroundColor Green
         }
         catch {
