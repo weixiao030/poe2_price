@@ -4,9 +4,6 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from docx import Document
-
-
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "物价补丁" / "tools"
 PAYLOAD = ROOT / "build" / "payload"
@@ -138,10 +135,11 @@ def test_declared_version_is_consistent():
 
     with zipfile.ZipFile(SOURCE_DOC, "r") as archive:
         document = ET.fromstring(archive.read("word/document.xml"))
+        core_properties = ET.fromstring(archive.read("docProps/core.xml"))
     assert f"POE1 / POE2 物价补丁使用文档 v{version}" in "".join(document.itertext())
-    assert Document(SOURCE_DOC).core_properties.title == (
-        f"POE1 / POE2 物价补丁使用文档 v{version}"
-    )
+    title = core_properties.find("{http://purl.org/dc/elements/1.1/}title")
+    assert title is not None
+    assert title.text == f"POE1 / POE2 物价补丁使用文档 v{version}"
 
 
 def test_release_document_describes_fail_safe_behavior():
