@@ -106,6 +106,211 @@ function Test-Poe1CacheUsable {
     }
 }
 
+function Get-Poe1Bundles2InstalledState {
+    if (
+        [string]::IsNullOrWhiteSpace($Poe1Bundles2InstalledStatePath) -or
+        -not (Test-Path -LiteralPath $Poe1Bundles2InstalledStatePath -PathType Leaf)
+    ) {
+        return $null
+    }
+
+    try {
+        $State = Get-Content -LiteralPath $Poe1Bundles2InstalledStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ([string]$State.kind -ne "poe1-price-patch-bundles2-installed-state" -or [int]$State.version -ne 1) {
+            throw "状态文件类型或版本无效。"
+        }
+        if ([string]$State.install_kind -ne [string]$InstallInfo.InstallKind) {
+            throw "状态文件属于其它客户端。"
+        }
+        if ([string]$State.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
+            throw "状态文件属于其它语言目标。"
+        }
+        if ([string]$State.restore_zip_sha256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "状态文件缺少有效的还原包 SHA256。"
+        }
+        if (
+            $null -eq $State.bundles2_fingerprint -or
+            [int]$State.bundles2_fingerprint.version -ne 1 -or
+            [string]$State.bundles2_fingerprint.algorithm -ne "path-length-sha256-v1"
+        ) {
+            throw "状态文件缺少有效的 Bundles2 指纹。"
+        }
+        return $State
+    }
+    catch {
+        Write-Warning "忽略无效的 POE1 上次安装状态：$($_.Exception.Message)"
+        return $null
+    }
+}
+
+function Test-Poe1Bundles2InstalledStateCurrent {
+    param(
+        [Parameter(Mandatory = $true)]$State,
+        [Parameter(Mandatory = $true)][string]$RestoreZip
+    )
+
+    try {
+        $RestoreHash = (Get-FileHash -LiteralPath $RestoreZip -Algorithm SHA256 -ErrorAction Stop).Hash
+        if (-not $RestoreHash.Equals([string]$State.restore_zip_sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "POE1 上次安装状态绑定的真实还原包与当前候选不同。"
+        }
+        Assert-Poe1Bundles2MutationFingerprintCurrent `
+            -Expected $State.bundles2_fingerprint `
+            -Poe1Dir $Poe1Dir | Out-Null
+        $script:LastPoe1Bundles2InstalledStateError = ""
+        return $true
+    }
+    catch {
+        $script:LastPoe1Bundles2InstalledStateError = $_.Exception.Message
+        return $false
+    }
+}
+
+function Write-Poe1Bundles2InstalledState {
+    param([Parameter(Mandatory = $true)][string]$RestoreZip)
+
+    $Fingerprint = Get-Poe1Bundles2MutationFingerprint -Poe1Dir $Poe1Dir
+    $RestoreHash = (Get-FileHash -LiteralPath $RestoreZip -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+    Write-Poe1JsonAtomically -Path $Poe1Bundles2InstalledStatePath -Value ([ordered]@{
+            kind = "poe1-price-patch-bundles2-installed-state"
+            version = 1
+            updated_at = (Get-Date).ToUniversalTime().ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+            install_kind = $InstallInfo.InstallKind
+            target_path = $InstallInfo.TcBaseItemsPath
+            restore_zip_sha256 = $RestoreHash
+            bundles2_fingerprint = $Fingerprint
+        })
+    return $Fingerprint
+}
+
+function Publish-Poe1PhysicalRestoreZip {
+    param([Parameter(Mandatory = $true)][string]$Source)
+
+    $SourceFull = (Resolve-Path -LiteralPath $Source).Path
+    $DestinationFull = [System.IO.Path]::GetFullPath($PersistentPhysicalRestore)
+    if (-not $SourceFull.Equals($DestinationFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Copy-Poe2FileAtomically -Source $SourceFull -Destination $DestinationFull | Out-Null
+    }
+    Assert-Poe1PhysicalRestoreZip -ZipPath $DestinationFull -InstallInfo $InstallInfo `
+        -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot | Out-Null
+    return $DestinationFull
+}
+
+function New-CleanPoe1PhysicalRestoreZipFromPatchedState {
+    param([Parameter(Mandatory = $true)][string]$OutputZip)
+
+    $TempRoot = Join-Path $env:TEMP ([string]::Concat("poe1_clean_restore_migration_", [Guid]::NewGuid().ToString("N")))
+    $SandboxRoot = Join-Path $TempRoot "sandbox"
+    $SandboxBundles2 = Join-Path $SandboxRoot "Bundles2"
+    $CleanBaseItems = ""
+    try {
+        Write-Host "正在离线清理旧 POE1 价格层并重建安全还原基线；真实游戏文件不会被修改..." -ForegroundColor Yellow
+        Assert-Poe2GameFilesAvailable -Poe2Dir $Poe1Dir -IndexPath (Join-Path $Poe1Dir "Bundles2\_.index.bin")
+        $MigrationPrecondition = Get-Poe1Bundles2MutationFingerprint -Poe1Dir $Poe1Dir
+        New-Item -ItemType Directory -Force -Path $SandboxBundles2 | Out-Null
+        foreach ($Name in @("_.index.bin", "_.index.high.bin", "_.index.low.bin", ".index.dbg")) {
+            $Source = Join-Path $Poe1Dir ("Bundles2\" + $Name)
+            if (Test-Path -LiteralPath $Source -PathType Leaf) {
+                Copy-Item -LiteralPath $Source -Destination (Join-Path $SandboxBundles2 $Name) -Force
+            }
+        }
+        Assert-Poe1File -Path (Join-Path $SandboxBundles2 "_.index.bin") -Name "沙盒 Bundles2\_.index.bin"
+        $SourceLib = Join-Path $Poe1Dir "Bundles2\LibGGPK3"
+        if (Test-Path -LiteralPath $SourceLib -PathType Container) {
+            Copy-Item -LiteralPath $SourceLib -Destination $SandboxBundles2 -Recurse -Force
+        }
+        Assert-Poe1Bundles2MutationFingerprintCurrent -Expected $MigrationPrecondition -Poe1Dir $Poe1Dir | Out-Null
+
+        $MigrationDotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
+        Invoke-Poe1LogicalRestoreWithRetry -Poe1Dir $SandboxRoot -InstallInfo $InstallInfo `
+            -LogicalRestoreZip $LogicalRestoreZip -RepoRoot $RepoRoot -Dotnet $MigrationDotnet
+        $CleanBaseItems = Get-Poe1ZipEntryTempFile -ZipPath $LogicalRestoreZip -EntryName $InstallInfo.TcBaseItemsPath
+        $Created = New-Poe1PhysicalRestoreZip -Poe1Dir $SandboxRoot -InstallInfo $InstallInfo `
+            -CurrentBaseItems $CleanBaseItems -OutputZip $OutputZip -RepoRoot $RepoRoot
+        Assert-Poe1PhysicalRestoreZip -ZipPath $Created -InstallInfo $InstallInfo `
+            -CurrentBaseItems $CleanBaseItems -RepoRoot $RepoRoot `
+            -Poe1Dir $SandboxRoot -RequireCurrentPhysical | Out-Null
+        Assert-Poe1Bundles2MutationFingerprintCurrent -Expected $MigrationPrecondition -Poe1Dir $Poe1Dir | Out-Null
+        Write-Host "POE1 干净还原基线已在离线沙盒中重建并验证。" -ForegroundColor Green
+        return $Created
+    }
+    finally {
+        if (-not [string]::IsNullOrWhiteSpace($CleanBaseItems) -and (Test-Path -LiteralPath $CleanBaseItems -PathType Leaf)) {
+            Remove-Item -LiteralPath $CleanBaseItems -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $TempRoot -PathType Container) {
+            Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Ensure-Poe1PhysicalRestoreZip {
+    param([Parameter(Mandatory = $true)][bool]$SourceLooksPatched)
+
+    $Candidates = New-Object System.Collections.Generic.List[object]
+    foreach ($Name in $PhysicalRestoreNames) {
+        foreach ($Path in @((Join-Path $PersistentDir $Name), (Join-Path $RestoreDir $Name))) {
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { continue }
+            try {
+                $Manifest = Assert-Poe1PhysicalRestoreZip -ZipPath $Path -InstallInfo $InstallInfo `
+                    -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot
+                $Resolved = (Resolve-Path -LiteralPath $Path).Path
+                $Candidates.Add([pscustomobject]@{
+                        Path = $Resolved
+                        Manifest = $Manifest
+                        Hash = (Get-FileHash -LiteralPath $Resolved -Algorithm SHA256).Hash
+                    })
+            }
+            catch {
+                Write-Warning "忽略不可用的 POE1 真实还原包：$($_.Exception.Message)"
+            }
+        }
+    }
+
+    $InstalledState = Get-Poe1Bundles2InstalledState
+    if ($null -ne $InstalledState) {
+        $StateCandidates = @($Candidates | Where-Object {
+                ([string]$_.Hash).Equals([string]$InstalledState.restore_zip_sha256, [System.StringComparison]::OrdinalIgnoreCase)
+            })
+        if ($StateCandidates.Count -gt 0) {
+            $Selected = @($StateCandidates | Sort-Object { (Get-Item -LiteralPath $_.Path).LastWriteTimeUtc } -Descending)[0]
+            if (Test-Poe1Bundles2InstalledStateCurrent -State $InstalledState -RestoreZip $Selected.Path) {
+                return Publish-Poe1PhysicalRestoreZip -Source $Selected.Path
+            }
+            Write-Warning "POE1 上次安装后 Bundles2 又发生了变化，将刷新安全还原基线：$script:LastPoe1Bundles2InstalledStateError"
+        }
+        else {
+            Write-Warning "POE1 上次安装状态绑定的真实还原包已不存在，将刷新安全还原基线。"
+        }
+    }
+
+    $CurrentCandidates = New-Object System.Collections.Generic.List[object]
+    foreach ($Candidate in $Candidates) {
+        try {
+            Assert-Poe1PhysicalRestoreCurrent -Manifest $Candidate.Manifest -Poe1Dir $Poe1Dir | Out-Null
+            $CurrentCandidates.Add($Candidate)
+        }
+        catch {
+            # Stale pre-install snapshots are migrated below when the active
+            # DAT still contains this tool's price layer.
+        }
+    }
+    if ($CurrentCandidates.Count -gt 0) {
+        $Selected = @($CurrentCandidates | Sort-Object { (Get-Item -LiteralPath $_.Path).LastWriteTimeUtc } -Descending)[0]
+        return Publish-Poe1PhysicalRestoreZip -Source $Selected.Path
+    }
+
+    if ($SourceLooksPatched) {
+        $Migrated = New-CleanPoe1PhysicalRestoreZipFromPatchedState -OutputZip $PhysicalRestoreOut
+        return Publish-Poe1PhysicalRestoreZip -Source $Migrated
+    }
+
+    Write-Host "正在备份 Bundles2 索引与 LibGGPK3；首次运行可能需要一些时间..." -ForegroundColor Yellow
+    $Created = New-Poe1PhysicalRestoreZip -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo `
+        -CurrentBaseItems $Extracted.LocalizedBaseItems -OutputZip $PhysicalRestoreOut -RepoRoot $RepoRoot
+    return Publish-Poe1PhysicalRestoreZip -Source $Created
+}
+
 try {
     $Poe1Dir = Resolve-Poe1UpdateDirectory -Requested $Poe1Dir
     if (-not $SkipGameDirectoryMutex) {
@@ -141,6 +346,9 @@ try {
     $PersistentDir = Join-Path $Poe1Dir ".poe1-price-patch"
     $PersistentLogicalRestore = Join-Path $PersistentDir $LogicalRestoreName
     $PersistentPhysicalRestore = Join-Path $PersistentDir $PhysicalRestoreName
+    $StateKind = ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_')
+    $StateLanguage = ([string]$InstallInfo.EffectiveLanguageCode -replace '[^A-Za-z0-9_-]+', '_')
+    $Poe1Bundles2InstalledStatePath = Join-Path $PersistentDir "POE1Bundles2InstalledState_${StateKind}_${StateLanguage}.json"
     $PatchZip = Join-Path $OutDir "POE1物价补丁.zip"
     $PatchFolderZip = Join-Path $RepoRoot "POE1物价补丁.zip"
     $PatchedDat = Join-Path $OutDir "baseitemtypes.patched.datc64"
@@ -215,36 +423,11 @@ try {
     }
 
     $PhysicalRestoreZip = ""
+    $Poe1Bundles2WritePrecondition = $null
     if ($InstallInfo.Mode -eq "Bundles2" -and -not $NoInstall) {
-        $PhysicalCandidates = New-Object System.Collections.ArrayList
-        foreach ($Name in $PhysicalRestoreNames) {
-            [void]$PhysicalCandidates.Add((Join-Path $PersistentDir $Name))
-            [void]$PhysicalCandidates.Add((Join-Path $RestoreDir $Name))
-        }
-        foreach ($Candidate in $PhysicalCandidates) {
-            try {
-                if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
-                    Assert-Poe1PhysicalRestoreZip -ZipPath $Candidate -InstallInfo $InstallInfo `
-                        -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot `
-                        -Poe1Dir $Poe1Dir -RequireCurrentPhysical | Out-Null
-                    $PhysicalRestoreZip = (Resolve-Path -LiteralPath $Candidate).Path
-                    break
-                }
-            }
-            catch {
-                Write-Warning "忽略不可用的 POE1 真实还原包：$($_.Exception.Message)"
-            }
-        }
-        if ([string]::IsNullOrWhiteSpace($PhysicalRestoreZip)) {
-            if ($CurrentBasePatched -or $CurrentWordsPatched) {
-                throw "当前 POE1 已打过补丁，但缺少兼容的真实还原包。请先校验/修复游戏后重试。"
-            }
-            Write-Host "正在备份 Bundles2 索引与 LibGGPK3；首次运行可能需要一些时间..." -ForegroundColor Yellow
-            $PhysicalRestoreZip = New-Poe1PhysicalRestoreZip -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo `
-                -CurrentBaseItems $Extracted.LocalizedBaseItems -OutputZip $PhysicalRestoreOut -RepoRoot $RepoRoot
-            Copy-Poe2FileAtomically -Source $PhysicalRestoreZip -Destination $PersistentPhysicalRestore | Out-Null
-            $PhysicalRestoreZip = $PersistentPhysicalRestore
-        }
+        $PhysicalRestoreZip = Ensure-Poe1PhysicalRestoreZip `
+            -SourceLooksPatched ($CurrentBasePatched -or $CurrentWordsPatched)
+        $Poe1Bundles2WritePrecondition = Get-Poe1Bundles2MutationFingerprint -Poe1Dir $Poe1Dir
     }
 
     Write-Poe1Step "获取实时 POE1 价格并生成 C/D 补丁"
@@ -341,9 +524,19 @@ try {
 
     Write-Poe1Step "写入并读回校验 POE1 补丁"
     $Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
+    if ($InstallInfo.Mode -eq "Bundles2") {
+        Assert-Poe1PhysicalRestoreZip -ZipPath $PhysicalRestoreZip -InstallInfo $InstallInfo `
+            -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot | Out-Null
+        Assert-Poe1Bundles2MutationFingerprintCurrent `
+            -Expected $Poe1Bundles2WritePrecondition `
+            -Poe1Dir $Poe1Dir | Out-Null
+    }
     try {
         Invoke-Poe1PatchWithRetry -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo -PatchZip $PatchZip `
             -RepoRoot $RepoRoot -Dotnet $Dotnet
+        if ($InstallInfo.Mode -eq "Bundles2") {
+            Write-Poe1Bundles2InstalledState -RestoreZip $PhysicalRestoreZip | Out-Null
+        }
     }
     catch {
         $InstallFailure = $_.Exception.Message
@@ -354,8 +547,8 @@ try {
                     -InstallInfo $InstallInfo -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot
             }
             else {
-                Invoke-Poe1PatchWithRetry -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo -PatchZip $LogicalRestoreZip `
-                    -RepoRoot $RepoRoot -Dotnet $Dotnet
+                Invoke-Poe1LogicalRestoreWithRetry -Poe1Dir $Poe1Dir -InstallInfo $InstallInfo `
+                    -LogicalRestoreZip $LogicalRestoreZip -RepoRoot $RepoRoot -Dotnet $Dotnet
             }
         }
         catch {

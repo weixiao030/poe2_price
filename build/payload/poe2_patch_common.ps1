@@ -1589,11 +1589,11 @@ function Assert-Poe2Bundles2MutationFingerprintCurrent {
     }
     $Current = Get-Poe2Bundles2MutationFingerprint -Bundles2Dir $Bundles2Dir
     if (@($Expected.files).Count -ne @($Current.files).Count) {
-        throw "Bundles2 状态已并发变化：文件数量与创建还原包时不同。"
+        throw "Bundles2 状态已并发变化：文件数量与本次写入准备时不同。请等待游戏平台更新完成并完全关闭游戏与启动器后重试。"
     }
     $ExpectedHash = [string]$Expected.inventory_sha256
     if ($ExpectedHash -notmatch '^[0-9a-fA-F]{64}$' -or -not $ExpectedHash.Equals([string]$Current.inventory_sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Bundles2 状态已并发变化：索引或 LibGGPK3 内容与创建还原包时不同。"
+        throw "Bundles2 状态已并发变化：索引或 LibGGPK3 内容与本次写入准备时不同。请等待游戏平台更新完成并完全关闭游戏与启动器后重试。"
     }
     return $Current
 }
