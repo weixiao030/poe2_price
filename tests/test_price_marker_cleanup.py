@@ -1,4 +1,5 @@
 import importlib.util
+import re
 import struct
 import sys
 import unittest
@@ -21,6 +22,17 @@ def load_module(name: str, path: Path):
     return module
 
 
+def clean_exile_next_title_line(text: str) -> str:
+    """Mirror the active Exile Next TX trailing-bracket cleanup."""
+    return re.sub(r"\[[^\]]*\]$", "", text).strip()
+
+
+def clean_overlay_ii_title_line(text: str) -> str:
+    """Mirror PoE Overlay II's shared raw and item-name cleanup stages."""
+    unwrapped = re.sub(r"\[(?:[^|\]]*\|)?([^|\]]+)\]", r"\1", text)
+    return re.sub(r"<<[^>]*>>", "", unwrapped).strip()
+
+
 class PriceMarkerCleanupTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -29,6 +41,9 @@ class PriceMarkerCleanupTests(unittest.TestCase):
         )
         cls.price_patch = load_module(
             "price_patch_cleanup", TOOLS / "build_poe2scout_price_patch.py"
+        )
+        cls.poe1_price_patch = load_module(
+            "poe1_price_patch_cleanup", TOOLS / "build_poe1_price_patch.py"
         )
 
     def test_base_item_cleanup_only_removes_price_suffix(self):
@@ -154,18 +169,60 @@ class PriceMarkerCleanupTests(unittest.TestCase):
         strip = self.price_patch.strip_existing_price
         self.assertEqual(strip("[12D|卡兰德的魔镜]"), "卡兰德的魔镜")
         self.assertEqual(strip("[<1E|低价传奇]"), "低价传奇")
+        self.assertEqual(strip("冈姆的壮志[<<0.25D>>]"), "冈姆的壮志")
+        self.assertEqual(strip("低价传奇[<<<1D>>]"), "低价传奇")
         self.assertEqual(strip("传奇名\n[12.5D]"), "传奇名")
         self.assertEqual(strip("传奇名<<[<1D]>>"), "传奇名")
         self.assertEqual(strip("普通名=不是价格"), "普通名=不是价格")
         self.assertEqual(strip(" 前导空格"), " 前导空格")
 
+    def test_poe1_and_poe2_default_to_compat_unique_price_labels(self):
+        self.assertEqual(
+            self.price_patch.DEFAULT_UNIQUE_PRICE_LABEL_MODE,
+            "compat",
+        )
+        self.assertEqual(
+            self.price_patch.UNIQUE_PRICE_LABEL_MODES,
+            ("compat", "markup", "overlay", "newline", "off"),
+        )
+        self.assertEqual(
+            self.price_patch.parse_args([]).unique_price_label_mode,
+            "compat",
+        )
+        self.assertEqual(
+            self.poe1_price_patch.parse_args([]).unique_price_label_mode,
+            "compat",
+        )
+
+    def test_compat_unique_price_labels_survive_supported_query_cleaners(self):
+        cases = (
+            ("冈姆的壮志", "0.25D"),
+            ("三龙战纪", "1.00E"),
+            ("低价传奇", "<1D"),
+        )
+        for base_name, price in cases:
+            with self.subTest(base_name=base_name, price=price):
+                label = self.price_patch.format_unique_price_name(
+                    base_name,
+                    price,
+                    "compat",
+                )
+                self.assertEqual(label, f"{base_name}[<<{price}>>]")
+                self.assertEqual(clean_exile_next_title_line(label), base_name)
+                self.assertEqual(clean_overlay_ii_title_line(label), base_name)
+
+        # The old whole-line markup explains the base-type fallback regression:
+        # Exile Next TX removes the entire line and leaves an empty unique name.
+        self.assertEqual(clean_exile_next_title_line("[0.25D|冈姆的壮志]"), "")
+
     def test_full_word_cleanup_does_not_need_unique_gold_prices(self):
         WordEntry = self.price_patch.WordEntry
-        layout = self.price_patch.DatLayout(row_count=3, row_size=64, string_base=196)
+        layout = self.price_patch.DatLayout(row_count=4, row_size=64, string_base=260)
         entries = {
             0: WordEntry(0, "Unique A", "[12D|传奇甲]", 0, 48),
             1: WordEntry(1, "Unique B", "传奇乙<<[<1D]>>", 20, 112),
-            2: WordEntry(2, "普通名", "普通名", 40, 176),
+            2: WordEntry(2, "Unique C", "传奇丙[<<2.5D>>]", 40, 176),
+            3: WordEntry(3, "普通名", "普通名", 60, 240),
         }
         captured: list[tuple[int, str]] = []
 
@@ -181,8 +238,14 @@ class PriceMarkerCleanupTests(unittest.TestCase):
 
                 rows = self.price_patch.clean_word_price_labels_file(source, patched)
 
-        self.assertEqual(captured, [(0, "传奇甲"), (1, "传奇乙")])
-        self.assertEqual([row["status"] for row in rows], ["cleaned", "cleaned"])
+        self.assertEqual(
+            captured,
+            [(0, "传奇甲"), (1, "传奇乙"), (2, "传奇丙")],
+        )
+        self.assertEqual(
+            [row["status"] for row in rows],
+            ["cleaned", "cleaned", "cleaned"],
+        )
 
     def test_clean_word_noop_still_writes_a_complete_output(self):
         module = self.price_patch

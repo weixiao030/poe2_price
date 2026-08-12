@@ -15,7 +15,7 @@ $RepoRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
 else {
     (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
-$script:PatchVersion = "v0.5.5"
+$script:PatchVersion = "v0.5.6"
 $script:GameDirectoryMutex = $null
 $script:LocalizationAssetName = "PoeChinese3_win-x64.exe"
 $script:LatestReleaseUrl = "https://github.com/aianlinb/LibGGPK3/releases/latest"

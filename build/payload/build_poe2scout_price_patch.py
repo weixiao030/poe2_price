@@ -104,7 +104,15 @@ DEFAULT_UNIQUE_GOLD_PRICES = (
 DEFAULT_PATCH_SCRIPT = Path(__file__).with_name("poe2_name_price_patch.py")
 PRICE_TEXT_RE = r"(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]"
 UNIQUE_MARKUP_PRICE_RE = rf"\[[^\]\r\n|]*{PRICE_TEXT_RE}[^\]\r\n|]*\|[^\]\r\n]+\]"
-UNIQUE_PRICE_LABEL_MODES = ("markup", "overlay", "newline", "off")
+UNIQUE_COMPAT_PRICE_RE = rf"\[<<{PRICE_TEXT_RE}>>\]"
+DEFAULT_UNIQUE_PRICE_LABEL_MODE = "compat"
+UNIQUE_PRICE_LABEL_MODES = (
+    DEFAULT_UNIQUE_PRICE_LABEL_MODE,
+    "markup",
+    "overlay",
+    "newline",
+    "off",
+)
 DISPLAY_NAME_FIELD_INDEX = 8
 DEFAULT_UNIQUE_CATEGORIES = (
     "accessory",
@@ -348,6 +356,8 @@ def strip_existing_price(name: str) -> str:
     )
     if markup:
         return markup.group(1).strip()
+    if re.search(rf"\s*{UNIQUE_COMPAT_PRICE_RE}$", name):
+        return re.sub(rf"\s*{UNIQUE_COMPAT_PRICE_RE}$", "", name).strip()
     if re.search(rf"<<\[{PRICE_TEXT_RE}\]>>$", name):
         return re.sub(rf"<<\[{PRICE_TEXT_RE}\]>>$", "", name).strip()
     if re.search(rf"\s*\[{PRICE_TEXT_RE}\]$", name):
@@ -358,6 +368,8 @@ def strip_existing_price(name: str) -> str:
 
 
 def format_unique_price_name(base_name: str, price: str, label_mode: str) -> str:
+    if label_mode == "compat":
+        return f"{base_name}[<<{price}>>]"
     if label_mode == "markup":
         return f"[{price}|{base_name}]"
     if label_mode == "newline":
@@ -463,7 +475,7 @@ def patch_unique_word_prices(
     unique_names: dict[str, UniqueName],
     prices: dict[str, PriceObservation],
     patched_words: Path,
-    label_mode: str = "markup",
+    label_mode: str = DEFAULT_UNIQUE_PRICE_LABEL_MODE,
 ) -> tuple[int, list[dict[str, str]], list[dict[str, str]]]:
     data = tc_words_path.read_bytes()
     layout = detect_words_layout(data)
@@ -532,7 +544,7 @@ def patch_unique_word_prices_with_cn_fallback(
     primary_prices: dict[str, PriceObservation],
     fallback_prices: dict[str, PriceObservation],
     patched_words: Path,
-    label_mode: str = "markup",
+    label_mode: str = DEFAULT_UNIQUE_PRICE_LABEL_MODE,
 ) -> tuple[int, list[dict[str, str]], list[dict[str, str]], int]:
     data = tc_words_path.read_bytes()
     layout = detect_words_layout(data)
@@ -3301,12 +3313,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--unique-price-label-mode",
         choices=UNIQUE_PRICE_LABEL_MODES,
-        default="markup",
+        default=DEFAULT_UNIQUE_PRICE_LABEL_MODE,
         help=(
             "How to label unique item prices in Words.datc64. "
-            "Default markup writes [price|name], which PoE Overlay II and "
-            "Exile Next TX clean back to the original unique name in copied item text. "
-            "overlay is PoE Overlay II only; newline is the legacy three-line title format."
+            "Default compat writes name[<<price>>], which PoE Overlay II and "
+            "Exile Next TX both clean back to the exact unique name in copied item text. "
+            "markup, overlay, and newline are retained as legacy migration modes."
         ),
     )
     parser.add_argument("--patch-script", type=Path, default=DEFAULT_PATCH_SCRIPT)
@@ -3987,7 +3999,7 @@ def main(argv: list[str]) -> int:
             if words_game_path:
                 progress("处理传奇装备 Words 价格标记")
                 patched_words = args.patched_words or (args.out_dir / "words.patched.datc64")
-                if args.unique_price_label_mode in {"markup", "overlay", "newline"}:
+                if args.unique_price_label_mode != "off":
                     if args.price_source == "poecurrency-cn":
                         (
                             unique_words_patched,

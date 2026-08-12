@@ -98,7 +98,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.5.5"
+    assert version == "0.5.6"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
