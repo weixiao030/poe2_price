@@ -26,18 +26,6 @@
 
 `v0.5.5` 修复 POE1/POE2 国服与国际服 Bundles2 客户端在官方更新或连续刷新物价后，把本工具上次成功写入误报为“文件数量/SHA256 并发变化”的问题。成功写入并读回后会持久记录安装现场，重复更新可安全复用干净还原包；旧状态或平台更新则在离线沙盒中刷新还原基线，最终写入前仍会复核本次现场，真正的平台并发更新不会被放行。POE1 同时修复逻辑还原包 manifest 写入异常和 Windows 8.3 短路径误判。
 
-`v0.5.4` 修复 POE1 Steam Bundles2 更新时重复加载索引导致 `_.index.bin` 被占用的问题，并在统一 GUI 增加“一键汉化POE1国际服”。按钮每次从 PoEDB 推荐的 LibGGPK3 最新 Release 下载 `PoeChinese3_win-x64.exe`，默认优先国内加速源 `ghfast.top`、`gh-proxy.com`，失败后再用 GitHub 官方源；完成后使用法语入口。汉化只允许国际服，国服不会执行。
-
-`v0.5.3` 修复官服 GGPK 安装在 `D:\poe2` 等非默认目录时，首次运行无法自动识别的问题。程序现在会读取 GGG 官方注册表中的 `InstallLocation`，同时覆盖 POE1 与 POE2；已有 Steam、WeGame、Epic、环境变量和最近目录规则保持不变。
-
-poe.ninja 页面上依赖等级、品质、词缀或具体变体定价的 Skill Gems、Base Types、Cluster Jewels、Valdo Maps、Forbidden Jewels、Wombgifts 等分类不会写成一个固定物品名价格，避免把不同变体串成同一价格。
-
-POE2 同名元数据仍会全部写入价格，国服翻译重名时继续使用 `engname` 精确消歧。
-
-实时物价指的是打入补丁那一刻的物价，刷新物价需要自己手动更新，也就是得重新打补丁。
-
-英文客户端因为底层问题使用的话会影响到过滤器正常使用,其他客户端没影响.
-
 ---
 
 ---
