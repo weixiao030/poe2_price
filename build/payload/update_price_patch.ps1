@@ -25,7 +25,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.5.6"
+$script:PatchVersion = "v0.5.7"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -932,6 +932,14 @@ function Test-RestoreZipUsable {
         return $false
     }
 
+    try {
+        Assert-Poe2LogicalRestoreManifest -ZipPath $Path -InstallInfo $InstallInfo `
+            -AllowLegacyWithoutManifest:(Test-Poe2LegacyRestorePatchZipName -Path $Path) | Out-Null
+    }
+    catch {
+        return $false
+    }
+
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     try {
@@ -1107,8 +1115,9 @@ function Write-Bundles2InstalledState {
 function Get-RestoreZipCandidates {
     $Paths = New-Object System.Collections.Generic.List[string]
     foreach ($Name in (Get-Poe2RestorePatchZipCandidateNames -InstallInfo $InstallInfo)) {
-        $Paths.Add((Join-Path $RepoRoot $Name))
+        $Paths.Add((Join-Path $PersistentRestoreDir $Name))
         $Paths.Add((Join-Path $RestoreOutDir $Name))
+        $Paths.Add((Join-Path $RepoRoot $Name))
     }
 
     $Seen = @{}
@@ -1123,16 +1132,13 @@ function Get-RestoreZipCandidates {
 }
 
 function Get-PhysicalRestoreZipCandidates {
-    $Names = @(
-        (Get-Poe2FixedPhysicalRestorePatchZipName -InstallInfo $InstallInfo),
-        (Get-Poe2PatchName "PhysicalRestorePatchZip")
-    )
+    $Names = @(Get-Poe2PhysicalRestorePatchZipCandidateNames -InstallInfo $InstallInfo)
 
     $SearchRoots = New-Object System.Collections.Generic.List[string]
     foreach ($Root in @(
-        $RepoRoot,
-        $RestoreOutDir,
         (Join-Path $Poe2Dir ".poe2-price-patch"),
+        $RestoreOutDir,
+        $RepoRoot,
         $Poe2Dir,
         (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)),
         (Join-Path (Join-Path $Poe2Dir (Split-Path -Leaf $RepoRoot)) "output\restore")
@@ -1246,6 +1252,71 @@ function Extract-RestoreEndgameMaps {
 
     if (Test-EndgameMapsLookPatched $OutputEndgameMaps) {
         throw "还原包里的 EndgameMaps.datc64 已经带有岛屿传言提示，拒绝继续使用：$RestoreZip"
+    }
+}
+
+function Add-Poe2LogicalRestoreManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [string]$BaselineKind = "clean-game-files"
+    )
+
+    $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_manifest_base_", [Guid]::NewGuid().ToString("N"), ".datc64"))
+    try {
+        Extract-RestoreBaseItems -RestoreZip $ZipPath -OutputDat $TempDat
+        $Signature = Get-BaseItemsMetadataSignature $TempDat
+        Set-Poe2LogicalRestoreManifest -ZipPath $ZipPath -InstallInfo $InstallInfo `
+            -BaseItemsSignature $Signature -BaselineKind $BaselineKind | Out-Null
+        Assert-Poe2LogicalRestoreManifest -ZipPath $ZipPath -InstallInfo $InstallInfo | Out-Null
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempDat -PathType Leaf) {
+            Remove-Item -LiteralPath $TempDat -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $ZipPath
+}
+
+function Publish-Poe2LogicalRestoreZip {
+    param([Parameter(Mandatory = $true)][string]$Source)
+
+    $Published = Copy-Poe2FileAtomically -Source $Source -Destination $RestoreOutZip
+    if (-not $NoInstall) {
+        New-Item -ItemType Directory -Force -Path $PersistentRestoreDir | Out-Null
+        $Published = Copy-Poe2FileAtomically -Source $RestoreOutZip -Destination $PersistentLogicalRestoreZip
+    }
+    Assert-Poe2LogicalRestoreManifest -ZipPath $Published -InstallInfo $InstallInfo | Out-Null
+    return $Published
+}
+
+function New-Poe2ScopedLogicalRestoreZip {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceZip,
+        [Parameter(Mandatory = $true)][string]$OutputZip,
+        [string]$BaselineKind = "validated-migration"
+    )
+
+    $TempDir = Join-Path $env:TEMP ([string]::Concat("poe2_scope_restore_", [Guid]::NewGuid().ToString("N")))
+    try {
+        New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+        $BaseItems = Join-Path $TempDir "baseitemtypes.datc64"
+        $Words = Join-Path $TempDir "words.datc64"
+        $EndgameMaps = Join-Path $TempDir "endgamemaps.datc64"
+        Extract-RestoreBaseItems -RestoreZip $SourceZip -OutputDat $BaseItems
+        if (Test-ZipEntryExists -ZipPath $SourceZip -EntryName $TcWordsPath) {
+            Extract-RestoreWords -RestoreZip $SourceZip -OutputWords $Words
+        }
+        if (Test-ZipEntryExists -ZipPath $SourceZip -EntryName $InstallInfo.TcEndgameMapsPath) {
+            Extract-RestoreEndgameMaps -RestoreZip $SourceZip -OutputEndgameMaps $EndgameMaps
+        }
+        New-BaseItemZip -SourceDat $BaseItems -SourceWords $Words -SourceEndgameMaps $EndgameMaps -OutputZip $OutputZip
+        Add-Poe2LogicalRestoreManifest -ZipPath $OutputZip -BaselineKind $BaselineKind | Out-Null
+        return (Resolve-Path -LiteralPath $OutputZip).Path
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempDir -PathType Container) {
+            Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -2139,15 +2210,15 @@ function Copy-PhysicalRestoreZipAtomically {
 function Publish-PhysicalRestoreZip {
     param([Parameter(Mandatory = $true)][string]$Source)
 
-    $PatchFolderCopy = Copy-PhysicalRestoreZipAtomically `
+    $OutputCopy = Copy-PhysicalRestoreZipAtomically `
         -Source $Source `
-        -Destination $PhysicalRestorePatchFolderZip
+        -Destination $PhysicalRestoreOutZip
     if (-not [string]::IsNullOrWhiteSpace($PersistentPhysicalRestoreZip)) {
-        Copy-PhysicalRestoreZipAtomically `
-            -Source $PatchFolderCopy `
-            -Destination $PersistentPhysicalRestoreZip | Out-Null
+        return Copy-PhysicalRestoreZipAtomically `
+            -Source $OutputCopy `
+            -Destination $PersistentPhysicalRestoreZip
     }
-    return $PatchFolderCopy
+    return $OutputCopy
 }
 
 function Ensure-PhysicalRestoreZip {
@@ -2245,8 +2316,95 @@ function Ensure-PhysicalRestoreZip {
     }
 }
 
+function New-CleanLogicalRestoreZipFromPatchedSources {
+    param([Parameter(Mandatory = $true)][string]$OutputZip)
+
+    $TempRoot = Join-Path $env:TEMP ([string]::Concat("poe2_logical_restore_migration_", [Guid]::NewGuid().ToString("N")))
+    $CleanZip = Join-Path $TempRoot "clean-logical.zip"
+    $CleanBaseItems = Join-Path $TempRoot "baseitemtypes.clean.datc64"
+    $CleanWords = Join-Path $TempRoot "words.clean.datc64"
+    $CleanEndgameMaps = Join-Path $TempRoot "endgamemaps.clean.datc64"
+    try {
+        New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
+        Write-Host "正在只清理本工具写入的价格/岛屿标记，生成当前客户端专属还原基线..." -ForegroundColor Yellow
+        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+        $Args = @(
+            (Join-Path $CodeToolsRoot "build_poe2scout_price_patch.py"),
+            "--patch-scope", "none",
+            "--fallback-price-sources", "none",
+            "--en-baseitems", $SourceDatForLogicalMigration,
+            "--tc-baseitems", $SourceDatForLogicalMigration,
+            "--out-dir", $TempRoot,
+            "--output-zip", $CleanZip,
+            "--patch-script", (Join-Path $CodeToolsRoot "poe2_name_price_patch.py"),
+            "--mode", "append",
+            "--patched-dat", $CleanBaseItems,
+            "--report", (Join-Path $TempRoot "cleanup.report.json"),
+            "--game-path", $InstallInfo.TcBaseItemsPath,
+            "--no-uniques",
+            "--strict-feature-cleanup"
+        )
+        if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf)) {
+            $Args += @(
+                "--tc-words", $TcWords,
+                "--patched-words", $CleanWords,
+                "--words-game-path", $TcWordsPath
+            )
+        }
+        $Result = Invoke-Poe2Python -Python $Python -ArgumentList $Args
+        if ($Result.ExitCode -ne 0) {
+            throw "清理当前 BaseItemTypes/Words 失败，退出码：$($Result.ExitCode)。$($Result.Text)"
+        }
+        Assert-File $CleanBaseItems "clean migrated BaseItemTypes"
+        if (Test-BaseItemsLookPatched $CleanBaseItems) {
+            throw "清理后的 BaseItemTypes 仍包含价格标记。"
+        }
+        if (-not (Test-BaseItemsCompatible $CleanBaseItems $SourceDatForLogicalMigration)) {
+            throw "清理后的 BaseItemTypes 结构与当前游戏不兼容。"
+        }
+        if ($SupportsUniqueWords -and (Test-Path -LiteralPath $CleanWords -PathType Leaf) -and (Test-WordsLookPatched $CleanWords)) {
+            throw "清理后的 Words 仍包含价格标记。"
+        }
+
+        if (Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf) {
+            if (Test-EndgameMapsLookPatched $TcEndgameMaps) {
+                $EndgameResult = Invoke-Poe2Python -Python $Python -ArgumentList @(
+                    (Join-Path $CodeToolsRoot "poe2_island_rumour_patch.py"),
+                    "clean",
+                    "--source", $TcEndgameMaps,
+                    "--output-zip", $CleanZip,
+                    "--patched-dat", $CleanEndgameMaps,
+                    "--game-path", $InstallInfo.TcEndgameMapsPath,
+                    "--report", (Join-Path $TempRoot "endgamemaps-cleanup.report.json")
+                )
+                if ($EndgameResult.ExitCode -ne 0) {
+                    throw "清理当前 EndgameMaps 失败，退出码：$($EndgameResult.ExitCode)。"
+                }
+            }
+            else {
+                Update-ZipEntryFromFile -ZipPath $CleanZip -SourceDat $TcEndgameMaps -EntryName $InstallInfo.TcEndgameMapsPath
+            }
+        }
+        if ((Test-ZipEntryExists -ZipPath $CleanZip -EntryName $InstallInfo.TcEndgameMapsPath)) {
+            Extract-RestoreEndgameMaps -RestoreZip $CleanZip -OutputEndgameMaps $CleanEndgameMaps
+        }
+
+        Add-Poe2LogicalRestoreManifest -ZipPath $CleanZip -BaselineKind "semantic-clean-migration" | Out-Null
+        Copy-Poe2FileAtomically -Source $CleanZip -Destination $OutputZip | Out-Null
+        Assert-Poe2LogicalRestoreManifest -ZipPath $OutputZip -InstallInfo $InstallInfo | Out-Null
+        return (Resolve-Path -LiteralPath $OutputZip).Path
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempRoot -PathType Container) {
+            Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Ensure-RestoreZip {
     param([string]$SourceDat)
+
+    $script:SourceDatForLogicalMigration = $SourceDat
 
     New-Item -ItemType Directory -Force -Path $RestoreOutDir | Out-Null
     $SourceBaseItemsLooksPatched = Test-BaseItemsLookPatched $SourceDat
@@ -2269,7 +2427,29 @@ function Ensure-RestoreZip {
                 continue
             }
             $ResolvedCandidate = (Resolve-Path -LiteralPath $Candidate).Path
+            $StrictScopedCandidate = $true
+            try {
+                Assert-Poe2LogicalRestoreManifest -ZipPath $ResolvedCandidate -InstallInfo $InstallInfo | Out-Null
+            }
+            catch {
+                $StrictScopedCandidate = $false
+            }
+            $HasRequiredWords = (-not $SupportsUniqueWords) -or (Test-RestoreZipWordsUsable $ResolvedCandidate)
+            $HasRequiredEndgameMaps = (-not $SourceEndgameMapsAvailable) -or `
+                (Test-ZipEntryExists -ZipPath $ResolvedCandidate -EntryName $InstallInfo.TcEndgameMapsPath)
+            if ($StrictScopedCandidate -and $HasRequiredWords -and $HasRequiredEndgameMaps) {
+                if (-not $NoInstall -and -not ([System.IO.Path]::GetFullPath($ResolvedCandidate)).Equals(
+                        [System.IO.Path]::GetFullPath($PersistentLogicalRestoreZip),
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )) {
+                    New-Item -ItemType Directory -Force -Path $PersistentRestoreDir | Out-Null
+                    Copy-Poe2FileAtomically -Source $ResolvedCandidate -Destination $PersistentLogicalRestoreZip | Out-Null
+                    return (Resolve-Path -LiteralPath $PersistentLogicalRestoreZip).Path
+                }
+                return $ResolvedCandidate
+            }
             $CandidateWork = Join-Path $RestoreOutDir ([string]::Concat(".", $RestoreZipName, ".candidate-", [Guid]::NewGuid().ToString("N"), ".tmp"))
+            $ScopedWork = Join-Path $RestoreOutDir ([string]::Concat(".", $RestoreZipName, ".scoped-", [Guid]::NewGuid().ToString("N"), ".tmp"))
             try {
                 [System.IO.File]::Copy($ResolvedCandidate, $CandidateWork, $false)
                 if ($SupportsUniqueWords -and -not (Test-RestoreZipWordsUsable $CandidateWork)) {
@@ -2293,20 +2473,23 @@ function Ensure-RestoreZip {
                         continue
                     }
                 }
-                if (-not (Test-RestoreZipUsable -Path $CandidateWork -ReferenceDat $SourceDat)) {
+                New-Poe2ScopedLogicalRestoreZip -SourceZip $CandidateWork -OutputZip $ScopedWork `
+                    -BaselineKind $(if (Test-Poe2LegacyRestorePatchZipName -Path $Candidate) { "legacy-validated-migration" } else { "validated-copy" }) | Out-Null
+                if (-not (Test-RestoreZipUsable -Path $ScopedWork -ReferenceDat $SourceDat)) {
                     Write-Warning "忽略补全后仍不可用的还原包：$Candidate"
                     continue
                 }
-                if ($SupportsUniqueWords -and -not (Test-RestoreZipWordsUsable $CandidateWork)) {
+                if ($SupportsUniqueWords -and -not (Test-RestoreZipWordsUsable $ScopedWork)) {
                     Write-Warning "忽略补全后仍缺少干净 Words 的还原包：$Candidate"
                     continue
                 }
-                Move-Poe2FileAtomically -Source $CandidateWork -Destination $RestoreOutZip | Out-Null
-                return (Resolve-Path -LiteralPath $RestoreOutZip).Path
+                return Publish-Poe2LogicalRestoreZip -Source $ScopedWork
             }
             finally {
-                if (Test-Path -LiteralPath $CandidateWork -PathType Leaf) {
-                    Remove-Item -LiteralPath $CandidateWork -Force -ErrorAction SilentlyContinue
+                foreach ($TempZip in @($CandidateWork, $ScopedWork)) {
+                    if (Test-Path -LiteralPath $TempZip -PathType Leaf) {
+                        Remove-Item -LiteralPath $TempZip -Force -ErrorAction SilentlyContinue
+                    }
                 }
             }
         }
@@ -2324,53 +2507,37 @@ function Ensure-RestoreZip {
         }
         $RestoreBuildTemp = Join-Path $RestoreOutDir ([string]::Concat(".", $RestoreZipName, ".build-", [Guid]::NewGuid().ToString("N"), ".tmp"))
         try {
-            if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
-                New-BaseItemZip -SourceDat $SourceDat -SourceWords $CleanTcWords -SourceEndgameMaps $CleanTcEndgameMaps -OutputZip $RestoreBuildTemp
-            }
-            else {
-                $SeedZip = ""
-                foreach ($Candidate in (Get-RestoreZipCandidates)) {
-                    if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
-                        $SeedZip = (Resolve-Path -LiteralPath $Candidate).Path
-                        break
-                    }
-                }
-                if (-not [string]::IsNullOrWhiteSpace($SeedZip)) {
-                    Copy-Poe2FileAtomically -Source $SeedZip -Destination $RestoreBuildTemp | Out-Null
-                }
-                Update-RestoreZipEntry -ZipPath $RestoreBuildTemp -SourceDat $SourceDat -EntryName $InstallInfo.TcBaseItemsPath
-                if (-not [string]::IsNullOrWhiteSpace($CleanTcWords)) {
-                    Update-ZipEntryFromFile -ZipPath $RestoreBuildTemp -SourceDat $CleanTcWords -EntryName $TcWordsPath
-                }
-                if (-not [string]::IsNullOrWhiteSpace($CleanTcEndgameMaps)) {
-                    Update-ZipEntryFromFile -ZipPath $RestoreBuildTemp -SourceDat $CleanTcEndgameMaps -EntryName $InstallInfo.TcEndgameMapsPath
-                }
-            }
+            New-BaseItemZip -SourceDat $SourceDat -SourceWords $CleanTcWords -SourceEndgameMaps $CleanTcEndgameMaps -OutputZip $RestoreBuildTemp
+            Add-Poe2LogicalRestoreManifest -ZipPath $RestoreBuildTemp -BaselineKind "clean-game-files" | Out-Null
             if (-not (Test-RestoreZipUsable -Path $RestoreBuildTemp -ReferenceDat $SourceDat)) {
                 throw "新建还原包的 BaseItemTypes 校验失败。"
             }
             if (-not [string]::IsNullOrWhiteSpace($CleanTcWords) -and -not (Test-RestoreZipWordsUsable $RestoreBuildTemp)) {
                 throw "新建还原包的 Words 校验失败。"
             }
-            Move-Poe2FileAtomically -Source $RestoreBuildTemp -Destination $RestoreOutZip | Out-Null
+            $PublishedRestore = Publish-Poe2LogicalRestoreZip -Source $RestoreBuildTemp
         }
         finally {
             if (Test-Path -LiteralPath $RestoreBuildTemp -PathType Leaf) {
                 Remove-Item -LiteralPath $RestoreBuildTemp -Force -ErrorAction SilentlyContinue
             }
         }
-        if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") -and $RestoreOutZip -ne $RestorePatchFolderZip) {
-            Copy-Poe2FileAtomically -Source $RestoreOutZip -Destination $RestorePatchFolderZip | Out-Null
-        }
-        return (Resolve-Path -LiteralPath $RestoreOutZip).Path
+        return $PublishedRestore
     }
 
     $PhysicalBaseItemZip = New-BaseItemZipFromPhysicalRestore -OutputZip $RestoreOutZip
     if (-not [string]::IsNullOrWhiteSpace($PhysicalBaseItemZip)) {
-        return $PhysicalBaseItemZip
+        Add-Poe2LogicalRestoreManifest -ZipPath $PhysicalBaseItemZip -BaselineKind "physical-restore-extraction" | Out-Null
+        return Publish-Poe2LogicalRestoreZip -Source $PhysicalBaseItemZip
     }
 
-    throw "当前 BaseItemTypes 或 Words 已包含物价补丁标记，并且没有找到兼容的干净还原包。请先运行一键还原，或让官方启动器完成更新/修复游戏文件后重新运行一键更新。"
+    try {
+        $Migrated = New-CleanLogicalRestoreZipFromPatchedSources -OutputZip $RestoreOutZip
+        return Publish-Poe2LogicalRestoreZip -Source $Migrated
+    }
+    catch {
+        throw "当前文件已包含补丁且专属基线缺失；自动清理迁移也无法通过严格校验：$($_.Exception.Message)。为避免损坏游戏，已拒绝写入。请通过游戏平台校验/修复后重试。"
+    }
 }
 
 function Resolve-BundleExtractor {
@@ -2681,7 +2848,8 @@ $TcEndgameMaps = Join-Path $LatestDir ("data\" + $InstallInfo.EndgameMapsFileSlu
 $UniqueGoldPrices = Join-Path $LatestDir "data\data_balance_uniquegoldprices.datc64"
 $SupportsUniqueWords = Test-Poe2UniqueWordsSupported -WordsPath $TcWordsPath
 $OutDir = Join-Path $RepoRoot "output\poe2_price_patch_latest"
-$RestoreOutDir = Join-Path $RepoRoot "output\restore"
+$RestoreOutputKey = Get-Poe2PatchOutputKey -Poe2Dir $Poe2Dir
+$RestoreOutDir = Join-Path $RepoRoot ("output\restore\" + $RestoreOutputKey)
 $RestoreZipName = Get-Poe2FixedRestorePatchZipName -InstallInfo $InstallInfo
 $PhysicalRestoreZipName = Get-Poe2FixedPhysicalRestorePatchZipName -InstallInfo $InstallInfo
 $RestoreOutZip = Join-Path $RestoreOutDir $RestoreZipName
@@ -2689,8 +2857,11 @@ $PhysicalRestoreOutZip = Join-Path $RestoreOutDir $PhysicalRestoreZipName
 $RestorePatchFolderZip = Join-Path $RepoRoot $RestoreZipName
 $PhysicalRestorePatchFolderZip = Join-Path $RepoRoot $PhysicalRestoreZipName
 $PersistentRestoreDir = Join-Path $Poe2Dir ".poe2-price-patch"
+$PersistentLogicalRestoreZip = Join-Path $PersistentRestoreDir $RestoreZipName
 $PersistentPhysicalRestoreZip = Join-Path $PersistentRestoreDir $PhysicalRestoreZipName
-$Bundles2InstalledStatePath = Join-Path $PersistentRestoreDir "bundles2-installed-state.json"
+$RestoreStateKind = ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_')
+$RestoreStateLanguage = ([string]$InstallInfo.ConfigLanguage -replace '[^A-Za-z0-9_-]+', '_')
+$Bundles2InstalledStatePath = Join-Path $PersistentRestoreDir "bundles2-installed-state_${RestoreStateKind}_${RestoreStateLanguage}.json"
 $PricePatchZipName = Get-Poe2PatchName "PricePatchZip"
 $PatchZip = Join-Path $OutDir $PricePatchZipName
 $PatchedDat = Join-Path $OutDir "baseitemtypes.patched.datc64"
@@ -2977,12 +3148,6 @@ $LogicalRestoreReady = $false
 $InstallSuppressedReason = ""
 try {
     $RestoreZip = Ensure-RestoreZip $TcBaseItems
-    if (-not ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") -and -not (Test-BaseItemsLookPatched $TcBaseItems)) {
-        $RestoreZip = Update-IntlRestoreZipFromExtractedBaseItems -ZipPath $RestoreZip
-    }
-    if ($RestoreZip -ne $RestorePatchFolderZip) {
-        Copy-Poe2FileAtomically -Source $RestoreZip -Destination $RestorePatchFolderZip | Out-Null
-    }
     $LogicalRestoreReady = $true
 }
 catch {

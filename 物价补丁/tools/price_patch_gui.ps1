@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.5.6"
+$script:PatchVersion = "v0.5.7"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }

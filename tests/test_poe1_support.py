@@ -489,6 +489,29 @@ def test_poe1_gui_and_scripts_forward_language_mode_and_isolate_restore_names():
     assert '"POE1真实还原补丁_${Kind}.zip"' in common
 
 
+def test_poe1_restore_baseline_manifest_and_self_heal_are_strictly_scoped():
+    common = (TOOLS / "poe1_patch_common.ps1").read_text(encoding="utf-8-sig")
+    update = (TOOLS / "update_poe1_price_patch.ps1").read_text(encoding="utf-8-sig")
+    restore = (TOOLS / "restore_poe1_price_patch.ps1").read_text(encoding="utf-8-sig")
+    logical = powershell_function(common, "New-Poe1LogicalRestoreZip")
+    validator = powershell_function(common, "Test-Poe1LogicalRestoreZip")
+
+    assert 'version = 2' in logical
+    for field in ("game_version", "install_kind", "mode", "language_code", "restore_files"):
+        assert field in logical
+    for field in ("install_kind", "mode", "language_code", "baseitems_path", "words_path"):
+        assert field in validator
+    assert "New-CleanPoe1LogicalRestoreZipFromPatchedState" in update
+    assert '"--patch-scope", "none"' in update
+    assert '"--strict-feature-cleanup"' in update
+    assert "New-Poe1RestoreBaselineFromCurrentDat" in restore
+    assert "自动清理迁移" in restore
+    builder = (TOOLS / "build_poe1_price_patch.py").read_text(encoding="utf-8")
+    main = builder[builder.index("def main(") :]
+    assert main.index("if fetch_prices:") < main.index("discover_poe_ninja_league(")
+    assert 'league_source = "not-required"' in builder
+
+
 def test_poe1_bundles2_mutation_fingerprint_detects_count_and_content_changes(
     tmp_path: Path,
 ):

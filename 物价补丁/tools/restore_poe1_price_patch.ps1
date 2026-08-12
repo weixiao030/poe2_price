@@ -21,7 +21,8 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.6"
+$CodeToolsRoot = $PSScriptRoot
+$script:PatchVersion = "v0.5.7"
 $script:GameDirectoryMutex = $null
 $ValidationDir = ""
 
@@ -37,6 +38,66 @@ function Resolve-Poe1RestoreDirectory {
         throw "没有找到 POE1 客户端，请从统一还原界面手动选择游戏目录。"
     }
     throw "检测到多个 POE1 客户端，请从统一还原界面选择本次要还原的客户端。"
+}
+
+function New-Poe1RestoreBaselineFromCurrentDat {
+    param(
+        [Parameter(Mandatory = $true)][string]$CurrentBaseItems,
+        [Parameter(Mandatory = $true)][string]$CurrentWords,
+        [Parameter(Mandatory = $true)][string]$OutputZip
+    )
+
+    $BasePatched = Test-Poe1BaseItemsLookPatched -SourceDat $CurrentBaseItems -RepoRoot $RepoRoot
+    $WordsPatched = Test-Poe1WordsLookPatched -SourceWords $CurrentWords -RepoRoot $RepoRoot
+    if (-not ($BasePatched -or $WordsPatched)) {
+        return New-Poe1LogicalRestoreZip -BaseItems $CurrentBaseItems -Words $CurrentWords `
+            -OutputZip $OutputZip -InstallInfo $InstallInfo -RepoRoot $RepoRoot
+    }
+
+    $TempRoot = Join-Path $env:TEMP ([string]::Concat("poe1_restore_self_heal_", [Guid]::NewGuid().ToString("N")))
+    $CleanZip = Join-Path $TempRoot "clean-layer.zip"
+    $CleanBaseItems = Join-Path $TempRoot "baseitemtypes.clean.datc64"
+    $CleanWords = Join-Path $TempRoot "words.clean.datc64"
+    try {
+        New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
+        Write-Host "正在只清理本工具写入的 POE1 价格标记，重建当前客户端专属基线..." -ForegroundColor Yellow
+        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+        $Result = Invoke-Poe2Python -Python $Python -ArgumentList @(
+            (Join-Path $CodeToolsRoot "build_poe1_price_patch.py"),
+            "--patch-scope", "none",
+            "--fallback-price-sources", "none",
+            "--tc-baseitems", $CurrentBaseItems,
+            "--tc-words", $CurrentWords,
+            "--out-dir", $TempRoot,
+            "--output-zip", $CleanZip,
+            "--patched-dat", $CleanBaseItems,
+            "--patched-words", $CleanWords,
+            "--game-path", $InstallInfo.TcBaseItemsPath,
+            "--words-game-path", $InstallInfo.TcWordsPath,
+            "--patch-script", (Join-Path $CodeToolsRoot "poe2_name_price_patch.py"),
+            "--no-uniques",
+            "--strict-feature-cleanup"
+        )
+        if ($Result.ExitCode -ne 0) {
+            throw "POE1 自动清理失败，退出码：$($Result.ExitCode)。$($Result.Text)"
+        }
+        if (Test-Poe1BaseItemsLookPatched -SourceDat $CleanBaseItems -RepoRoot $RepoRoot) {
+            throw "POE1 清理后的 BaseItemTypes 仍包含价格标记。"
+        }
+        if (Test-Poe1WordsLookPatched -SourceWords $CleanWords -RepoRoot $RepoRoot) {
+            throw "POE1 清理后的 Words 仍包含价格标记。"
+        }
+        if (-not (Test-Poe1BaseItemsCompatible -LeftDat $CleanBaseItems -RightDat $CurrentBaseItems -RepoRoot $RepoRoot)) {
+            throw "POE1 清理后的 BaseItemTypes 结构发生了非预期变化。"
+        }
+        return New-Poe1LogicalRestoreZip -BaseItems $CleanBaseItems -Words $CleanWords `
+            -OutputZip $OutputZip -InstallInfo $InstallInfo -RepoRoot $RepoRoot
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempRoot -PathType Container) {
+            Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 try {
@@ -148,7 +209,27 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($RestoreZip)) {
             throw "指定的 POE1 逻辑还原包不可用：$RestoreZip"
         }
-        throw "找不到与当前 POE1 客户端兼容的还原包。请先在干净游戏状态运行一次更新，或通过游戏平台校验/修复游戏。"
+        Write-Warning "找不到可用的 POE1 专属基线，正在从当前 DAT 安全重建。"
+        try {
+            New-Item -ItemType Directory -Force -Path $RestoreDir | Out-Null
+            $BuiltLogical = New-Poe1RestoreBaselineFromCurrentDat `
+                -CurrentBaseItems $Current.LocalizedBaseItems `
+                -CurrentWords $Current.LocalizedWords `
+                -OutputZip (Join-Path $RestoreDir $LogicalRestoreName)
+            $SelectedLogical = (Resolve-Path -LiteralPath $BuiltLogical).Path
+            if (-not $NoInstall) {
+                New-Item -ItemType Directory -Force -Path $PersistentDir | Out-Null
+                Copy-Poe2FileAtomically -Source $BuiltLogical -Destination (Join-Path $PersistentDir $LogicalRestoreName) | Out-Null
+                $SelectedLogical = (Resolve-Path -LiteralPath (Join-Path $PersistentDir $LogicalRestoreName)).Path
+            }
+            if (-not (Test-Poe1LogicalRestoreZip -ZipPath $SelectedLogical -InstallInfo $InstallInfo `
+                    -CurrentBaseItems $Current.LocalizedBaseItems -RepoRoot $RepoRoot)) {
+                throw "自动生成的 POE1 专属基线未通过最终校验。"
+            }
+        }
+        catch {
+            throw "POE1 专属基线缺失，自动清理迁移也无法通过严格校验：$($_.Exception.Message)。为避免损坏游戏，已拒绝写入；请通过游戏平台校验/修复后重试。"
+        }
     }
     Write-Host "已验证逻辑还原包：$SelectedLogical" -ForegroundColor Green
     if ($NoInstall) {

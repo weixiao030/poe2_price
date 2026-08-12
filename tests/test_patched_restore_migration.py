@@ -52,6 +52,73 @@ def powershell_function(script: str, name: str) -> str:
     return script[match.start() : match.end() + next_match.start()]
 
 
+def test_poe2_restore_names_and_output_roots_are_fully_scoped(tmp_path: Path):
+    script = rf"""
+$ErrorActionPreference = 'Stop'
+. '{ps_path(COMMON)}'
+$ggpk = [pscustomobject]@{{InstallKind='INT-Standalone-GGPK'; ConfigLanguage='zh-TW'; LanguageName='Traditional Chinese'; IsChina=$false}}
+$steam = [pscustomobject]@{{InstallKind='INT-Steam-Bundles2'; ConfigLanguage='zh-TW'; LanguageName='Traditional Chinese'; IsChina=$false}}
+$cn = [pscustomobject]@{{InstallKind='CN-WeGame-Bundles2'; ConfigLanguage='zh-CN'; LanguageName='Simplified Chinese'; IsChina=$true}}
+$names = @(
+    Get-Poe2FixedRestorePatchZipName $ggpk
+    Get-Poe2FixedRestorePatchZipName $steam
+    Get-Poe2FixedRestorePatchZipName $cn
+    Get-Poe2FixedPhysicalRestorePatchZipName $steam
+)
+if (($names | Select-Object -Unique).Count -ne 4) {{ throw 'restore names collided' }}
+$a = Get-Poe2PatchOutputKey '{ps_path(tmp_path / 'game-a')}'
+$a2 = Get-Poe2PatchOutputKey '{ps_path(tmp_path / 'game-a')}'
+$b = Get-Poe2PatchOutputKey '{ps_path(tmp_path / 'game-b')}'
+if ($a -ne $a2 -or $a -eq $b -or $a.Length -ne 16) {{ throw 'output key isolation failed' }}
+Write-Output ($names -join "`n")
+"""
+    output = run_windows_powershell(script)
+    assert "POE2还原补丁_INT-Standalone-GGPK_zh-TW.zip" in output
+    assert "POE2还原补丁_INT-Steam-Bundles2_zh-TW.zip" in output
+    assert "POE2还原补丁_CN-WeGame-Bundles2_zh-CN.zip" in output
+
+
+def test_poe2_logical_manifest_rejects_cross_client_and_tampering(tmp_path: Path):
+    restore_zip = tmp_path / "POE2还原补丁_INT-Standalone-GGPK_zh-TW.zip"
+    script = rf"""
+$ErrorActionPreference = 'Stop'
+. '{ps_path(COMMON)}'
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = '{ps_path(restore_zip)}'
+$info = [pscustomobject]@{{
+    InstallKind='INT-Standalone-GGPK'; Mode='GGPK'; ConfigLanguage='zh-TW';
+    TcBaseItemsPath='data/balance/traditional chinese/baseitemtypes.datc64';
+    TcWordsPath='data/balance/traditional chinese/words.datc64';
+    TcEndgameMapsPath='data/balance/traditional chinese/endgamemaps.datc64'
+}}
+$archive = [IO.Compression.ZipFile]::Open($zip,[IO.Compression.ZipArchiveMode]::Create)
+try {{
+    foreach($path in @($info.TcBaseItemsPath,$info.TcWordsPath,$info.TcEndgameMapsPath)) {{
+        $entry=$archive.CreateEntry($path)
+        $stream=$entry.Open()
+        try {{ $bytes=[Text.Encoding]::UTF8.GetBytes("clean-$path"); $stream.Write($bytes,0,$bytes.Length) }} finally {{ $stream.Dispose() }}
+    }}
+}} finally {{ $archive.Dispose() }}
+Set-Poe2LogicalRestoreManifest -ZipPath $zip -InstallInfo $info -BaseItemsSignature ([pscustomobject]@{{compatibility_sha256='abc'}}) | Out-Null
+Assert-Poe2LogicalRestoreManifest -ZipPath $zip -InstallInfo $info | Out-Null
+$steam = $info.PSObject.Copy(); $steam.InstallKind='INT-Steam-Bundles2'; $steam.Mode='Bundles2'
+$crossRejected=$false
+try {{ Assert-Poe2LogicalRestoreManifest -ZipPath $zip -InstallInfo $steam | Out-Null }} catch {{ $crossRejected=$true }}
+if (-not $crossRejected) {{ throw 'cross-client manifest was accepted' }}
+$archive=[IO.Compression.ZipFile]::Open($zip,[IO.Compression.ZipArchiveMode]::Update)
+try {{
+    $old=$archive.GetEntry($info.TcWordsPath); $old.Delete()
+    $entry=$archive.CreateEntry($info.TcWordsPath); $writer=[IO.StreamWriter]::new($entry.Open()); try {{$writer.Write('tampered')}} finally {{$writer.Dispose()}}
+}} finally {{$archive.Dispose()}}
+$tamperRejected=$false
+try {{ Assert-Poe2LogicalRestoreManifest -ZipPath $zip -InstallInfo $info | Out-Null }} catch {{ $tamperRejected=$true }}
+if (-not $tamperRejected) {{ throw 'tampered restore was accepted' }}
+Write-Output 'SCOPED_MANIFEST_ENFORCED'
+"""
+    assert "SCOPED_MANIFEST_ENFORCED" in run_windows_powershell(script)
+
+
 def test_patch_state_probe_failure_is_not_reported_as_patched(tmp_path: Path):
     """A broken detector is an unknown state, not proof that the file is patched."""
     source = tmp_path / "probe.datc64"
@@ -137,11 +204,11 @@ Write-Output 'PERSISTENT_STORE_COVERED_BY_BOTH_SCRIPTS'
     assert "PERSISTENT_STORE_COVERED_BY_BOTH_SCRIPTS" in output
 
 
-def test_physical_restore_is_published_to_patch_folder_and_persistent_store(
+def test_physical_restore_is_published_to_scoped_output_and_persistent_store(
     tmp_path: Path,
 ):
-    patch_copy = tmp_path / "patch" / "真实还原物价补丁.zip"
-    persistent_copy = tmp_path / "game" / ".poe2-price-patch" / "真实还原物价补丁.zip"
+    output_copy = tmp_path / "output" / "POE2真实还原补丁_INT-Steam_zh-TW.zip"
+    persistent_copy = tmp_path / "game" / ".poe2-price-patch" / "POE2真实还原补丁_INT-Steam_zh-TW.zip"
     script = rf"""
 $ErrorActionPreference = 'Stop'
 function Import-SelectedFunction([string]$Path, [string]$Name) {{
@@ -156,18 +223,18 @@ function Copy-PhysicalRestoreZipAtomically([string]$Source, [string]$Destination
     $script:Destinations.Add([IO.Path]::GetFullPath($Destination))
     return [IO.Path]::GetFullPath($Destination)
 }}
-$PhysicalRestorePatchFolderZip = '{ps_path(patch_copy)}'
+$PhysicalRestoreOutZip = '{ps_path(output_copy)}'
 $PersistentPhysicalRestoreZip = '{ps_path(persistent_copy)}'
 Invoke-Expression (Import-SelectedFunction '{ps_path(UPDATE)}' 'Publish-PhysicalRestoreZip')
 $Result = Publish-PhysicalRestoreZip -Source 'source.zip'
 $Expected = @(
-    [IO.Path]::GetFullPath($PhysicalRestorePatchFolderZip),
+    [IO.Path]::GetFullPath($PhysicalRestoreOutZip),
     [IO.Path]::GetFullPath($PersistentPhysicalRestoreZip)
 )
 foreach ($Path in $Expected) {{
     if (-not $script:Destinations.Contains($Path)) {{ throw "MISSING_PUBLISH_DESTINATION:$Path" }}
 }}
-if ([IO.Path]::GetFullPath($Result) -ne $Expected[0]) {{ throw "UNEXPECTED_PUBLISH_RESULT:$Result" }}
+if ([IO.Path]::GetFullPath($Result) -ne $Expected[1]) {{ throw "UNEXPECTED_PUBLISH_RESULT:$Result" }}
 Write-Output 'PHYSICAL_RESTORE_PUBLISHED_DURABLY'
 """
     output = run_windows_powershell(script)

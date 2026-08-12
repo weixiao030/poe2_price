@@ -23,7 +23,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.6"
+$script:PatchVersion = "v0.5.7"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -244,6 +244,66 @@ function New-CleanPoe1PhysicalRestoreZipFromPatchedState {
     }
 }
 
+function New-CleanPoe1LogicalRestoreZipFromPatchedState {
+    param(
+        [Parameter(Mandatory = $true)][string]$CurrentBaseItems,
+        [Parameter(Mandatory = $true)][string]$CurrentWords,
+        [Parameter(Mandatory = $true)][string]$OutputZip
+    )
+
+    $TempRoot = Join-Path $env:TEMP ([string]::Concat("poe1_logical_restore_migration_", [Guid]::NewGuid().ToString("N")))
+    $CleanLayerZip = Join-Path $TempRoot "clean-layer.zip"
+    $CleanBaseItems = Join-Path $TempRoot "baseitemtypes.clean.datc64"
+    $CleanWords = Join-Path $TempRoot "words.clean.datc64"
+    try {
+        New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
+        Write-Host "没有可用的 POE1 专属基线，正在只清理本工具价格标记并离线重建..." -ForegroundColor Yellow
+        $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+        $Result = Invoke-Poe2Python -Python $Python -ArgumentList @(
+            (Join-Path $CodeToolsRoot "build_poe1_price_patch.py"),
+            "--patch-scope", "none",
+            "--fallback-price-sources", "none",
+            "--tc-baseitems", $CurrentBaseItems,
+            "--tc-words", $CurrentWords,
+            "--out-dir", $TempRoot,
+            "--output-zip", $CleanLayerZip,
+            "--patched-dat", $CleanBaseItems,
+            "--patched-words", $CleanWords,
+            "--game-path", $InstallInfo.TcBaseItemsPath,
+            "--words-game-path", $InstallInfo.TcWordsPath,
+            "--patch-script", (Join-Path $CodeToolsRoot "poe2_name_price_patch.py"),
+            "--no-uniques",
+            "--strict-feature-cleanup"
+        )
+        if ($Result.ExitCode -ne 0) {
+            throw "POE1 自动清理迁移失败，退出码：$($Result.ExitCode)。$($Result.Text)"
+        }
+        Assert-Poe1File -Path $CleanBaseItems -Name "清理后的 POE1 BaseItemTypes"
+        Assert-Poe1File -Path $CleanWords -Name "清理后的 POE1 Words"
+        if (Test-Poe1BaseItemsLookPatched -SourceDat $CleanBaseItems -RepoRoot $RepoRoot) {
+            throw "POE1 清理后的 BaseItemTypes 仍包含价格标记。"
+        }
+        if (Test-Poe1WordsLookPatched -SourceWords $CleanWords -RepoRoot $RepoRoot) {
+            throw "POE1 清理后的 Words 仍包含价格标记。"
+        }
+        if (-not (Test-Poe1BaseItemsCompatible -LeftDat $CleanBaseItems -RightDat $CurrentBaseItems -RepoRoot $RepoRoot)) {
+            throw "POE1 清理后的 BaseItemTypes 结构发生了非预期变化。"
+        }
+        $Created = New-Poe1LogicalRestoreZip -BaseItems $CleanBaseItems -Words $CleanWords `
+            -OutputZip $OutputZip -InstallInfo $InstallInfo -RepoRoot $RepoRoot
+        if (-not (Test-Poe1LogicalRestoreZip -ZipPath $Created -InstallInfo $InstallInfo `
+                -CurrentBaseItems $CurrentBaseItems -RepoRoot $RepoRoot)) {
+            throw "POE1 自动生成的专属还原基线未通过最终校验。"
+        }
+        return $Created
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempRoot -PathType Container) {
+            Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Ensure-Poe1PhysicalRestoreZip {
     param([Parameter(Mandatory = $true)][bool]$SourceLooksPatched)
 
@@ -406,10 +466,20 @@ try {
     }
     if ([string]::IsNullOrWhiteSpace($LogicalRestoreZip)) {
         if ($CurrentBasePatched -or $CurrentWordsPatched) {
-            throw "当前 POE1 DAT 已包含价格标记，但没有兼容的干净还原底板。请先通过游戏平台校验/修复游戏，再重新运行更新。"
+            try {
+                $LogicalRestoreZip = New-CleanPoe1LogicalRestoreZipFromPatchedState `
+                    -CurrentBaseItems $Extracted.LocalizedBaseItems `
+                    -CurrentWords $Extracted.LocalizedWords `
+                    -OutputZip $LogicalRestoreOut
+            }
+            catch {
+                throw "POE1 专属基线缺失，自动清理迁移也无法通过严格校验：$($_.Exception.Message)。为避免损坏游戏，已拒绝写入；请通过游戏平台校验/修复后重试。"
+            }
         }
-        $LogicalRestoreZip = New-Poe1LogicalRestoreZip -BaseItems $Extracted.LocalizedBaseItems `
-            -Words $Extracted.LocalizedWords -OutputZip $LogicalRestoreOut -InstallInfo $InstallInfo -RepoRoot $RepoRoot
+        else {
+            $LogicalRestoreZip = New-Poe1LogicalRestoreZip -BaseItems $Extracted.LocalizedBaseItems `
+                -Words $Extracted.LocalizedWords -OutputZip $LogicalRestoreOut -InstallInfo $InstallInfo -RepoRoot $RepoRoot
+        }
     }
     if (-not $NoInstall) {
         New-Item -ItemType Directory -Force -Path $PersistentDir | Out-Null

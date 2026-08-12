@@ -275,16 +275,32 @@ function New-Poe1LogicalRestoreZip {
         throw "当前 Words 已包含价格标记，不能覆盖干净还原底板。"
     }
     $Signature = Get-Poe1BaseItemsSignature -SourceDat $BaseItems -RepoRoot $RepoRoot
+    $RestoreFiles = @(
+        [ordered]@{
+            path = ([string]$InstallInfo.TcBaseItemsPath).Replace('\', '/')
+            length = [long](Get-Item -LiteralPath $BaseItems).Length
+            sha256 = (Get-FileHash -LiteralPath $BaseItems -Algorithm SHA256).Hash.ToLowerInvariant()
+        },
+        [ordered]@{
+            path = ([string]$InstallInfo.TcWordsPath).Replace('\', '/')
+            length = [long](Get-Item -LiteralPath $Words).Length
+            sha256 = (Get-FileHash -LiteralPath $Words -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    )
     $Manifest = [ordered]@{
         kind = "poe1-price-patch-logical-restore"
-        version = 1
+        version = 2
         created_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+        game_version = "poe1"
         install_kind = [string]$InstallInfo.InstallKind
+        mode = [string]$InstallInfo.Mode
+        language_code = [string]$InstallInfo.EffectiveLanguageCode
         baseitems_path = [string]$InstallInfo.TcBaseItemsPath
         words_path = [string]$InstallInfo.TcWordsPath
         baseitems_signature = $Signature
         baseitems_sha256 = (Get-FileHash -LiteralPath $BaseItems -Algorithm SHA256).Hash.ToLowerInvariant()
         words_sha256 = (Get-FileHash -LiteralPath $Words -Algorithm SHA256).Hash.ToLowerInvariant()
+        restore_files = $RestoreFiles
     }
 
     Add-Type -AssemblyName System.IO.Compression
@@ -333,10 +349,57 @@ function Test-Poe1LogicalRestoreZip {
     $BaseTemp = ""
     $WordsTemp = ""
     try {
+        Add-Type -AssemblyName System.IO.Compression
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        try {
+            $ManifestEntry = $Archive.GetEntry("poe1-restore-manifest.json")
+            if ($null -eq $ManifestEntry) { return $false }
+            $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
+            try { $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json } finally { $Reader.Dispose() }
+            if ([string]$Manifest.kind -ne "poe1-price-patch-logical-restore" -or [int]$Manifest.version -ne 2) { return $false }
+            foreach ($Scope in @(
+                    @("install_kind", [string]$InstallInfo.InstallKind),
+                    @("mode", [string]$InstallInfo.Mode),
+                    @("language_code", [string]$InstallInfo.EffectiveLanguageCode),
+                    @("baseitems_path", [string]$InstallInfo.TcBaseItemsPath),
+                    @("words_path", [string]$InstallInfo.TcWordsPath)
+                )) {
+                $Property = [string]$Scope[0]
+                $Actual = [string]$Manifest.$Property
+                if (-not $Actual.Equals([string]$Scope[1], [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+            }
+            $Seen = @{}
+            foreach ($Descriptor in @($Manifest.restore_files)) {
+                $Path = ([string]$Descriptor.path).Replace('\', '/')
+                $Key = $Path.ToLowerInvariant()
+                if ($Seen.ContainsKey($Key)) { return $false }
+                $Seen[$Key] = $true
+                $Entry = $Archive.GetEntry($Path)
+                if ($null -eq $Entry) { return $false }
+                $Integrity = Get-Poe2ZipEntryStreamIntegrity -Entry $Entry
+                if ([long]$Descriptor.length -ne [long]$Integrity.Length -or
+                    -not ([string]$Descriptor.sha256).Equals([string]$Integrity.Sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $false
+                }
+            }
+            if (-not $Seen.ContainsKey(([string]$InstallInfo.TcBaseItemsPath).Replace('\', '/').ToLowerInvariant()) -or
+                -not $Seen.ContainsKey(([string]$InstallInfo.TcWordsPath).Replace('\', '/').ToLowerInvariant())) {
+                return $false
+            }
+        }
+        finally {
+            $Archive.Dispose()
+        }
         $BaseTemp = Get-Poe1ZipEntryTempFile -ZipPath $ZipPath -EntryName $InstallInfo.TcBaseItemsPath
         $WordsTemp = Get-Poe1ZipEntryTempFile -ZipPath $ZipPath -EntryName $InstallInfo.TcWordsPath
         if (Test-Poe1BaseItemsLookPatched -SourceDat $BaseTemp -RepoRoot $RepoRoot) { return $false }
         if (Test-Poe1WordsLookPatched -SourceWords $WordsTemp -RepoRoot $RepoRoot) { return $false }
+        $CurrentSignature = Get-Poe1BaseItemsSignature -SourceDat $CurrentBaseItems -RepoRoot $RepoRoot
+        if (-not ([string]$Manifest.baseitems_signature.compatibility_sha256).Equals(
+                [string]$CurrentSignature.compatibility_sha256,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )) { return $false }
         if (-not (Test-Poe1BaseItemsCompatible -LeftDat $BaseTemp -RightDat $CurrentBaseItems -RepoRoot $RepoRoot)) { return $false }
         return $true
     }

@@ -1241,9 +1241,14 @@ def main(argv: list[str]) -> int:
         timeout=max(1.0, args.timeout),
         total_timeout=max(1.0, args.request_time_budget),
     )
-    league, league_source, league_warnings = discover_poe_ninja_league(
-        client, args.poe_ninja_index_url, args.league
-    )
+    if fetch_prices:
+        league, league_source, league_warnings = discover_poe_ninja_league(
+            client, args.poe_ninja_index_url, args.league
+        )
+    else:
+        league = args.league or "not-required"
+        league_source = "not-required"
+        league_warnings = []
     progress(f"当前 POE1 软核赛季：{league} ({league_source})")
     for warning in league_warnings:
         print(f"[警告] {warning}", file=sys.stderr)

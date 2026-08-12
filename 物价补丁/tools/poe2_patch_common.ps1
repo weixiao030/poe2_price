@@ -70,23 +70,75 @@ function Test-GgpkExtractorMissingRuntimeDependency {
 function Get-Poe2FixedRestorePatchZipName {
     param([Parameter(Mandatory = $true)]$InstallInfo)
 
-    if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
-        return Get-Poe2PatchName "ChinaRestorePatchZip"
+    $Kind = ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_')
+    $LanguageCode = [string]$InstallInfo.ConfigLanguage
+    if ([string]::IsNullOrWhiteSpace($LanguageCode)) {
+        $LanguageCode = [string]$InstallInfo.LanguageName
     }
-
-    return Get-Poe2PatchName "IntlRestorePatchZip"
+    $Language = ($LanguageCode -replace '[^A-Za-z0-9_-]+', '_')
+    return "POE2还原补丁_${Kind}_${Language}.zip"
 }
 
 function Get-Poe2RestorePatchZipCandidateNames {
     param([Parameter(Mandatory = $true)]$InstallInfo)
 
-    return Get-Poe2FixedRestorePatchZipName -InstallInfo $InstallInfo
+    $LegacyName = if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*") {
+        Get-Poe2PatchName "ChinaRestorePatchZip"
+    }
+    else {
+        Get-Poe2PatchName "IntlRestorePatchZip"
+    }
+    return @(
+        (Get-Poe2FixedRestorePatchZipName -InstallInfo $InstallInfo),
+        $LegacyName
+    ) | Select-Object -Unique
+}
+
+function Test-Poe2LegacyRestorePatchZipName {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $Name = Split-Path -Leaf $Path
+    return $Name -in @(
+        (Get-Poe2PatchName "ChinaRestorePatchZip"),
+        (Get-Poe2PatchName "IntlRestorePatchZip"),
+        (Get-Poe2PatchName "RestorePatchZip")
+    )
 }
 
 function Get-Poe2FixedPhysicalRestorePatchZipName {
     param([Parameter(Mandatory = $true)]$InstallInfo)
 
-    return Get-Poe2PatchName "PhysicalRestorePatchZip"
+    $Kind = ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_')
+    $LanguageCode = [string]$InstallInfo.ConfigLanguage
+    if ([string]::IsNullOrWhiteSpace($LanguageCode)) {
+        $LanguageCode = [string]$InstallInfo.LanguageName
+    }
+    $Language = ($LanguageCode -replace '[^A-Za-z0-9_-]+', '_')
+    return "POE2真实还原补丁_${Kind}_${Language}.zip"
+}
+
+function Get-Poe2PhysicalRestorePatchZipCandidateNames {
+    param([Parameter(Mandatory = $true)]$InstallInfo)
+
+    return @(
+        (Get-Poe2FixedPhysicalRestorePatchZipName -InstallInfo $InstallInfo),
+        (Get-Poe2PatchName "PhysicalRestorePatchZip")
+    ) | Select-Object -Unique
+}
+
+function Get-Poe2PatchOutputKey {
+    param([Parameter(Mandatory = $true)][string]$Poe2Dir)
+
+    $Normalized = [System.IO.Path]::GetFullPath($Poe2Dir).TrimEnd('\', '/').ToUpperInvariant()
+    $Bytes = [System.Text.Encoding]::UTF8.GetBytes($Normalized)
+    $Sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $Hash = [System.BitConverter]::ToString($Sha256.ComputeHash($Bytes)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        $Sha256.Dispose()
+    }
+    return $Hash.Substring(0, 16)
 }
 
 function Get-Poe2NormalizedFullPath {
@@ -1481,6 +1533,183 @@ function Get-Poe2ZipEntryStreamIntegrity {
         Crc32 = $Parts[0]
         Sha256 = $Parts[1]
         Length = [long]$Parts[2]
+    }
+}
+
+function Set-Poe2LogicalRestoreManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)]$InstallInfo,
+        [Parameter(Mandatory = $true)]$BaseItemsSignature,
+        [string]$BaselineKind = "clean-game-files"
+    )
+
+    if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
+        throw "POE2 逻辑还原包不存在：$ZipPath"
+    }
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $ExpectedPaths = @(
+        [string]$InstallInfo.TcBaseItemsPath,
+        [string]$InstallInfo.TcWordsPath,
+        [string]$InstallInfo.TcEndgameMapsPath
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Replace('\', '/') } | Select-Object -Unique
+
+    $RestoreFiles = New-Object System.Collections.Generic.List[object]
+    $ReadArchive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        foreach ($EntryPath in $ExpectedPaths) {
+            $Entry = $ReadArchive.GetEntry($EntryPath)
+            if ($null -eq $Entry) {
+                if ($EntryPath -eq ([string]$InstallInfo.TcBaseItemsPath).Replace('\', '/')) {
+                    throw "POE2 逻辑还原包缺少 BaseItemTypes：$EntryPath"
+                }
+                continue
+            }
+            $Integrity = Get-Poe2ZipEntryStreamIntegrity -Entry $Entry
+            $RestoreFiles.Add([pscustomobject][ordered]@{
+                    path = $EntryPath
+                    length = [long]$Integrity.Length
+                    sha256 = ([string]$Integrity.Sha256).ToLowerInvariant()
+                })
+        }
+    }
+    finally {
+        $ReadArchive.Dispose()
+    }
+
+    $Manifest = [ordered]@{
+        kind = "poe2-price-patch-logical-restore"
+        version = 2
+        created_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+        baseline_kind = $BaselineKind
+        game_version = "poe2"
+        install_kind = [string]$InstallInfo.InstallKind
+        mode = [string]$InstallInfo.Mode
+        config_language = [string]$InstallInfo.ConfigLanguage
+        baseitems_path = [string]$InstallInfo.TcBaseItemsPath
+        words_path = [string]$InstallInfo.TcWordsPath
+        endgamemaps_path = [string]$InstallInfo.TcEndgameMapsPath
+        baseitems_signature = $BaseItemsSignature
+        restore_files = $RestoreFiles.ToArray()
+    }
+
+    $Archive = [System.IO.Compression.ZipFile]::Open($ZipPath, [System.IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $Existing = $Archive.GetEntry("poe2-restore-manifest.json")
+        if ($null -ne $Existing) {
+            $Existing.Delete()
+        }
+        $Entry = $Archive.CreateEntry("poe2-restore-manifest.json", [System.IO.Compression.CompressionLevel]::Optimal)
+        $Writer = New-Object System.IO.StreamWriter($Entry.Open(), (New-Object System.Text.UTF8Encoding($false)))
+        try {
+            $Writer.Write(($Manifest | ConvertTo-Json -Depth 16))
+        }
+        finally {
+            $Writer.Dispose()
+        }
+    }
+    finally {
+        $Archive.Dispose()
+    }
+    return $Manifest
+}
+
+function Assert-Poe2LogicalRestoreManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)]$InstallInfo,
+        [switch]$AllowLegacyWithoutManifest
+    )
+
+    if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
+        throw "POE2 逻辑还原包不存在：$ZipPath"
+    }
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+    try {
+        $ManifestEntry = $Archive.GetEntry("poe2-restore-manifest.json")
+        if ($null -eq $ManifestEntry) {
+            if ($AllowLegacyWithoutManifest) {
+                return $null
+            }
+            throw "POE2 逻辑还原包缺少作用域 manifest，拒绝把未知客户端的备份写入当前游戏。"
+        }
+        $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
+        try {
+            $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json
+        }
+        finally {
+            $Reader.Dispose()
+        }
+        if ([string]$Manifest.kind -ne "poe2-price-patch-logical-restore" -or [int]$Manifest.version -ne 2) {
+            throw "POE2 逻辑还原包 manifest 类型或版本无效。"
+        }
+        foreach ($Scope in @(
+                @("install_kind", [string]$InstallInfo.InstallKind),
+                @("mode", [string]$InstallInfo.Mode),
+                @("config_language", [string]$InstallInfo.ConfigLanguage),
+                @("baseitems_path", [string]$InstallInfo.TcBaseItemsPath),
+                @("words_path", [string]$InstallInfo.TcWordsPath),
+                @("endgamemaps_path", [string]$InstallInfo.TcEndgameMapsPath)
+            )) {
+            $Property = [string]$Scope[0]
+            $Expected = [string]$Scope[1]
+            $Actual = [string]$Manifest.$Property
+            if (-not $Actual.Equals($Expected, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "POE2 逻辑还原包作用域不匹配：$Property 为 $Actual，当前需要 $Expected。"
+            }
+        }
+
+        $Allowed = @{}
+        foreach ($Path in @(
+                [string]$InstallInfo.TcBaseItemsPath,
+                [string]$InstallInfo.TcWordsPath,
+                [string]$InstallInfo.TcEndgameMapsPath
+            )) {
+            if (-not [string]::IsNullOrWhiteSpace($Path)) {
+                $Allowed[$Path.Replace('\', '/').ToLowerInvariant()] = $true
+            }
+        }
+        $Seen = @{}
+        foreach ($Descriptor in @($Manifest.restore_files)) {
+            $Path = ([string]$Descriptor.path).Replace('\', '/')
+            $Key = $Path.ToLowerInvariant()
+            if (-not $Allowed.ContainsKey($Key)) {
+                throw "POE2 逻辑还原包 manifest 包含越界条目：$Path"
+            }
+            if ($Seen.ContainsKey($Key)) {
+                throw "POE2 逻辑还原包 manifest 包含重复条目：$Path"
+            }
+            $Seen[$Key] = $true
+            $Entry = $Archive.GetEntry($Path)
+            if ($null -eq $Entry) {
+                throw "POE2 逻辑还原包缺少 manifest 声明的文件：$Path"
+            }
+            $Integrity = Get-Poe2ZipEntryStreamIntegrity -Entry $Entry
+            if ([long]$Descriptor.length -ne [long]$Integrity.Length -or
+                -not ([string]$Descriptor.sha256).Equals([string]$Integrity.Sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "POE2 逻辑还原包完整性校验失败：$Path"
+            }
+        }
+        $BaseKey = ([string]$InstallInfo.TcBaseItemsPath).Replace('\', '/').ToLowerInvariant()
+        if (-not $Seen.ContainsKey($BaseKey)) {
+            throw "POE2 逻辑还原包 manifest 未声明 BaseItemTypes。"
+        }
+        foreach ($Entry in @($Archive.Entries | Where-Object { -not [string]::IsNullOrEmpty($_.Name) })) {
+            if ([string]$Entry.FullName -eq "poe2-restore-manifest.json") {
+                continue
+            }
+            $Key = ([string]$Entry.FullName).Replace('\', '/').ToLowerInvariant()
+            if (-not $Seen.ContainsKey($Key)) {
+                throw "POE2 逻辑还原包包含当前作用域之外的文件：$($Entry.FullName)"
+            }
+        }
+        return $Manifest
+    }
+    finally {
+        $Archive.Dispose()
     }
 }
 
