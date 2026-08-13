@@ -15,12 +15,13 @@ $RepoRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
 else {
     (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
-$script:PatchVersion = "v0.5.7"
+$script:PatchVersion = "v0.5.8"
 $script:GameDirectoryMutex = $null
 $script:LocalizationAssetName = "PoeChinese3_win-x64.exe"
-$script:LatestReleaseUrl = "https://github.com/aianlinb/LibGGPK3/releases/latest"
-# 国内加速源始终优先；GitHub 官方源只作为兜底。元数据和程序本体都按
-# 此顺序获取，且程序本体必须匹配 Release 页面公布的 SHA256 才会执行。
+$script:LatestReleaseApiUrl = "https://api.github.com/repos/aianlinb/LibGGPK3/releases/latest"
+$script:LatestReleasePageUrl = "https://github.com/aianlinb/LibGGPK3/releases/latest"
+# 下载镜像按当前实测速度排序，GitHub 官方源作为最终兜底。每个下载都
+# 必须与官方 Releases API 返回的文件大小和 SHA256 同时匹配才会执行。
 $script:LocalizationSourcePrefixes = @(
     [pscustomobject]@{
         Name = "国内加速源 ghfast.top"
@@ -29,6 +30,30 @@ $script:LocalizationSourcePrefixes = @(
     [pscustomobject]@{
         Name = "国内加速源 gh-proxy.com"
         Prefix = "https://gh-proxy.com/"
+    },
+    [pscustomobject]@{
+        Name = "备用加速源 gh.ddlc.top"
+        Prefix = "https://gh.ddlc.top/"
+    },
+    [pscustomobject]@{
+        Name = "备用加速源 ghproxy.it"
+        Prefix = "https://ghproxy.it/"
+    },
+    [pscustomobject]@{
+        Name = "备用加速源 github.boki.moe"
+        Prefix = "https://github.boki.moe/"
+    },
+    [pscustomobject]@{
+        Name = "备用加速源 ghproxy.net"
+        Prefix = "https://ghproxy.net/"
+    },
+    [pscustomobject]@{
+        Name = "备用加速源 gh.jasonzeng.dev"
+        Prefix = "https://gh.jasonzeng.dev/"
+    },
+    [pscustomobject]@{
+        Name = "备用加速源 gh.monlor.com"
+        Prefix = "https://gh.monlor.com/"
     },
     [pscustomobject]@{
         Name = "GitHub 官方源"
@@ -56,13 +81,14 @@ function Resolve-Poe1LocalizationDirectory {
 function Test-Poe1LocalizationExecutable {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedSha256
+        [Parameter(Mandatory = $true)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedSha256,
+        [Parameter(Mandatory = $true)][ValidateRange(1048576, 104857600)][long]$ExpectedSize
     )
 
     Assert-Poe1File -Path $Path -Name "PoeChinese3_win-x64.exe"
     $File = Get-Item -LiteralPath $Path
-    if ($File.Length -lt 1048576 -or $File.Length -gt 104857600) {
-        throw "最新版 PoeChinese3 文件大小异常：$($File.Length) bytes"
+    if ($File.Length -ne $ExpectedSize) {
+        throw "PoeChinese3 文件大小与最新版 Release 不一致：期望 $ExpectedSize bytes，实际 $($File.Length) bytes"
     }
     $Stream = [System.IO.File]::OpenRead($Path)
     try {
@@ -104,11 +130,83 @@ function Get-Poe1LatestLocalizationRelease {
     }
     catch {
     }
-    foreach ($Source in $script:LocalizationSourcePrefixes) {
+    $MetadataSources = @(
+        [pscustomobject]@{
+            Name = "GitHub API 加速源 gh-proxy.com"
+            Url = "https://gh-proxy.com/$($script:LatestReleaseApiUrl)"
+        },
+        [pscustomobject]@{
+            Name = "GitHub 官方 API"
+            Url = $script:LatestReleaseApiUrl
+        }
+    )
+    foreach ($Source in $MetadataSources) {
         try {
-            $LatestUrl = "$($Source.Prefix)$($script:LatestReleaseUrl)"
             Write-Host "正在从 $($Source.Name) 查询 PoeChinese3 最新 Release..." -ForegroundColor Cyan
-            $Page = Invoke-WebRequest -Uri $LatestUrl -UseBasicParsing -MaximumRedirection 5 -TimeoutSec 60 `
+            $Response = Invoke-RestMethod -Uri $Source.Url -Method Get -TimeoutSec 30 `
+                -Headers @{
+                    "User-Agent" = "poe2-price-patch/$script:PatchVersion"
+                    "Accept" = "application/vnd.github+json"
+                }
+            if ([bool]$Response.draft -or [bool]$Response.prerelease) {
+                throw "接口返回的不是正式 Release。"
+            }
+            $Tag = [string]$Response.tag_name
+            if ($Tag -notmatch '^v?\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$') {
+                throw "最新版 Release 标签格式异常：$Tag"
+            }
+            $Assets = @($Response.assets | Where-Object {
+                    [string]$_.name -ceq $script:LocalizationAssetName
+                })
+            if ($Assets.Count -ne 1) {
+                throw "最新版 Release 未唯一包含 $($script:LocalizationAssetName)。"
+            }
+            $Asset = $Assets[0]
+            $OfficialAssetUrl = [string]$Asset.browser_download_url
+            $ExpectedAssetUrl = "https://github.com/aianlinb/LibGGPK3/releases/download/$Tag/$($script:LocalizationAssetName)"
+            if (-not $OfficialAssetUrl.Equals($ExpectedAssetUrl, [System.StringComparison]::Ordinal)) {
+                throw "最新版 Release 资源地址异常：$OfficialAssetUrl"
+            }
+            $AssetSize = [long]$Asset.size
+            if ($AssetSize -lt 1048576 -or $AssetSize -gt 104857600) {
+                throw "最新版 Release 文件大小异常：$AssetSize bytes"
+            }
+            $Digest = [string]$Asset.digest
+            $DigestMatch = [regex]::Match($Digest, '^sha256:(?<hash>[0-9a-fA-F]{64})$')
+            if (-not $DigestMatch.Success) {
+                throw "最新版 Release API 未返回有效 SHA256，拒绝下载未验证程序。"
+            }
+            return [pscustomobject]@{
+                Tag = $Tag
+                Url = $OfficialAssetUrl
+                Size = $AssetSize
+                Sha256 = $DigestMatch.Groups['hash'].Value.ToLowerInvariant()
+                MetadataSourceName = $Source.Name
+            }
+        }
+        catch {
+            $Message = "$($Source.Name) 查询失败：$($_.Exception.Message)"
+            [void]$Errors.Add($Message)
+            Write-Warning $Message
+        }
+    }
+
+    # API 可能受区域网络或匿名限额影响；再通过多个已实测支持 Release
+    # 页面的镜像读取同一官方标签和官方公布的 SHA256。下载后仍会校验
+    # PE 身份和 SHA256，页面显示的近似大小不作为精确长度依据。
+    $PageMetadataPrefixes = @(
+        [pscustomobject]@{ Name = "Release 页面加速源 ghfast.top"; Prefix = "https://ghfast.top/" },
+        [pscustomobject]@{ Name = "Release 页面加速源 ghproxy.net"; Prefix = "https://ghproxy.net/" },
+        [pscustomobject]@{ Name = "Release 页面加速源 gh.ddlc.top"; Prefix = "https://gh.ddlc.top/" },
+        [pscustomobject]@{ Name = "Release 页面加速源 ghproxy.it"; Prefix = "https://ghproxy.it/" },
+        [pscustomobject]@{ Name = "Release 页面加速源 github.boki.moe"; Prefix = "https://github.boki.moe/" },
+        [pscustomobject]@{ Name = "GitHub 官方 Release 页面"; Prefix = "" }
+    )
+    foreach ($Source in $PageMetadataPrefixes) {
+        try {
+            Write-Host "正在从 $($Source.Name) 查询 PoeChinese3 最新 Release..." -ForegroundColor Cyan
+            $Page = Invoke-WebRequest -Uri "$($Source.Prefix)$($script:LatestReleasePageUrl)" `
+                -UseBasicParsing -MaximumRedirection 5 -TimeoutSec 30 `
                 -Headers @{ "User-Agent" = "poe2-price-patch/$script:PatchVersion" }
             $FinalUrl = [string]$Page.BaseResponse.ResponseUri.AbsoluteUri
             $TagMatch = [regex]::Match($FinalUrl, '/releases/tag/(?<tag>[^/?#]+)', 'IgnoreCase')
@@ -123,8 +221,8 @@ function Get-Poe1LatestLocalizationRelease {
                 throw "最新版 Release 标签格式异常：$Tag"
             }
             $ExpandedOfficialUrl = "https://github.com/aianlinb/LibGGPK3/releases/expanded_assets/$([Uri]::EscapeDataString($Tag))"
-            $ExpandedUrl = "$($Source.Prefix)$ExpandedOfficialUrl"
-            $AssetsPage = Invoke-WebRequest -Uri $ExpandedUrl -UseBasicParsing -MaximumRedirection 5 -TimeoutSec 60 `
+            $AssetsPage = Invoke-WebRequest -Uri "$($Source.Prefix)$ExpandedOfficialUrl" `
+                -UseBasicParsing -MaximumRedirection 5 -TimeoutSec 30 `
                 -Headers @{ "User-Agent" = "poe2-price-patch/$script:PatchVersion" }
             $AssetNamePattern = [regex]::Escape($script:LocalizationAssetName)
             $AssetMatch = [regex]::Match(
@@ -135,13 +233,14 @@ function Get-Poe1LatestLocalizationRelease {
                 throw "最新版 Release 未公布 $($script:LocalizationAssetName) 或 SHA256。"
             }
             $RelativeUrl = [System.Net.WebUtility]::HtmlDecode($AssetMatch.Groups['url'].Value)
-            if ($RelativeUrl -notmatch '^/aianlinb/LibGGPK3/releases/download/[^/]+/PoeChinese3_win-x64\.exe$') {
+            $ExpectedRelativeUrl = "/aianlinb/LibGGPK3/releases/download/$Tag/$($script:LocalizationAssetName)"
+            if (-not $RelativeUrl.Equals($ExpectedRelativeUrl, [System.StringComparison]::Ordinal)) {
                 throw "最新版 Release 资源地址异常：$RelativeUrl"
             }
-            $OfficialAssetUrl = "https://github.com$RelativeUrl"
             return [pscustomobject]@{
                 Tag = $Tag
-                Url = $OfficialAssetUrl
+                Url = "https://github.com$RelativeUrl"
+                Size = 0
                 Sha256 = $AssetMatch.Groups['hash'].Value.ToLowerInvariant()
                 MetadataSourceName = $Source.Name
             }
@@ -152,6 +251,7 @@ function Get-Poe1LatestLocalizationRelease {
             Write-Warning $Message
         }
     }
+
     throw "无法确认 PoeChinese3 最新 Release：$([string]::Join(' | ', $Errors))"
 }
 
@@ -161,6 +261,9 @@ function Get-Poe1LatestLocalizationTool {
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
     $Release = Get-Poe1LatestLocalizationRelease
     Write-Host "已确认最新版本：$($Release.Tag)（元数据：$($Release.MetadataSourceName)）" -ForegroundColor Cyan
+    if ([long]$Release.Size -gt 0) {
+        Write-Host "官方文件大小：$($Release.Size) bytes" -ForegroundColor DarkGray
+    }
     Write-Host "官方 SHA256：$($Release.Sha256)" -ForegroundColor DarkGray
     $Destination = Join-Path $DestinationDirectory $script:LocalizationAssetName
     $Errors = New-Object System.Collections.Generic.List[string]
@@ -171,14 +274,17 @@ function Get-Poe1LatestLocalizationTool {
     }
     foreach ($Source in $script:LocalizationSourcePrefixes) {
         $DownloadUrl = "$($Source.Prefix)$($Release.Url)"
-        for ($Attempt = 1; $Attempt -le 2; $Attempt += 1) {
+        for ($Attempt = 1; $Attempt -le 1; $Attempt += 1) {
             $Temp = Join-Path $DestinationDirectory ([string]::Concat("PoeChinese3-", [Guid]::NewGuid().ToString("N"), ".download"))
             try {
                 Write-Host "正在从 $($Source.Name) 获取 PoeChinese3 最新版本（第 $Attempt 次尝试）..." -ForegroundColor Cyan
                 Invoke-WebRequest -Uri $DownloadUrl -OutFile $Temp -UseBasicParsing `
                     -Headers @{ "User-Agent" = "poe2-price-patch/$script:PatchVersion" } `
-                    -MaximumRedirection 5 -TimeoutSec 180
-                $Info = Test-Poe1LocalizationExecutable -Path $Temp -ExpectedSha256 $Release.Sha256
+                    -MaximumRedirection 5 -TimeoutSec 60
+                $DownloadedSize = (Get-Item -LiteralPath $Temp).Length
+                $ExpectedSize = if ([long]$Release.Size -gt 0) { [long]$Release.Size } else { [long]$DownloadedSize }
+                $Info = Test-Poe1LocalizationExecutable -Path $Temp `
+                    -ExpectedSha256 $Release.Sha256 -ExpectedSize $ExpectedSize
                 Move-Poe2FileAtomically -Source $Temp -Destination $Destination | Out-Null
                 return [pscustomobject]@{
                     Path = $Destination
@@ -192,13 +298,7 @@ function Get-Poe1LatestLocalizationTool {
             catch {
                 $Message = "$($Source.Name) 第 $Attempt 次尝试失败：$($_.Exception.Message)"
                 [void]$Errors.Add($Message)
-                if ($Attempt -lt 2) {
-                    Write-Warning "$Message，将重试。"
-                    Start-Sleep -Seconds 2
-                }
-                else {
-                    Write-Warning $Message
-                }
+                Write-Warning $Message
             }
             finally {
                 if (Test-Path -LiteralPath $Temp -PathType Leaf) {
@@ -376,9 +476,7 @@ try {
         Write-Poe1Step "使用 PoeChinese3 $($Tool.Version) 汉化 POE1 国际服"
         Write-Host "下载来源：$($Tool.SourceName)" -ForegroundColor DarkGray
         Write-Host "工具 SHA256：$($Tool.Sha256)" -ForegroundColor DarkGray
-        $BeforeHash = (Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash
         Invoke-Poe1LocalizationTool -ToolPath $Tool.Path -TargetPath $Target | Out-Null
-        $AfterHash = (Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash
         $Config = Set-Poe1LocalizationConfigLanguage
         if ([string]::IsNullOrWhiteSpace($Config.Path)) {
             Write-Warning "未找到 POE1 production*_Config.ini，请进入游戏后选择第二个（法文）国旗。"
@@ -387,9 +485,6 @@ try {
             Write-Host "已将 POE1 语言配置设为 fr：$($Config.Path)" -ForegroundColor Green
         }
         Write-Host "POE1 中文化完成（工具版本 $($Tool.Version)）。" -ForegroundColor Green
-        if ($BeforeHash -eq $AfterHash) {
-            Write-Host "当前客户端已经是中文化状态，本次仍使用了刚下载的最新工具。" -ForegroundColor Yellow
-        }
     }
     finally {
         if (Test-Path -LiteralPath $TempRoot -PathType Container) {

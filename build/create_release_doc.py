@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.5.7"
+PATCH_VERSION = "v0.5.8"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -145,7 +145,7 @@ def copy_template_doc() -> bool:
             "提取或写入失败：程序会等待短暂占用并在写入失败时自动恢复；仍失败时请关闭游戏和可能占用文件的工具后重试。"
         ),
         "缺少价格：可能是 poe2scout 暂无该物品数据，或英文名无法匹配本地物品表。": (
-            "缺少价格：可能是当前数据源暂无该物品，或名称无法匹配本地表。POE1 安装第三方汉化补丁时，请把显示语言设为自动识别或汉化补丁；低匹配会保留未命中的旧价格，数据源完全不可用时保留当前补丁。"
+            "缺少价格：可能是当前数据源暂无该物品，或名称无法匹配本地表。POE1 安装第三方汉化补丁时，请把显示语言设为自动识别或汉化补丁；低匹配会保留未命中的旧价格，数据源完全不可用时保留当前补丁。POE1 传奇写成 传奇名[<<价格>>]，POE2 写成 [价格|传奇名]；易刷与 PoE Overlay II 会按对应格式清理价格后使用精确传奇名查询。"
         ),
     }
     matched: set[str] = set()
@@ -243,10 +243,10 @@ def copy_template_doc() -> bool:
                     paragraph.add_run(f"POE1 / POE2 物价补丁 {PATCH_VERSION}")
 
     localization_steps = [
-        "在统一窗口选择 POE1，并确认客户端显示为国际服 Steam Bundles2 或国际服官方 GGPK；国服不会启用汉化按钮。",
-        "点击“一键汉化POE1国际服”。程序每次都会从 PoEDB 推荐的 LibGGPK3 GitHub 最新 Release 下载 PoeChinese3_win-x64.exe；查询和下载均优先使用国内 ghfast.top、gh-proxy.com 加速源，再回退 GitHub 官方源。文件 SHA256 必须匹配最新 Release 公布值，不使用旧缓存。",
-        "汉化工具完成并显示 Done! 中文化完成! 后，进入 POE1 选择第二个（法文）国旗；程序也会尝试把 production_Config.ini 设为 language=fr。",
-        "汉化会修改 POE1 游戏包，请关闭游戏和启动器。游戏更新会覆盖已写入的物价与汉化入口；更新完成后请重新汉化及更新物价，更新器会从当前 DAT 动态重建，不依赖固定赛季文件。遇到校验或启动问题时先使用 Steam 验证游戏文件。",
+        "选择 POE1 国际服 Steam Bundles2 或官方 GGPK；国服不会启用汉化按钮。",
+        "点击“一键汉化POE1国际服”。程序每次都会从 PoEDB 推荐的 LibGGPK3 GitHub 最新 Release 下载 PoeChinese3_win-x64.exe；依次使用 ghfast.top、gh-proxy.com、gh.ddlc.top、ghproxy.it、github.boki.moe、ghproxy.net、gh.jasonzeng.dev、gh.monlor.com，最后回退 GitHub 官方源。SHA256 必须匹配，API 可用时还会严格匹配文件大小；不使用旧缓存，窗口持续显示已运行秒数和当前阶段。",
+        "完成后在 POE1 选择第二个（法文）国旗；程序会尝试把 production_Config.ini 设为 language=fr。",
+        "汉化会修改游戏包，请关闭游戏和启动器。游戏更新后需重新汉化并更新物价；校验或启动异常时先用 Steam 验证游戏文件。",
     ]
     paragraphs = list(doc.paragraphs)
     for index, paragraph in enumerate(paragraphs):
@@ -259,7 +259,10 @@ def copy_template_doc() -> bool:
             following._element.getparent().remove(following._element)
         break
     para(doc, "POE1 国际服一键汉化", 13, True, after=4)
-    nums(doc, localization_steps)
+    # Keep this short appendix on one page. The template already leaves only
+    # the lower half of the final page for it, so use slightly tighter body
+    # rhythm instead of orphaning the fourth step on a nearly empty page.
+    nums(doc, localization_steps, size=10.5, after=2, line=1.05)
 
     generated = OUT_DIR / "使用文档.docx"
     doc.save(generated)
@@ -302,14 +305,14 @@ def bullets(doc, items):
         r.font.size = Pt(11)
 
 
-def nums(doc, items):
+def nums(doc, items, size=11, after=4, line=1.15):
     for i, item in enumerate(items, 1):
         p = doc.add_paragraph()
-        p.paragraph_format.space_after = Pt(4)
-        p.paragraph_format.line_spacing = 1.15
+        p.paragraph_format.space_after = Pt(after)
+        p.paragraph_format.line_spacing = line
         r = p.add_run(f"{i}. {item}")
         set_font(r)
-        r.font.size = Pt(11)
+        r.font.size = Pt(size)
 
 
 def build():
@@ -438,7 +441,7 @@ def build():
             "提示找不到游戏目录：改用手动选择，并选择直接包含 Content.ggpk 或 Bundles2\\_.index.bin 的游戏根目录；不要选择物价补丁文件夹。多个客户端必须明确选择。",
             "提取或写入失败：请先关闭游戏和可能占用文件的工具。",
             "提示专属基线缺失或过期：新版会先核验旧包，再离线清除本工具标记并重建；只有 DAT 损坏、结构无法解析、存在未知改动或平台并发写入时才要求验证/修复，拒绝前不会修改真实游戏。",
-            "缺少价格：可能是当前价格源暂无该物品数据，或物品名无法匹配本地物品表。",
+            "缺少价格：可能是当前价格源暂无该物品数据，或物品名无法匹配本地物品表。POE1 传奇写成 传奇名[<<价格>>]，POE2 写成 [价格|传奇名]；易刷与 PoE Overlay II 会按对应格式清理价格后使用精确传奇名查询。",
             "POE1 使用 Steam 汉化补丁但没有价格：把“POE1 显示语言”设为自动识别或汉化补丁，然后重新更新。",
             "价格源暂时不可用：程序会优先继续使用兼容缓存；如果没有安全缓存，会保留当前补丁并停止本次更新，可稍后重试。",
             "杀软报毒：自制 exe、加密脚本和修改游戏文件都可能触发敏感提示，需要自行判断风险。",

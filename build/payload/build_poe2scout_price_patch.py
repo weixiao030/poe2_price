@@ -104,11 +104,10 @@ DEFAULT_UNIQUE_GOLD_PRICES = (
 DEFAULT_PATCH_SCRIPT = Path(__file__).with_name("poe2_name_price_patch.py")
 PRICE_TEXT_RE = r"(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]"
 UNIQUE_MARKUP_PRICE_RE = rf"\[[^\]\r\n|]*{PRICE_TEXT_RE}[^\]\r\n|]*\|[^\]\r\n]+\]"
-UNIQUE_COMPAT_PRICE_RE = rf"\[<<{PRICE_TEXT_RE}>>\]"
-DEFAULT_UNIQUE_PRICE_LABEL_MODE = "compat"
+UNIQUE_SUFFIX_PRICE_RE = rf"\[<<{PRICE_TEXT_RE}>>\]"
+DEFAULT_UNIQUE_PRICE_LABEL_MODE = "markup"
 UNIQUE_PRICE_LABEL_MODES = (
     DEFAULT_UNIQUE_PRICE_LABEL_MODE,
-    "markup",
     "overlay",
     "newline",
     "off",
@@ -356,8 +355,8 @@ def strip_existing_price(name: str) -> str:
     )
     if markup:
         return markup.group(1).strip()
-    if re.search(rf"\s*{UNIQUE_COMPAT_PRICE_RE}$", name):
-        return re.sub(rf"\s*{UNIQUE_COMPAT_PRICE_RE}$", "", name).strip()
+    if re.search(rf"\s*{UNIQUE_SUFFIX_PRICE_RE}$", name):
+        return re.sub(rf"\s*{UNIQUE_SUFFIX_PRICE_RE}$", "", name).strip()
     if re.search(rf"<<\[{PRICE_TEXT_RE}\]>>$", name):
         return re.sub(rf"<<\[{PRICE_TEXT_RE}\]>>$", "", name).strip()
     if re.search(rf"\s*\[{PRICE_TEXT_RE}\]$", name):
@@ -368,7 +367,7 @@ def strip_existing_price(name: str) -> str:
 
 
 def format_unique_price_name(base_name: str, price: str, label_mode: str) -> str:
-    if label_mode == "compat":
+    if label_mode in {"suffix", "compat"}:
         return f"{base_name}[<<{price}>>]"
     if label_mode == "markup":
         return f"[{price}|{base_name}]"
@@ -3316,9 +3315,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_UNIQUE_PRICE_LABEL_MODE,
         help=(
             "How to label unique item prices in Words.datc64. "
-            "Default compat writes name[<<price>>], which PoE Overlay II and "
+            "Default markup writes [price|name], which PoE Overlay II and "
             "Exile Next TX both clean back to the exact unique name in copied item text. "
-            "markup, overlay, and newline are retained as legacy migration modes."
+            "overlay and newline are retained as legacy migration modes."
         ),
     )
     parser.add_argument("--patch-script", type=Path, default=DEFAULT_PATCH_SCRIPT)
