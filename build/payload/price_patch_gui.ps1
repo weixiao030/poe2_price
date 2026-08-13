@@ -403,8 +403,12 @@ function Show-PoePatchLauncherDialog {
     )
     $SavedLanguageMode = Get-Poe1SavedLanguageMode
     $SavedLanguageIndex = 0
+    $AutoLanguageIndex = 0
     for ($Index = 0; $Index -lt $LanguageOptions.Count; $Index += 1) {
         [void]$LanguageCombo.Items.Add($LanguageOptions[$Index])
+        if ([string]$LanguageOptions[$Index].Mode -eq "auto") {
+            $AutoLanguageIndex = $Index
+        }
         if ([string]$LanguageOptions[$Index].Mode -eq $SavedLanguageMode) {
             $SavedLanguageIndex = $Index
         }
@@ -576,13 +580,38 @@ function Show-PoePatchLauncherDialog {
 
     $UpdateLanguageControl = {
         $Version = & $GetRequestedGameVersion
-        if ($Version -eq "auto" -and $ClientCombo.SelectedItem) {
-            $Version = [string]$ClientCombo.SelectedItem.Candidate.GameVersion
+        $Candidate = $null
+        if ($AutoPathRadio.Checked -and $Version -eq "auto" -and $ClientCombo.SelectedItem) {
+            $Candidate = $ClientCombo.SelectedItem.Candidate
+            $Version = [string]$Candidate.GameVersion
+        }
+        elseif ($AutoPathRadio.Checked -and $ClientCombo.SelectedItem) {
+            $Candidate = $ClientCombo.SelectedItem.Candidate
         }
         $ShowLanguage = ($Version -eq "poe1")
+        $IsChina = $false
+        if ($ShowLanguage -and $null -ne $Candidate -and
+            [string]$Candidate.GameVersion -eq "poe1") {
+            $IsChina = [bool]$Candidate.InstallInfo.IsChina
+        }
+        elseif ($ShowLanguage -and $ManualPathRadio.Checked -and
+            (Test-PoePatchExistingDirectory -Path $PathTextBox.Text)) {
+            try {
+                $ManualInfo = Get-Poe1InstallInfo -GameDirectory $PathTextBox.Text -LanguageMode auto
+                $IsChina = [bool]$ManualInfo.IsChina
+            }
+            catch { $IsChina = $false }
+        }
+        if ($IsChina -and $LanguageCombo.SelectedIndex -ne $AutoLanguageIndex) {
+            $LanguageCombo.SelectedIndex = $AutoLanguageIndex
+        }
         $LanguageLabel.Visible = $ShowLanguage
         $LanguageCombo.Visible = $ShowLanguage
-        $LanguageCombo.Enabled = $ShowLanguage
+        $LanguageCombo.Enabled = $ShowLanguage -and -not $IsChina
+        $ToolTip.SetToolTip(
+            $LanguageCombo,
+            $(if ($IsChina) { "POE1 国服固定自动识别并写入简体中文资源表" } else { "汉化补丁模式会写入 POE1 繁体中文资源表" })
+        )
     }
 
     $ShowCandidateStatus = {
@@ -636,7 +665,7 @@ function Show-PoePatchLauncherDialog {
             }
             catch { $IsInternational = $false }
         }
-        $LocalizeButton.Visible = ($Version -eq "poe1")
+        $LocalizeButton.Visible = ($Version -eq "poe1" -and $IsInternational)
         $LocalizeButton.Enabled = $IsInternational -and -not $LocalizationState.Busy
     }
 
@@ -865,7 +894,14 @@ function Show-PoePatchLauncherDialog {
             if ($ManualPathRadio.Checked) {
                 & $SetStatus "请选择游戏根目录。" $false
             }
+            & $UpdateLanguageControl
             if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
+        })
+    $PathTextBox.Add_TextChanged({
+            if ($ManualPathRadio.Checked) {
+                & $UpdateLanguageControl
+                if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
+            }
         })
     $RefreshButton.Add_Click({ & $RefreshCandidates $true })
     $ClientCombo.Add_SelectedIndexChanged({
@@ -914,6 +950,7 @@ function Show-PoePatchLauncherDialog {
                             -RequestedGameVersion (& $GetRequestedGameVersion) `
                             -Path $PathTextBox.Text `
                             -Poe1LanguageMode (& $GetSelectedLanguageMode)
+                        & $UpdateLanguageControl
                         & $ShowCandidateStatus $Candidate | Out-Null
                         if ((& $GetRequestedGameVersion) -eq "auto") {
                             & $UpdateScopeForGame
@@ -978,6 +1015,9 @@ function Show-PoePatchLauncherDialog {
                 if ([string]$Candidate.GameVersion -eq "poe1") {
                     $SelectedInstallInfo = Get-Poe1InstallInfo -GameDirectory $Candidate.Path `
                         -LanguageMode $SelectedLanguageMode
+                    if ([bool]$SelectedInstallInfo.IsChina) {
+                        $SelectedLanguageMode = "auto"
+                    }
                 }
 
                 $PatchScope = "all"
