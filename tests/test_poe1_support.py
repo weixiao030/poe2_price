@@ -600,6 +600,33 @@ def test_poe1_explicit_language_modes_override_auto_detection(tmp_path: Path):
     assert all(not row["Detected"] for row in rows.values())
 
 
+def test_poe1_china_client_forces_auto_simplified_chinese_language(tmp_path: Path):
+    game = tmp_path / "WeGame POE1"
+    (game / "Bundles2").mkdir(parents=True)
+    (game / "Bundles2" / "_.index.bin").write_bytes(b"index")
+    (game / "wegame.ini").write_text("wegame", encoding="utf-8")
+    (game / "rail_api64.dll").write_bytes(b"rail")
+
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; . {ps_quote(PROFILES)}; "
+        "function global:Get-Poe1ConfigLanguage { param([string]$GameDirectory = '', [string]$ConfigDirectory = '') return 'fr' }; "
+        "function global:Get-PoeDetectedGameVersion { param([string]$GameDirectory) return 'poe1' }; "
+        "$rows = foreach ($requested in @('auto','localization','zh-TW','config')) { "
+        f"$info = Get-Poe1InstallInfo -GameDirectory {ps_quote(game)} -LanguageMode $requested; "
+        "[pscustomobject]@{ Requested=$requested; Mode=$info.LanguageMode; Code=$info.EffectiveLanguageCode; Path=$info.TcBaseItemsPath; IsChina=$info.IsChina } }; "
+        "$rows | ConvertTo-Json -Compress"
+    )
+    rows = json.loads(output)
+
+    assert all(row["Mode"] == "auto" for row in rows)
+    assert all(row["Code"] == "zh-CN" for row in rows)
+    assert all(
+        row["Path"] == "data/simplified chinese/baseitemtypes.datc64"
+        for row in rows
+    )
+    assert all(row["IsChina"] for row in rows)
+
+
 def test_latest_non_chinese_area_prevents_stale_localization_detection(tmp_path: Path):
     game = tmp_path / "game"
     (game / "logs").mkdir(parents=True)
@@ -672,6 +699,11 @@ def test_poe1_gui_and_scripts_forward_language_mode_and_isolate_restore_names():
     assert "-LanguageMode $Poe1LanguageMode" in restore
     assert "EffectiveLanguageCode" in common
     assert '"POE1真实还原补丁_${Kind}.zip"' in common
+    assert "$LanguageCombo.Enabled = $ShowLanguage -and -not $IsChina" in gui
+    assert "$LanguageCombo.SelectedIndex = $AutoLanguageIndex" in gui
+    assert '$LocalizeButton.Visible = ($Version -eq "poe1" -and $IsInternational)' in gui
+    assert "$PathTextBox.Add_TextChanged" in gui
+    assert '$SelectedLanguageMode = "auto"' in gui
 
 
 def test_poe1_restore_baseline_manifest_and_self_heal_are_strictly_scoped():

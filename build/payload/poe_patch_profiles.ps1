@@ -471,6 +471,11 @@ function Get-Poe1InstallInfo {
     $Mode = Get-Poe2GameMode -Poe2Dir $Resolved
     $IsChina = Test-Poe2ChinaClient -Poe2Dir $Resolved
     $LanguageMode = Resolve-Poe1LanguageMode -LanguageMode $LanguageMode
+    # 国服客户端只提供自己的简体中文资源表，不能套用国际服汉化或手动语言模式。
+    # 这里强制回到自动模式，确保从命令行绕过 GUI 时也不会请求不存在的 DAT。
+    if ($IsChina) {
+        $LanguageMode = "auto"
+    }
     $ConfiguredLanguage = Get-Poe1ConfigLanguage -GameDirectory $Resolved
     $DefaultLanguageCode = if ($IsChina) { "zh-CN" } else { "zh-TW" }
     $TargetLanguageCode = $ConfiguredLanguage
