@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.5.7"
+$script:PatchVersion = "v0.5.8"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -35,6 +35,214 @@ function Test-PoePatchExistingDirectory {
     }
     catch {
         return $false
+    }
+}
+
+function Read-PoePatchProcessLogText {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return ""
+    }
+
+    $Stream = $null
+    $Reader = $null
+    try {
+        $Stream = New-Object System.IO.FileStream(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite
+        )
+        $Reader = New-Object System.IO.StreamReader(
+            $Stream,
+            [System.Text.Encoding]::UTF8,
+            $true
+        )
+        return $Reader.ReadToEnd()
+    }
+    catch {
+        return ""
+    }
+    finally {
+        if ($null -ne $Reader) {
+            $Reader.Dispose()
+        }
+        elseif ($null -ne $Stream) {
+            $Stream.Dispose()
+        }
+    }
+}
+
+function Get-PoePatchProcessLogTail {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $Text = Read-PoePatchProcessLogText -Path $Path
+    $Lines = @($Text -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($Lines.Count -eq 0) {
+        return ""
+    }
+    return [string]$Lines[-1]
+}
+
+function Stop-PoePatchProcessTree {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Diagnostics.Process]$Process
+    )
+
+    try {
+        if ($Process.HasExited) {
+            return
+        }
+    }
+    catch {
+        return
+    }
+
+    # Windows PowerShell 5.1 only exposes Process.Kill() for the parent.  The
+    # localization wrapper starts PoeChinese3 as a child, so stopping only the
+    # wrapper could leave the game-file writer running after a GUI timeout.
+    $TaskKillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
+    if (Test-Path -LiteralPath $TaskKillPath -PathType Leaf) {
+        try {
+            & $TaskKillPath /PID $Process.Id /T /F 2>$null | Out-Null
+        }
+        catch {
+        }
+    }
+
+    try {
+        if (-not $Process.WaitForExit(5000)) {
+            Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+            [void]$Process.WaitForExit(5000)
+        }
+    }
+    catch {
+    }
+}
+
+function Invoke-PoePatchMonitoredLocalization {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+        [Parameter(Mandatory = $true)]
+        [string]$GameDirectory,
+        [scriptblock]$OnProgress = {},
+        [ValidateRange(20, 5000)]
+        [int]$PollMilliseconds = 200,
+        [ValidateRange(1000, 3600000)]
+        [int]$TimeoutMilliseconds = 1200000
+    )
+
+    $Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $Process = $null
+    $StdOutState = $null
+    $StdErrState = $null
+    try {
+        $StartInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $StartInfo.FileName = "powershell.exe"
+        $StartInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + `
+            $ScriptPath.Replace('"', '\"') + '" -Poe1Dir "' + $GameDirectory.Replace('"', '\"') + '"'
+        $StartInfo.WorkingDirectory = $GameDirectory
+        $StartInfo.UseShellExecute = $false
+        $StartInfo.CreateNoWindow = $true
+        $StartInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+        $StartInfo.RedirectStandardOutput = $true
+        $StartInfo.RedirectStandardError = $true
+        try { $StartInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+        try { $StartInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8 } catch { }
+        $Process = New-Object System.Diagnostics.Process
+        $Process.StartInfo = $StartInfo
+        if (-not $Process.Start()) {
+            throw "无法启动 POE1 汉化脚本。"
+        }
+        $StdOutState = [pscustomobject]@{
+            Reader = $Process.StandardOutput
+            Task = $Process.StandardOutput.ReadLineAsync()
+            Text = New-Object System.Text.StringBuilder
+            LastLine = ""
+        }
+        $StdErrState = [pscustomobject]@{
+            Reader = $Process.StandardError
+            Task = $Process.StandardError.ReadLineAsync()
+            Text = New-Object System.Text.StringBuilder
+            LastLine = ""
+        }
+        $DrainOutput = {
+            param($State, [bool]$WaitForAll)
+
+            while ($null -ne $State.Task -and ($WaitForAll -or $State.Task.IsCompleted)) {
+                if ($WaitForAll -and -not $State.Task.IsCompleted) {
+                    $State.Task.GetAwaiter().GetResult() | Out-Null
+                }
+                $Line = $State.Task.GetAwaiter().GetResult()
+                if ($null -eq $Line) {
+                    $State.Task = $null
+                    break
+                }
+                [void]$State.Text.AppendLine($Line)
+                if (-not [string]::IsNullOrWhiteSpace($Line)) {
+                    $State.LastLine = [string]$Line
+                }
+                $State.Task = $State.Reader.ReadLineAsync()
+            }
+        }
+
+        while (-not $Process.WaitForExit($PollMilliseconds)) {
+            if ($Stopwatch.ElapsedMilliseconds -ge $TimeoutMilliseconds) {
+                Stop-PoePatchProcessTree -Process $Process
+                throw "汉化运行超过 $([Math]::Round($TimeoutMilliseconds / 60000, 1)) 分钟，已停止等待。"
+            }
+
+            & $DrainOutput $StdOutState $false
+            & $DrainOutput $StdErrState $false
+            $LastLine = [string]$StdOutState.LastLine
+            if ([string]::IsNullOrWhiteSpace($LastLine)) {
+                $LastLine = [string]$StdErrState.LastLine
+            }
+            if ($LastLine.Length -gt 100) {
+                $LastLine = $LastLine.Substring(0, 97) + "..."
+            }
+            $ProgressText = "正在汉化 POE1（已运行 $([Math]::Floor($Stopwatch.Elapsed.TotalSeconds)) 秒）"
+            if (-not [string]::IsNullOrWhiteSpace($LastLine)) {
+                $ProgressText += "：$LastLine"
+            }
+            & $OnProgress $ProgressText | Out-Null
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+
+        $Process.WaitForExit()
+        & $DrainOutput $StdOutState $true
+        & $DrainOutput $StdErrState $true
+        $StdOut = $StdOutState.Text.ToString()
+        $StdErr = $StdErrState.Text.ToString()
+        $Stopwatch.Stop()
+        return [pscustomobject]@{
+            ExitCode = [int]$Process.ExitCode
+            StdOut = $StdOut
+            StdErr = $StdErr
+            DurationSeconds = [Math]::Round($Stopwatch.Elapsed.TotalSeconds, 1)
+        }
+    }
+    finally {
+        $Stopwatch.Stop()
+        if ($null -ne $Process) {
+            try {
+                if (-not $Process.HasExited) {
+                    Stop-PoePatchProcessTree -Process $Process
+                }
+            }
+            catch {
+            }
+            $Process.Dispose()
+        }
     }
 }
 
@@ -358,6 +566,14 @@ function Show-PoePatchLauncherDialog {
 
     $LocalizationState = [pscustomobject]@{ Busy = $false }
 
+    $Form.Add_FormClosing({
+            param($Sender, $EventArgs)
+            if ($LocalizationState.Busy) {
+                $EventArgs.Cancel = $true
+                & $SetStatus "POE1 汉化正在运行，请等待完成或超时停止。" $false
+            }
+        })
+
     $UpdateLanguageControl = {
         $Version = & $GetRequestedGameVersion
         if ($Version -eq "auto" -and $ClientCombo.SelectedItem) {
@@ -425,6 +641,8 @@ function Show-PoePatchLauncherDialog {
     }
 
     $InvokeLocalization = {
+        $LocalizationControlStates = @()
+        $PreviousControlBox = $Form.ControlBox
         try {
             $Candidate = $null
             if ($AutoPathRadio.Checked) {
@@ -446,17 +664,40 @@ function Show-PoePatchLauncherDialog {
             $LocalizationState.Busy = $true
             & $UpdateLocalizationButton
             $Form.UseWaitCursor = $true
-            & $SetStatus "正在下载最新版 PoeChinese3 并汉化 POE1，请稍候..." $false
-            $QuotedScript = '"' + $ScriptPath.Replace('"', '\"') + '"'
-            $QuotedGame = '"' + ([string]$Candidate.Path).Replace('"', '\"') + '"'
-            $Arguments = @(
-                "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $QuotedScript,
-                "-Poe1Dir", $QuotedGame
+            $Form.ControlBox = $false
+            $LocalizationControls = @($GameButtons) + @(
+                $AutoPathRadio, $ManualPathRadio, $RefreshButton, $ClientCombo,
+                $PathTextBox, $BrowseButton, $LanguageCombo, $LocalizeButton,
+                $CurrencyCheck, $UniqueCheck, $IslandCheck,
+                $CancelButton, $RestoreButton, $StartButton
             )
-            $Process = Start-Process -FilePath "powershell.exe" -ArgumentList $Arguments `
-                -WorkingDirectory ([string]$Candidate.Path) -Wait -PassThru -WindowStyle Normal
-            if ($Process.ExitCode -ne 0) {
-                throw "汉化脚本退出码：$($Process.ExitCode)"
+            $LocalizationControlStates = @(
+                foreach ($Control in $LocalizationControls) {
+                    [pscustomobject]@{ Control = $Control; Enabled = [bool]$Control.Enabled }
+                    $Control.Enabled = $false
+                }
+            )
+            & $SetStatus "正在下载最新版 PoeChinese3 并汉化 POE1，请稍候..." $false
+            [System.Windows.Forms.Application]::DoEvents()
+            $LocalizationResult = Invoke-PoePatchMonitoredLocalization `
+                -ScriptPath $ScriptPath -GameDirectory ([string]$Candidate.Path) `
+                -OnProgress {
+                    param([string]$ProgressText)
+                    & $SetStatus $ProgressText $false
+                }
+            if ($LocalizationResult.ExitCode -ne 0) {
+                $Details = @(
+                    ([string]$LocalizationResult.StdErr).Trim(),
+                    ([string]$LocalizationResult.StdOut).Trim()
+                ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+                $DetailText = ($Details -join "`r`n")
+                if ($DetailText.Length -gt 1200) {
+                    $DetailText = $DetailText.Substring($DetailText.Length - 1200)
+                }
+                if (-not [string]::IsNullOrWhiteSpace($DetailText)) {
+                    throw "汉化脚本退出码：$($LocalizationResult.ExitCode)`r`n$DetailText"
+                }
+                throw "汉化脚本退出码：$($LocalizationResult.ExitCode)"
             }
             Save-PoePatchGameDirectory -GameVersion poe1 -GameDirectory $Candidate.Path | Out-Null
             Save-Poe1LanguageMode -LanguageMode localization | Out-Null
@@ -480,6 +721,10 @@ function Show-PoePatchLauncherDialog {
         }
         finally {
             $Form.UseWaitCursor = $false
+            $Form.ControlBox = $PreviousControlBox
+            foreach ($State in $LocalizationControlStates) {
+                $State.Control.Enabled = $State.Enabled
+            }
             $LocalizationState.Busy = $false
             & $UpdateLocalizationButton
         }

@@ -98,7 +98,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.5.7"
+    assert version == "0.5.8"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -164,8 +164,9 @@ def test_release_document_describes_fail_safe_behavior():
         "POE1 国际服一键汉化",
         "每次都会从 PoEDB 推荐的 LibGGPK3 GitHub 最新 Release 下载",
         "第二个（法文）国旗",
-        "ghfast.top",
-        "gh-proxy.com",
+        "ghfast.top、gh-proxy.com、gh.ddlc.top、ghproxy.it、github.boki.moe",
+        "持续显示已运行秒数和当前阶段",
+        "POE1 传奇写成 传奇名[<<价格>>]，POE2 写成 [价格|传奇名]",
         "正常使用不需要联网",
     ):
         assert expected in text
@@ -212,14 +213,30 @@ def test_localization_payload_matches_domestic_first_download_policy():
     source = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
     payload = (PAYLOAD / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
     assert source == payload
-    for expected in ("ghfast.top", "gh-proxy.com", "GitHub 官方源", "Test-Poe1LocalizationExecutable", "SHA256"):
+    for expected in (
+        "ghfast.top",
+        "gh-proxy.com",
+        "gh.ddlc.top",
+        "ghproxy.it",
+        "github.boki.moe",
+        "ghproxy.net",
+        "gh.jasonzeng.dev",
+        "gh.monlor.com",
+        "GitHub 官方源",
+        "Test-Poe1LocalizationExecutable",
+        "SHA256",
+    ):
         assert expected in source
     assert source.index('Name = "国内加速源 ghfast.top"') < source.index(
         'Name = "国内加速源 gh-proxy.com"'
     )
     assert source.index('Name = "国内加速源 gh-proxy.com"') < source.index(
+        'Name = "备用加速源 gh.ddlc.top"'
+    )
+    assert source.index('Name = "备用加速源 gh.monlor.com"') < source.index(
         'Name = "GitHub 官方源"'
     )
+    assert "bdnb.cn" not in source
 
 
 def test_release_quick_start_keeps_directory_selection_instructions():

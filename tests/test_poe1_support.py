@@ -20,6 +20,7 @@ COMMON = TOOLS / "poe2_patch_common.ps1"
 PROFILES = TOOLS / "poe_patch_profiles.ps1"
 POE1_COMMON = TOOLS / "poe1_patch_common.ps1"
 POE1_UPDATE = TOOLS / "update_poe1_price_patch.ps1"
+GUI = TOOLS / "price_patch_gui.ps1"
 
 
 def ps_quote(value: Path | str) -> str:
@@ -305,21 +306,205 @@ def test_poe1_scripts_keep_isolated_paths_and_c_d_contract():
 
 def test_poe1_localization_download_prefers_domestic_accelerators_and_validates_tool():
     localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
-    assert "ghfast.top" in localize
-    assert "gh-proxy.com" in localize
-    assert localize.index('Name = "国内加速源 ghfast.top"') < localize.index(
-        'Name = "国内加速源 gh-proxy.com"'
+    download_sources = (
+        "ghfast.top",
+        "gh-proxy.com",
+        "gh.ddlc.top",
+        "ghproxy.it",
+        "github.boki.moe",
+        "ghproxy.net",
+        "gh.jasonzeng.dev",
+        "gh.monlor.com",
     )
-    assert localize.index('Name = "国内加速源 gh-proxy.com"') < localize.index(
-        'Name = "GitHub 官方源"'
-    )
+    positions = [localize.index(f'Prefix = "https://{source}/"') for source in download_sources]
+    assert positions == sorted(positions)
+    assert positions[-1] < localize.index('Name = "GitHub 官方源"')
+    assert "bdnb.cn" not in localize
+    assert "$script:LatestReleaseApiUrl" in localize
+    assert '"Accept" = "application/vnd.github+json"' in localize
+    assert "$Asset.digest" in localize
     assert "releases/expanded_assets/" in localize
     assert "Get-Poe1LatestLocalizationRelease" in localize
     assert "Test-Poe1LocalizationExecutable" in localize
     assert "Get-FileHash -LiteralPath $Path -Algorithm SHA256" in localize
-    assert "-ExpectedSha256 $Release.Sha256" in localize
+    assert "-ExpectedSha256 $Release.Sha256 -ExpectedSize $ExpectedSize" in localize
+    assert "$File.Length -ne $ExpectedSize" in localize
     assert "SHA256 与最新版 Release 公布值不一致" in localize
     assert "PoeChinese3|LibGGPK3" in localize
+
+
+def test_poe1_localization_release_api_uses_digest_and_exact_size():
+    localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
+    helper = powershell_function(localize, "Get-Poe1LatestLocalizationRelease")
+    expected_hash = "a" * 64
+    output = run_powershell(
+        "$ErrorActionPreference='Stop'; $WarningPreference='SilentlyContinue'; "
+        "$script:PatchVersion='test'; $script:LocalizationAssetName='PoeChinese3_win-x64.exe'; "
+        "$script:LatestReleaseApiUrl='https://api.example/latest'; "
+        "$script:LatestReleasePageUrl='https://github.example/releases/latest'; "
+        "function Invoke-RestMethod { [pscustomobject]@{draft=$false;prerelease=$false;tag_name='v9.8.7';assets=@([pscustomobject]@{name='PoeChinese3_win-x64.exe';size=6184600;digest='sha256:"
+        + expected_hash
+        + "';browser_download_url='https://github.com/aianlinb/LibGGPK3/releases/download/v9.8.7/PoeChinese3_win-x64.exe'})} }; "
+        f"{helper}; $result=Get-Poe1LatestLocalizationRelease 3>$null 6>$null; "
+        "$result | ConvertTo-Json -Compress"
+    )
+    result = json.loads(output)
+    assert result["Tag"] == "v9.8.7"
+    assert result["Size"] == 6184600
+    assert result["Sha256"] == expected_hash
+    assert result["MetadataSourceName"] == "GitHub API 加速源 gh-proxy.com"
+
+
+def test_poe1_localization_release_page_fallback_never_needs_bdnb():
+    localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
+    helper = powershell_function(localize, "Get-Poe1LatestLocalizationRelease")
+    expected_hash = "b" * 64
+    asset = "/aianlinb/LibGGPK3/releases/download/v9.8.7/PoeChinese3_win-x64.exe"
+    output = run_powershell(
+        "$ErrorActionPreference='Stop'; $WarningPreference='SilentlyContinue'; "
+        "$script:PatchVersion='test'; $script:LocalizationAssetName='PoeChinese3_win-x64.exe'; "
+        "$script:LatestReleaseApiUrl='https://api.example/latest'; "
+        "$script:LatestReleasePageUrl='https://github.com/aianlinb/LibGGPK3/releases/latest'; "
+        "function Invoke-RestMethod { throw 'API offline' }; "
+        "function Invoke-WebRequest { param([string]$Uri); "
+        "if($Uri -match 'expanded_assets'){return [pscustomobject]@{Content='"
+        + f'<a href="{asset}">PoeChinese3_win-x64.exe</a><span>sha256:{expected_hash}</span>'
+        + "'}}; "
+        "return [pscustomobject]@{BaseResponse=[pscustomobject]@{ResponseUri=[uri]'https://ghfast.top/https://github.com/aianlinb/LibGGPK3/releases/tag/v9.8.7'};Content=''} }; "
+        f"{helper}; $result=Get-Poe1LatestLocalizationRelease 3>$null 6>$null; "
+        "$result | ConvertTo-Json -Compress"
+    )
+    result = json.loads(output)
+    assert result == {
+        "Tag": "v9.8.7",
+        "Url": f"https://github.com{asset}",
+        "Size": 0,
+        "Sha256": expected_hash,
+        "MetadataSourceName": "Release 页面加速源 ghfast.top",
+    }
+
+
+def test_poe1_gui_localization_process_reports_progress_without_blocking(tmp_path: Path):
+    gui = GUI.read_text(encoding="utf-8-sig")
+    working_dir = tmp_path / "游戏目录 with spaces"
+    working_dir.mkdir()
+    fixture = working_dir / "fake localize with spaces.ps1"
+    fixture.write_text(
+        "\n".join(
+            [
+                "param([string]$Poe1Dir)",
+                "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
+                'Write-Host "阶段一"',
+                "Start-Sleep -Milliseconds 350",
+                'Write-Output "完成:$Poe1Dir"',
+            ]
+        ),
+        encoding="utf-8-sig",
+    )
+    helpers = "\n".join(
+        powershell_function(gui, name)
+        for name in (
+            "Read-PoePatchProcessLogText",
+            "Get-PoePatchProcessLogTail",
+            "Invoke-PoePatchMonitoredLocalization",
+        )
+    )
+
+    output = run_powershell(
+        f"$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; {helpers}; "
+        "$updates=New-Object System.Collections.Generic.List[string]; "
+        f"$result=Invoke-PoePatchMonitoredLocalization -ScriptPath {ps_quote(fixture)} "
+        f"-GameDirectory {ps_quote(working_dir)} -PollMilliseconds 50 -TimeoutMilliseconds 5000 "
+        "-OnProgress { param([string]$text) $updates.Add($text) | Out-Null }; "
+        "[pscustomobject]@{ExitCode=$result.ExitCode;StdOut=$result.StdOut;Updates=@($updates)} | ConvertTo-Json -Compress"
+    )
+    result = json.loads(output)
+
+    assert result["ExitCode"] == 0
+    assert f"完成:{working_dir}" in result["StdOut"]
+    assert any("正在汉化 POE1（已运行" in item for item in result["Updates"])
+    assert any("阶段一" in item for item in result["Updates"])
+
+
+def test_poe1_gui_localization_returns_stderr_and_nonzero_exit(tmp_path: Path):
+    gui = GUI.read_text(encoding="utf-8-sig")
+    fixture = tmp_path / "fake failure.ps1"
+    fixture.write_text(
+        "param([string]$Poe1Dir)\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\n[Console]::Error.WriteLine('模拟下载失败')\nexit 23\n",
+        encoding="utf-8-sig",
+    )
+    helpers = "\n".join(
+        powershell_function(gui, name)
+        for name in (
+            "Read-PoePatchProcessLogText",
+            "Get-PoePatchProcessLogTail",
+            "Stop-PoePatchProcessTree",
+            "Invoke-PoePatchMonitoredLocalization",
+        )
+    )
+    output = run_powershell(
+        f"$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; {helpers}; "
+        f"$result=Invoke-PoePatchMonitoredLocalization -ScriptPath {ps_quote(fixture)} "
+        f"-GameDirectory {ps_quote(tmp_path)} -PollMilliseconds 50 -TimeoutMilliseconds 5000; "
+        "$result | Select-Object ExitCode,StdErr | ConvertTo-Json -Compress"
+    )
+    result = json.loads(output)
+    assert result["ExitCode"] == 23
+    assert "模拟下载失败" in result["StdErr"]
+
+
+def test_poe1_gui_localization_timeout_stops_entire_process_tree(tmp_path: Path):
+    gui = GUI.read_text(encoding="utf-8-sig")
+    fixture = tmp_path / "fake hanging localization.ps1"
+    fixture.write_text(
+        "\n".join(
+            [
+                "param([string]$Poe1Dir)",
+                "$pidPath=Join-Path $Poe1Dir 'localization-child.pid'",
+                "$child=Start-Process powershell.exe -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -WindowStyle Hidden -PassThru",
+                "[IO.File]::WriteAllText($pidPath,[string]$child.Id)",
+                'Write-Output "子进程已启动"',
+                "Start-Sleep -Seconds 60",
+            ]
+        ),
+        encoding="utf-8-sig",
+    )
+    helpers = "\n".join(
+        powershell_function(gui, name)
+        for name in ("Stop-PoePatchProcessTree", "Invoke-PoePatchMonitoredLocalization")
+    )
+    output = run_powershell(
+        f"$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; {helpers}; "
+        "$timedOut=$false; try { "
+        f"Invoke-PoePatchMonitoredLocalization -ScriptPath {ps_quote(fixture)} "
+        f"-GameDirectory {ps_quote(tmp_path)} -PollMilliseconds 50 -TimeoutMilliseconds 2000 | Out-Null "
+        "} catch { $timedOut=$_.Exception.Message -match '已停止等待' }; "
+        f"$pidPath=Join-Path {ps_quote(tmp_path)} 'localization-child.pid'; "
+        "if(-not (Test-Path -LiteralPath $pidPath)){throw 'child pid was not written'}; "
+        "$childId=[int][IO.File]::ReadAllText($pidPath); Start-Sleep -Milliseconds 300; "
+        "$alive=Get-Process -Id $childId -ErrorAction SilentlyContinue; "
+        "if($alive){Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue;throw 'child survived timeout'}; "
+        "if(-not $timedOut){throw 'timeout was not reported'}; 'PROCESS_TREE_STOPPED'"
+    )
+    assert "PROCESS_TREE_STOPPED" in output
+
+
+def test_poe1_gui_localization_uses_hidden_redirected_child_process():
+    gui = GUI.read_text(encoding="utf-8-sig")
+    helper = powershell_function(gui, "Invoke-PoePatchMonitoredLocalization")
+
+    assert "$StartInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden" in helper
+    assert "$StartInfo.RedirectStandardOutput = $true" in helper
+    assert "$StartInfo.RedirectStandardError = $true" in helper
+    assert "$Process.WaitForExit($PollMilliseconds)" in helper
+    assert "[System.Windows.Forms.Application]::DoEvents()" in helper
+    assert "-Wait -PassThru -WindowStyle Normal" not in gui
+    assert "taskkill.exe" in gui
+    assert "/T /F" in gui
+    assert "$Form.Add_FormClosing" in gui
+    assert "$EventArgs.Cancel = $true" in gui
+    localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
+    assert "Get-FileHash -LiteralPath $Target" not in localize
 
 
 def test_poe1_current_dat_extraction_uses_one_batch_and_requires_english_baseitems():

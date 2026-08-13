@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BundleExtractor")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+747193add75b92f2468fbbcff5c91fa4bb06235c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5bf18340a9cb004e160785b2389d4cc6b3f23874")]
 [assembly: System.Reflection.AssemblyProductAttribute("BundleExtractor")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BundleExtractor")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

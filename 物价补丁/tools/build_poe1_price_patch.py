@@ -46,8 +46,12 @@ DEFAULT_POE_NINJA_LEAGUE = "Standard"
 PATCH_SCOPES = ("all", "currency", "uniques", "none")
 PRICE_SOURCES = ("poe-ninja", "poecurrency-cn")
 FALLBACK_PRICE_SOURCES = ("poe2scout", "poedb-economy")
-DEFAULT_UNIQUE_PRICE_LABEL_MODE = shared.DEFAULT_UNIQUE_PRICE_LABEL_MODE
-UNIQUE_PRICE_LABEL_MODES = shared.UNIQUE_PRICE_LABEL_MODES
+DEFAULT_UNIQUE_PRICE_LABEL_MODE = "suffix"
+UNIQUE_PRICE_LABEL_MODES = (
+    DEFAULT_UNIQUE_PRICE_LABEL_MODE,
+    "compat",
+    *shared.UNIQUE_PRICE_LABEL_MODES,
+)
 
 POE_NINJA_EXCHANGE_TYPES = (
     "Currency",
@@ -1174,8 +1178,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=DEFAULT_UNIQUE_PRICE_LABEL_MODE,
         help=(
             "How to label unique item prices in Words.datc64. "
-            "Default compat writes name[<<price>>] for both PoE Overlay II "
-            "and Exile Next TX; other modes are retained for legacy migration."
+            "POE1 defaults to suffix name[<<price>>], which the current POE1 "
+            "Exile Next TX and PoE Overlay II parsers both clean back to name. "
+            "POE2 uses the separate markup default [price|name]."
         ),
     )
     parser.add_argument("--patch-script", type=Path, default=DEFAULT_PATCH_SCRIPT)

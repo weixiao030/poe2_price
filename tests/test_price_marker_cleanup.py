@@ -22,9 +22,32 @@ def load_module(name: str, path: Path):
     return module
 
 
-def clean_exile_next_title_line(text: str) -> str:
-    """Mirror the active Exile Next TX trailing-bracket cleanup."""
-    return re.sub(r"\[[^\]]*\]$", "", text).strip()
+def strip_efarm_price_annotation_suffix(text: str) -> str:
+    """Mirror the shared plain ``[3D]`` suffix cleanup in 易刷."""
+    text = re.sub(
+        r"(?:\s*[\[［](?:(?:\d+(?:\.\d+)?|\.\d+)(?:c|d|e))+[\]］])+$",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text
+
+
+def clean_efarm_poe1_title_line(text: str) -> str:
+    """Mirror the active POE1 易刷 title cleanup stages."""
+    text = strip_efarm_price_annotation_suffix(text)
+    text = re.sub(r"\[[①-⑳]*\]", "", text)
+    text = re.sub(r"\[[^\]]*\]$", "", text)
+    return re.sub(r"^\[[^\]]*\]", "", text).strip()
+
+
+def clean_efarm_poe2_title_line(text: str) -> str:
+    """Mirror the active POE2 易刷 title cleanup stages."""
+    text = strip_efarm_price_annotation_suffix(text)
+    text = re.sub(r"\[[^|\]]*\||[\][]", "", text)
+    text = re.sub(r"\[[^\]]*\]$", "", text)
+    text = re.sub(r"^\[[^\]]*\]", "", text)
+    return re.sub(r"<[^<>]+>", "", text).strip()
 
 
 def clean_overlay_ii_title_line(text: str) -> str:
@@ -176,25 +199,33 @@ class PriceMarkerCleanupTests(unittest.TestCase):
         self.assertEqual(strip("普通名=不是价格"), "普通名=不是价格")
         self.assertEqual(strip(" 前导空格"), " 前导空格")
 
-    def test_poe1_and_poe2_default_to_compat_unique_price_labels(self):
+    def test_poe1_and_poe2_use_separate_query_tool_defaults(self):
         self.assertEqual(
             self.price_patch.DEFAULT_UNIQUE_PRICE_LABEL_MODE,
-            "compat",
+            "markup",
         )
         self.assertEqual(
             self.price_patch.UNIQUE_PRICE_LABEL_MODES,
-            ("compat", "markup", "overlay", "newline", "off"),
+            ("markup", "overlay", "newline", "off"),
         )
         self.assertEqual(
             self.price_patch.parse_args([]).unique_price_label_mode,
-            "compat",
+            "markup",
         )
         self.assertEqual(
             self.poe1_price_patch.parse_args([]).unique_price_label_mode,
-            "compat",
+            "suffix",
+        )
+        self.assertEqual(
+            self.poe1_price_patch.UNIQUE_PRICE_LABEL_MODES,
+            ("suffix", "compat", "markup", "overlay", "newline", "off"),
+        )
+        self.assertEqual(
+            self.price_patch.format_unique_price_name("冈姆的壮志", "0.25D", "compat"),
+            "冈姆的壮志[<<0.25D>>]",
         )
 
-    def test_compat_unique_price_labels_survive_supported_query_cleaners(self):
+    def test_poe2_markup_unique_price_labels_survive_supported_query_cleaners(self):
         cases = (
             ("冈姆的壮志", "0.25D"),
             ("三龙战纪", "1.00E"),
@@ -205,15 +236,43 @@ class PriceMarkerCleanupTests(unittest.TestCase):
                 label = self.price_patch.format_unique_price_name(
                     base_name,
                     price,
-                    "compat",
+                    "markup",
                 )
-                self.assertEqual(label, f"{base_name}[<<{price}>>]")
-                self.assertEqual(clean_exile_next_title_line(label), base_name)
+                self.assertEqual(label, f"[{price}|{base_name}]")
+                self.assertEqual(clean_efarm_poe2_title_line(label), base_name)
                 self.assertEqual(clean_overlay_ii_title_line(label), base_name)
 
-        # The old whole-line markup explains the base-type fallback regression:
-        # Exile Next TX removes the entire line and leaves an empty unique name.
-        self.assertEqual(clean_exile_next_title_line("[0.25D|冈姆的壮志]"), "")
+    def test_poe1_suffix_unique_price_labels_survive_supported_query_cleaners(self):
+        cases = (
+            ("冈姆的壮志", "0.25D"),
+            ("三龙战纪", "1.00E"),
+            ("低价传奇", "<1D"),
+        )
+        for base_name, price in cases:
+            with self.subTest(base_name=base_name, price=price):
+                label = self.price_patch.format_unique_price_name(
+                    base_name,
+                    price,
+                    "suffix",
+                )
+                self.assertEqual(label, f"{base_name}[<<{price}>>]")
+                self.assertEqual(clean_efarm_poe1_title_line(label), base_name)
+                self.assertEqual(clean_overlay_ii_title_line(label), base_name)
+
+    def test_cross_generation_labels_reproduce_both_efarm_regressions(self):
+        # POE1 drops a whole-line markup title. The remaining base type can make
+        # 易刷 pick another unique such as 背信弃义 instead of 冈姆的壮志.
+        self.assertEqual(
+            clean_efarm_poe1_title_line("[0.25D|冈姆的壮志]"),
+            "",
+        )
+
+        # POE2 unwraps square brackets before removing the inner angle-bracket
+        # price, leaving <> attached to the unique name.
+        self.assertEqual(
+            clean_efarm_poe2_title_line("神圣殿堂[<<3.00E>>]"),
+            "神圣殿堂<>",
+        )
 
     def test_full_word_cleanup_does_not_need_unique_gold_prices(self):
         WordEntry = self.price_patch.WordEntry
