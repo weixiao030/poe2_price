@@ -55,7 +55,7 @@
 - 国服 POE1 圣甲虫恢复国际服回填：`poecurrency-cn` 缺价时仍可用 ninja / scout / poedb 补上圣甲虫价。
 - 只读数据源审计补上 POE1（poe.ninja、poecurrency version=1、poe2scout PC、poedb），并刷新契约 baseline。
 - poe2scout 分类清单纳入构建健康项：新传奇分类不再默默丢弃；ninja 未覆盖的通货分类写入告警。
-- 修复部分电脑启动内置 Python 时要求提权（Win32 740）的问题：以 `RunAsInvoker` 调用，并优先使用 `poe_python.exe`。
+- 修复部分电脑启动内置 Python 时要求提权（Win32 740）的问题：以 `RunAsInvoker` 调用，并优先使用 `poe_python.exe`。成功构建后不再把 dat size 中的 2740570 误判成提权失败。
 - 修复发布包 `payload.zip` 与源脚本换行不一致导致 Windows Release 检查失败的问题。
 
 ### 26/8/13 更新（v0.5.8）

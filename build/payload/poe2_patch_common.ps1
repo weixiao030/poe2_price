@@ -2608,15 +2608,23 @@ function Test-Poe2PythonElevationFailure {
         $Exception = $null
     )
 
-    $Blob = @($Text, [string]$Exception)
-    if ($null -ne $Exception -and $Exception.PSObject.Properties["InnerException"]) {
-        $Blob += [string]$Exception.InnerException
-    }
-    $Joined = ($Blob -join "`n")
     if ($ExitCode -eq 740) {
         return $true
     }
-    return ($Joined -match "requires elevation|requested operation requires elevation|ERROR_ELEVATION_REQUIRED|740")
+
+    $ExceptionParts = @([string]$Exception)
+    if ($null -ne $Exception -and $Exception.PSObject.Properties["InnerException"]) {
+        $ExceptionParts += [string]$Exception.InnerException
+    }
+    $ExceptionText = ($ExceptionParts -join "`n")
+    $ElevationPattern = "requires elevation|requested operation requires elevation|ERROR_ELEVATION_REQUIRED"
+    if ($ExceptionText -match $ElevationPattern) {
+        return $true
+    }
+    if ($ExceptionText -match '(?i)(?:error(?:\s*(?:code)?)?|nativeerrorcode|win32|hresult|exit(?:\s*code)?)\D{0,16}\b740\b') {
+        return $true
+    }
+    return ($Text -match $ElevationPattern)
 }
 
 function Get-Poe2BundledPython {

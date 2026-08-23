@@ -914,9 +914,34 @@ def test_poe1_logical_restore_installs_only_game_dat_entries(tmp_path: Path):
 def test_python_invocation_avoids_admin_elevation():
     common = COMMON.read_text(encoding="utf-8-sig")
     invoke = powershell_function(common, "Invoke-Poe2Python")
+    detector = powershell_function(common, "Test-Poe2PythonElevationFailure")
     assert "__COMPAT_LAYER" in invoke
     assert "RunAsInvoker" in invoke
     assert "Get-Poe2PythonElevationMessage" in invoke
     assert "poe_python.exe" in common
     assert "以管理员身份运行" in common
     assert "requireAdministrator" not in common
+    assert "ERROR_ELEVATION_REQUIRED|740" not in detector
+
+
+def test_python_elevation_detection_ignores_dat_size_false_positive():
+    detector = powershell_function(
+        COMMON.read_text(encoding="utf-8-sig"),
+        "Test-Poe2PythonElevationFailure",
+    )
+    script = (
+        "$ErrorActionPreference='Stop';\n"
+        f"{detector}\n"
+        "$failed = New-Object System.Collections.Generic.List[string]\n"
+        "function Assert-Case([string]$Name, [bool]$Actual, [bool]$Expect) {\n"
+        "  if ($Actual -ne $Expect) { [void]$failed.Add(\"${Name}:$Actual\") }\n"
+        "}\n"
+        "Assert-Case 'dat-size' (Test-Poe2PythonElevationFailure -Text 'dat size: 2724108 -> 2740570' -ExitCode 0) $false\n"
+        "Assert-Case 'elapsed' (Test-Poe2PythonElevationFailure -Text '\"elapsed_ms\": 740' -ExitCode 0) $false\n"
+        "Assert-Case 'phrase' (Test-Poe2PythonElevationFailure -Text 'The requested operation requires elevation' -ExitCode 1) $true\n"
+        "Assert-Case 'error-code' (Test-Poe2PythonElevationFailure -Text '' -Exception 'Win32 error 740') $true\n"
+        "Assert-Case 'exit' (Test-Poe2PythonElevationFailure -Text '' -ExitCode 740) $true\n"
+        "if ($failed.Count) { throw ($failed -join '; ') }\n"
+        "'ok'\n"
+    )
+    assert run_powershell(script) == "ok"
