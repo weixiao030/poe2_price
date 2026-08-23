@@ -2597,6 +2597,53 @@ function Set-Poe2PythonEnvironment {
     $env:PYTHONUTF8 = "1"
 }
 
+function Get-Poe2PythonElevationMessage {
+    return 'Python 无法以普通权限启动。当前 python.exe 很可能被勾选了以管理员身份运行，或存在兼容性提权垫片。请取消该勾选，不要把整个物价补丁提权。补丁会以普通权限调用捆绑的 poe_python.exe。'
+}
+
+function Test-Poe2PythonElevationFailure {
+    param(
+        [string]$Text = "",
+        $ExitCode = $null,
+        $Exception = $null
+    )
+
+    $Blob = @($Text, [string]$Exception)
+    if ($null -ne $Exception -and $Exception.PSObject.Properties["InnerException"]) {
+        $Blob += [string]$Exception.InnerException
+    }
+    $Joined = ($Blob -join "`n")
+    if ($ExitCode -eq 740) {
+        return $true
+    }
+    return ($Joined -match "requires elevation|requested operation requires elevation|ERROR_ELEVATION_REQUIRED|740")
+}
+
+function Get-Poe2BundledPython {
+    param([string]$PythonDir)
+
+    if ([string]::IsNullOrWhiteSpace($PythonDir) -or -not (Test-Path -LiteralPath $PythonDir -PathType Container)) {
+        return ""
+    }
+    $Stock = Join-Path $PythonDir "python.exe"
+    $Preferred = Join-Path $PythonDir "poe_python.exe"
+    if ((Test-Path -LiteralPath $Stock -PathType Leaf) -and -not (Test-Path -LiteralPath $Preferred -PathType Leaf)) {
+        try {
+            Copy-Item -LiteralPath $Stock -Destination $Preferred -Force
+        }
+        catch {
+            Write-Warning "Unable to create poe_python.exe: $($_.Exception.Message)"
+        }
+    }
+    if (Test-Path -LiteralPath $Preferred -PathType Leaf) {
+        return $Preferred
+    }
+    if (Test-Path -LiteralPath $Stock -PathType Leaf) {
+        return $Stock
+    }
+    return ""
+}
+
 function Invoke-Poe2Python {
     param(
         [Parameter(Mandatory = $true)][string]$Python,
@@ -2606,8 +2653,11 @@ function Invoke-Poe2Python {
 
     Set-Poe2PythonEnvironment
     $OldErrorActionPreference = $ErrorActionPreference
+    $OldCompatLayer = $env:__COMPAT_LAYER
     $Lines = New-Object System.Collections.Generic.List[string]
+    $ExitCode = 0
     try {
+        $env:__COMPAT_LAYER = "RunAsInvoker"
         $ErrorActionPreference = "Continue"
         & $Python @ArgumentList 2>&1 | ForEach-Object {
             $Line = [string]$_
@@ -2618,16 +2668,33 @@ function Invoke-Poe2Python {
         }
         $ExitCode = $LASTEXITCODE
     }
+    catch {
+        $Lines.Add([string]$_)
+        if (Test-Poe2PythonElevationFailure -Text ($Lines -join "`n") -Exception $_.Exception) {
+            throw (Get-Poe2PythonElevationMessage)
+        }
+        throw
+    }
     finally {
         $ErrorActionPreference = $OldErrorActionPreference
+        if ($null -eq $OldCompatLayer) {
+            Remove-Item Env:__COMPAT_LAYER -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:__COMPAT_LAYER = $OldCompatLayer
+        }
     }
 
     $LineArray = @($Lines.ToArray())
+    $Text = ($LineArray -join "`n")
+    if (Test-Poe2PythonElevationFailure -Text $Text -ExitCode $ExitCode) {
+        throw (Get-Poe2PythonElevationMessage)
+    }
 
     return [pscustomobject]@{
         ExitCode = $ExitCode
         Lines    = $LineArray
-        Text     = ($LineArray -join "`n")
+        Text     = $Text
     }
 }
 
@@ -2711,6 +2778,8 @@ function Install-LocalPythonRuntime {
             if (-not (Test-Poe2PythonPackages $StagedPython)) {
                 throw "Extracted Python runtime is not usable."
             }
+            $StagedAlias = Join-Path $StageDir "poe_python.exe"
+            Copy-Item -LiteralPath $StagedPython -Destination $StagedAlias -Force
             $OldMoved = $false
             try {
                 if (Test-Path -LiteralPath $PythonDir -PathType Container) {
@@ -2733,7 +2802,10 @@ function Install-LocalPythonRuntime {
             if (Test-Path -LiteralPath $BackupDir -PathType Container) {
                 Remove-Item -LiteralPath $BackupDir -Recurse -Force -ErrorAction SilentlyContinue
             }
-            $LocalPython = Join-Path $PythonDir "python.exe"
+            $LocalPython = Get-Poe2BundledPython -PythonDir $PythonDir
+            if ([string]::IsNullOrWhiteSpace($LocalPython)) {
+                throw "Extracted Python runtime is missing."
+            }
             Write-Host "Python runtime ready: $LocalPython" -ForegroundColor Green
             return $LocalPython
         }
@@ -2756,8 +2828,8 @@ function Ensure-PythonRequests {
     Set-Poe2PythonEnvironment
 
     if (-not [string]::IsNullOrWhiteSpace($RepoRoot)) {
-        $LocalPython = Join-Path $RepoRoot "tools\python\python.exe"
-        if (Test-Path -LiteralPath $LocalPython -PathType Leaf) {
+        $LocalPython = Get-Poe2BundledPython -PythonDir (Join-Path $RepoRoot "tools\python")
+        if (-not [string]::IsNullOrWhiteSpace($LocalPython)) {
             if (Test-Poe2PythonPackages $LocalPython) {
                 return $LocalPython
             }

@@ -1655,6 +1655,49 @@ class PoecurrencyPricingTests(unittest.TestCase):
             self.assertEqual(summary_json["fallback_status"]["poe-ninja"], "ok")
             self.assertEqual(summary_json["high_value_reference_items"], 1)
 
+    def test_scout_category_health_reports_ninja_gaps(self):
+        unique = [
+            {"ApiId": "armour", "Label": "Armour"},
+            {"ApiId": "relic", "Label": "Relics"},
+        ]
+        currency = [
+            {"ApiId": "currency", "Label": "Currency"},
+            {"ApiId": "vaultkeys", "Label": "Reliquary Keys"},
+            {"ApiId": "vaal", "Label": "Vaal"},
+        ]
+        health = self.price_patch.build_scout_category_health(unique, currency)
+        self.assertIn("relic", health["discovered_unique_only"])
+        self.assertIn("weapon", health["hardcoded_unique_only"])
+        tracked = {item["scout"] for item in health["ninja_untracked_currency"]}
+        self.assertEqual(tracked, {"vaultkeys", "vaal"})
+        self.assertTrue(health["has_alerts"])
+
+    def test_fetch_unique_items_keeps_unknown_categories(self):
+        class FakeClient:
+            def __init__(self):
+                self.urls = []
+
+            def get_json(self, url):
+                self.urls.append(url)
+                if "Uniques/ByCategory" in url:
+                    category = "relic" if "Category=relic" in url else "armour"
+                    return {"Items": [{"Name": category, "CurrentPrice": 1}], "Pages": 1, "Total": 1}
+                raise AssertionError(url)
+
+        categories, items = self.price_patch.fetch_unique_items(
+            FakeClient(),
+            "https://api.poe2scout.com",
+            "runes",
+            max_workers=2,
+            discovered_categories=[
+                {"ApiId": "armour", "Label": "Armour"},
+                {"ApiId": "relic", "Label": "Relics"},
+            ],
+        )
+        self.assertEqual([item["ApiId"] for item in categories], ["armour", "relic"])
+        self.assertEqual({item["Name"] for item in items}, {"armour", "relic"})
+
+
 
 if __name__ == "__main__":
     unittest.main()

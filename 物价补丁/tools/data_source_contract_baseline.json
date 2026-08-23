@@ -1,13 +1,30 @@
 {
-  "contract_version": 1,
-  "captured_at": "2026-07-10",
-  "description": "Compact live-source category and field contract; contains no prices or item values.",
+  "contract_version": 2,
+  "captured_at": "2026-08-23",
+  "description": "Compact live-source category and field contract for POE1/POE2; contains no prices or item values.",
   "sources": {
     "poe2scout": {
       "categories": [
         "core:exchange_snapshot",
         "core:reference_currencies",
         "core:snapshot_pairs",
+        "currency:currency",
+        "currency:fragments",
+        "currency:runes",
+        "currency:essences",
+        "currency:ultimatum",
+        "currency:expedition",
+        "currency:ritual",
+        "currency:vaultkeys",
+        "currency:breach",
+        "currency:abyss",
+        "currency:uncutgems",
+        "currency:lineagesupportgems",
+        "currency:delirium",
+        "currency:incursion",
+        "currency:idol",
+        "currency:verisium",
+        "currency:vaal",
         "accessory",
         "armour",
         "flask",
@@ -142,25 +159,22 @@
       "categories": [
         "通货仓库",
         "催化剂",
-        "先祖秘藏",
         "先驱徽记",
         "凝视",
         "合金通货",
         "圣典",
+        "地图碎片",
         "星辉矿石",
-        "梦魇拟像",
         "液化情感",
         "深渊通货",
         "渡鸦之触",
         "溶剂",
         "灵核",
         "神庙通货",
-        "祭坛通货",
         "秘术溶剂",
         "符文",
         "精华",
         "血脉辅助宝石",
-        "裂隙通货",
         "雕像",
         "预兆"
       ],
@@ -234,6 +248,139 @@
           "us_rows",
           "us_url",
           "warning"
+        ]
+      }
+    },
+    "poe.ninja-poe1": {
+      "categories": [
+        "Currency",
+        "Fragment",
+        "DivinationCard",
+        "Essence",
+        "Scarab",
+        "Fossil",
+        "Resonator",
+        "Oil",
+        "DeliriumOrb",
+        "Artifact",
+        "AllflameEmber",
+        "Omen",
+        "Tattoo",
+        "Runegraft",
+        "DjinnCoin",
+        "Ducat",
+        "EnshroudingCrystal",
+        "Astrolabe"
+      ],
+      "field_sets": {
+        "exchange": [
+          "id",
+          "primaryValue",
+          "volumePrimaryValue",
+          "maxVolumeCurrency",
+          "maxVolumeRate",
+          "sparkline"
+        ],
+        "root": [
+          "core",
+          "lines",
+          "items"
+        ]
+      }
+    },
+    "poecurrency.top-poe1": {
+      "categories": [
+        "通货仓库",
+        "余烬",
+        "军团通货",
+        "圣甲虫",
+        "庄园通货",
+        "掘矿仓库",
+        "文身",
+        "星盘",
+        "碎片仓库",
+        "禁域通货",
+        "符文之结",
+        "精华仓库",
+        "菌潮仓库",
+        "裂隙通货",
+        "赛季通货",
+        "超越通货",
+        "雾魇仓库",
+        "预兆",
+        "高价命运卡"
+      ],
+      "field_sets": {
+        "category": [
+          "category_label",
+          "items"
+        ],
+        "item": [
+          "item_name",
+          "engname",
+          "latest_buy1",
+          "latest_sell1",
+          "buy_avg",
+          "sell_avg",
+          "currency_unit"
+        ]
+      }
+    },
+    "poe2scout-poe1": {
+      "categories": [
+        "currency",
+        "fragments",
+        "scarabs",
+        "essences",
+        "fossils",
+        "oils",
+        "omens",
+        "ducats"
+      ],
+      "field_sets": {
+        "reference_currency": [
+          "ApiId",
+          "Text",
+          "RelativePrice"
+        ],
+        "price": [
+          "api_id",
+          "en_name",
+          "category",
+          "price_chaos"
+        ]
+      }
+    },
+    "poedb-poe1": {
+      "categories": [
+        "Economy",
+        "Economy_Scarabs",
+        "Economy_Fragments",
+        "Economy_Essences",
+        "Economy_Fossils",
+        "Economy_Oils",
+        "Economy_Delirium",
+        "Economy_Divination_Cards"
+      ],
+      "field_sets": {
+        "category_stat": [
+          "page",
+          "status",
+          "us_rows",
+          "cn_rows",
+          "us_url",
+          "cn_url"
+        ],
+        "summary": [
+          "source",
+          "status",
+          "us_url",
+          "cn_url",
+          "category_pages",
+          "category_count",
+          "failed_categories",
+          "us_rows",
+          "cn_rows"
         ]
       }
     }

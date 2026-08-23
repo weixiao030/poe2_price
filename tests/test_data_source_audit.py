@@ -358,7 +358,16 @@ class DataSourceAuditTests(unittest.TestCase):
         baseline = self.audit.load_baseline(BASELINE_PATH)
         self.assertEqual(
             set(baseline["sources"]),
-            {"poe2scout", "poe.ninja", "poecurrency.top", "poe2db"},
+            {
+                "poe2scout",
+                "poe.ninja",
+                "poecurrency.top",
+                "poe2db",
+                "poe.ninja-poe1",
+                "poecurrency.top-poe1",
+                "poe2scout-poe1",
+                "poedb-poe1",
+            },
         )
         for contract in baseline["sources"].values():
             self.assertTrue(contract["categories"])
@@ -367,6 +376,24 @@ class DataSourceAuditTests(unittest.TestCase):
         self.assertIn("--baseline", workflow)
         self.assertIn("data_source_contract_baseline.json", workflow)
         self.assertIn("contents: read", workflow)
+
+
+    def test_default_auditors_cover_poe1_and_poe2(self):
+        names = [name for name, _auditor in self.audit.DEFAULT_AUDITORS]
+        self.assertEqual(
+            names,
+            [
+                "poe2scout",
+                "poe.ninja",
+                "poecurrency.top",
+                "poe2db",
+                "poe.ninja-poe1",
+                "poecurrency.top-poe1",
+                "poe2scout-poe1",
+                "poedb-poe1",
+            ],
+        )
+
 
 
 if __name__ == "__main__":

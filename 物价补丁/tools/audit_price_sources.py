@@ -16,6 +16,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Mapping
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -25,6 +26,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import build_poe1_price_patch as poe1_builder
 import build_poe2scout_price_patch as builder
 from price_sources.health import (
     PARTIAL,
@@ -569,7 +571,23 @@ def audit_poe2scout(
         "core:snapshot_pairs",
     ]
     unique_categories = [str(category.get("ApiId")) for category in categories]
-    discovered_categories = core_categories + (
+    currency_categories: list[str] = []
+    category_health: dict[str, Any] = {}
+    try:
+        listed = builder.fetch_item_categories(client, api_base, league.scout)
+        currency_categories = builder.category_api_ids(listed.get("currency") or [])
+        category_health = builder.build_scout_category_health(
+            listed.get("unique") or categories,
+            listed.get("currency") or [],
+        )
+    except Exception as exc:
+        category_health = {
+            "has_alerts": True,
+            "alerts": ["category_index_failed"],
+            "index_error": f"{type(exc).__name__}: {exc}",
+        }
+    currency_labels = [f"currency:{item}" for item in currency_categories]
+    discovered_categories = core_categories + currency_labels + (
         unique_categories or (["unique-category-discovery"] if failed_unique else [])
     )
     succeeded_categories = core_categories + succeeded_unique
@@ -615,6 +633,7 @@ def audit_poe2scout(
             "succeeded": succeeded_categories,
             "failed": failed_unique,
         },
+        "category_health": category_health,
         "field_sets": field_sets,
     }
     contract_drift = compare_contract(
@@ -623,7 +642,15 @@ def audit_poe2scout(
         field_sets,
         baseline_expected=baseline is not None,
     )
-    return _entry(health, metrics, contract_drift=contract_drift)
+    extra_reasons = []
+    if category_health.get("has_alerts"):
+        extra_reasons.append("scout_category_health")
+    return _entry(
+        health,
+        metrics,
+        contract_drift=contract_drift,
+        partial_reasons=tuple(extra_reasons),
+    )
 
 
 def audit_poe_ninja(
@@ -863,6 +890,238 @@ def audit_poe2db(
     return _entry(health, metrics, contract_drift=contract_drift)
 
 
+def audit_poe1_ninja(
+    client: RecordingClient,
+    _league: LeagueSelection,
+    baseline: Mapping[str, Any] | None,
+    _max_workers: int,
+) -> dict[str, Any]:
+    ninja_league, _source, warnings = poe1_builder.discover_poe_ninja_league(
+        client,
+        poe1_builder.DEFAULT_POE_NINJA_INDEX_URL,
+        None,
+    )
+    raw, prices, divine_chaos = poe1_builder.fetch_poe_ninja_prices(
+        client,
+        poe1_builder.DEFAULT_POE_NINJA_EXCHANGE_API,
+        poe1_builder.DEFAULT_POE_NINJA_ITEM_API,
+        ninja_league,
+        include_uniques=False,
+    )
+    discovered = [str(item) for item in poe1_builder.POE_NINJA_EXCHANGE_TYPES]
+    failed = [str(item) for item in raw.get("failed_categories") or []]
+    succeeded = [item for item in discovered if f"exchange:{item}" not in failed]
+    field_sets = {
+        "exchange": _array_item_fields(
+            ((raw.get("exchange_payloads") or {}).get("Currency") or {}).get("lines")
+        ),
+        "root": _object_fields((raw.get("exchange_payloads") or {}).get("Currency")),
+    }
+    health = evaluate_source_health(
+        "poe.ninja-poe1",
+        raw,
+        expected_root="object",
+        http=client.latest_http(lambda url: "/poe1/api/economy/exchange/" in url),
+        item_count=len(prices),
+        match_count=len(prices),
+        item_names=sorted({item.en_name for item in prices.values() if item.en_name}),
+        discovered_categories=discovered,
+        enabled_categories=discovered,
+        succeeded_categories=succeeded,
+        failed_categories=failed,
+        key_fields=("lines", "items", "primaryValue"),
+        baseline_schema=_baseline_schema(baseline, "poe.ninja-poe1"),
+    )
+    metrics = {
+        "league": ninja_league,
+        "league_warnings": list(warnings),
+        "price_items": len(prices),
+        "divine_price_chaos": str(divine_chaos),
+        "categories": {
+            "discovered": discovered,
+            "succeeded": succeeded,
+            "failed": failed,
+        },
+        "field_sets": field_sets,
+    }
+    contract_drift = compare_contract(
+        _baseline_contract(baseline, "poe.ninja-poe1"),
+        discovered,
+        field_sets,
+        baseline_expected=baseline is not None,
+    )
+    return _entry(health, metrics, contract_drift=contract_drift)
+
+
+def audit_poe1_poecurrency(
+    client: RecordingClient,
+    _league: LeagueSelection,
+    baseline: Mapping[str, Any] | None,
+    _max_workers: int,
+) -> dict[str, Any]:
+    payload = client.get_json(poe1_builder.DEFAULT_POECURRENCY_SUMMARY_API)
+    prices, divine_chaos, quality = poe1_builder.collect_poecurrency_prices(
+        payload,
+        Decimal("0"),
+    )
+    normalized = builder.normalize_poecurrency_summary(payload)
+    categories = [
+        str(category.get("category_label") or "")
+        for category in normalized
+        if str(category.get("category_label") or "")
+    ]
+    field_sets = {
+        "category": ["category_label", "items"],
+        "item": _array_item_fields(
+            next((category.get("items") for category in normalized if category.get("items")), [])
+        ),
+    }
+    health = evaluate_source_health(
+        "poecurrency.top-poe1",
+        payload if isinstance(payload, dict) else {"categories": payload},
+        expected_root="object",
+        http=client.latest_http(lambda url: "poecurrency.top" in url and "version=1" in url),
+        item_count=len(prices),
+        match_count=len(prices),
+        item_names=sorted({item.en_name or item.localized_name for item in prices.values()}),
+        discovered_categories=categories,
+        enabled_categories=categories,
+        succeeded_categories=categories,
+        key_fields=("item_name", "engname", "latest_buy1", "latest_sell1"),
+        baseline_schema=_baseline_schema(baseline, "poecurrency.top-poe1"),
+    )
+    metrics = {
+        "price_items": len(prices),
+        "divine_price_chaos": str(divine_chaos),
+        "quality": quality,
+        "categories": {
+            "discovered": categories,
+            "succeeded": categories,
+            "failed": [],
+        },
+        "field_sets": field_sets,
+    }
+    contract_drift = compare_contract(
+        _baseline_contract(baseline, "poecurrency.top-poe1"),
+        categories,
+        field_sets,
+        baseline_expected=baseline is not None,
+    )
+    return _entry(health, metrics, contract_drift=contract_drift)
+
+
+def audit_poe1_scout(
+    client: RecordingClient,
+    _league: LeagueSelection,
+    baseline: Mapping[str, Any] | None,
+    _max_workers: int,
+) -> dict[str, Any]:
+    raw, prices, divine_chaos = poe1_builder.fetch_poe2scout_poe1_prices(
+        client,
+        poe1_builder.DEFAULT_POE2SCOUT_API,
+        "",
+        poe1_builder.DEFAULT_POE2SCOUT_REALM,
+    )
+    categories = sorted(
+        {
+            str(item.category)
+            for item in prices.values()
+            if item.category
+        }
+    )
+    field_sets = {
+        "reference_currency": ["ApiId", "Text", "RelativePrice"],
+        "price": ["api_id", "en_name", "category", "price_chaos"],
+    }
+    health = evaluate_source_health(
+        "poe2scout-poe1",
+        raw,
+        expected_root="object",
+        http=client.latest_http(lambda url: "/pc/Leagues/" in url and url.endswith("/SnapshotPairs")),
+        item_count=len(prices),
+        match_count=len(prices),
+        item_names=sorted({item.en_name for item in prices.values() if item.en_name}),
+        discovered_categories=categories,
+        enabled_categories=categories,
+        succeeded_categories=categories,
+        key_fields=("ApiId", "Text", "RelativePrice"),
+        baseline_schema=_baseline_schema(baseline, "poe2scout-poe1"),
+    )
+    metrics = {
+        "league": raw.get("league"),
+        "price_items": len(prices),
+        "divine_price_chaos": str(divine_chaos),
+        "snapshot_pairs": raw.get("snapshot_pair_count"),
+        "categories": {
+            "discovered": categories,
+            "succeeded": categories,
+            "failed": [],
+        },
+        "field_sets": field_sets,
+    }
+    contract_drift = compare_contract(
+        _baseline_contract(baseline, "poe2scout-poe1"),
+        categories,
+        field_sets,
+        baseline_expected=baseline is not None,
+    )
+    return _entry(health, metrics, contract_drift=contract_drift)
+
+
+def audit_poe1_poedb(
+    client: RecordingClient,
+    _league: LeagueSelection,
+    baseline: Mapping[str, Any] | None,
+    max_workers: int,
+) -> dict[str, Any]:
+    raw, prices, divine_chaos = poe1_builder.fetch_poedb_poe1_prices(
+        client,
+        poe1_builder.DEFAULT_POEDB_US_ECONOMY_URL,
+        poe1_builder.DEFAULT_POEDB_CN_ECONOMY_URL,
+    )
+    discovered = [str(item) for item in raw.get("discovered_categories") or raw.get("category_pages") or []]
+    if not discovered:
+        discovered = [str(item.get("page") or "") for item in raw.get("category_page_stats") or [] if item.get("page")]
+    failed = [str(item) for item in raw.get("failed_categories") or []]
+    succeeded = [item for item in discovered if item and item not in set(failed)]
+    field_sets = {
+        "category_stat": _array_item_fields(raw.get("category_page_stats")),
+        "summary": _object_fields(raw),
+    }
+    health = evaluate_source_health(
+        "poedb-poe1",
+        raw,
+        expected_root="object",
+        http=client.latest_http(lambda url: "poedb.tw" in url and "/Economy" in url),
+        item_count=len(prices),
+        match_count=len(prices),
+        item_names=sorted({item.en_name for item in prices.values() if item.en_name}),
+        discovered_categories=discovered,
+        enabled_categories=discovered,
+        succeeded_categories=succeeded,
+        failed_categories=failed,
+        key_fields=("page", "us_rows", "cn_rows"),
+        baseline_schema=_baseline_schema(baseline, "poedb-poe1"),
+    )
+    metrics = {
+        "price_items": len(prices),
+        "divine_price_chaos": str(divine_chaos),
+        "categories": {
+            "discovered": discovered,
+            "succeeded": succeeded,
+            "failed": failed,
+        },
+        "field_sets": field_sets,
+    }
+    contract_drift = compare_contract(
+        _baseline_contract(baseline, "poedb-poe1"),
+        discovered,
+        field_sets,
+        baseline_expected=baseline is not None,
+    )
+    return _entry(health, metrics, contract_drift=contract_drift)
+
+
 DEFAULT_AUDITORS: tuple[
     tuple[str, Callable[[RecordingClient, LeagueSelection, Mapping[str, Any] | None, int], dict[str, Any]]],
     ...,
@@ -871,6 +1130,10 @@ DEFAULT_AUDITORS: tuple[
     ("poe.ninja", audit_poe_ninja),
     ("poecurrency.top", audit_poecurrency),
     ("poe2db", audit_poe2db),
+    ("poe.ninja-poe1", audit_poe1_ninja),
+    ("poecurrency.top-poe1", audit_poe1_poecurrency),
+    ("poe2scout-poe1", audit_poe1_scout),
+    ("poedb-poe1", audit_poe1_poedb),
 )
 
 

@@ -34,8 +34,21 @@
 
 ---
 
+## 数据源
+
+当前**没有**使用官方 Trade 接口。
+
+- POE2 国际服：主源 poe2scout（全量 SnapshotPairs），备用 poe.ninja / poe2db。
+- POE2 国服：主源 `poecurrency.top/api/summary?version=2`，没有国服价的条目再用国际参考源补。
+- POE1 国际服：主源 poe.ninja，备用 poe2scout / poedb。
+- POE1 国服：主源 `poecurrency.top/api/summary?version=1`，再用 poe.ninja / scout / poedb 补缺；**圣甲虫只保留国服价，不用国际服圣甲虫价回填**。
+- 构建时会对照 poe2scout `Items/Categories` 做分类健康检查：新分类只报警并继续抓取，不会默默丢掉。
+- 只读契约审计见 `物价补丁/tools/audit_price_sources.py`，覆盖 POE1/POE2。
+
 ## 后续开发计划
-待定
+
+- 评估 Scrying Orb、Corpse 是否具备一对一标价条件。
+- 6 种最新诅咒纪念币需等 DAT 钉名后再决定是否标价；官方预告为不可交易任务物品。
 
 ---
 

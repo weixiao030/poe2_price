@@ -149,6 +149,25 @@ POE_NINJA_ITEM_TYPES = (
     "UniqueTablets",
     "PrecursorTablets",
 )
+SCOUT_TO_NINJA_CURRENCY = {
+    "currency": "Currency",
+    "fragments": "Fragments",
+    "runes": "Runes",
+    "essences": "Essences",
+    "ultimatum": "SoulCores",
+    "expedition": "Expedition",
+    "ritual": "Ritual",
+    "vaultkeys": "VaultKeys",
+    "breach": "Breach",
+    "abyss": "Abyss",
+    "uncutgems": "UncutGems",
+    "lineagesupportgems": "LineageSupportGems",
+    "delirium": "Delirium",
+    "incursion": "Incursion",
+    "idol": "Idols",
+    "verisium": "Verisium",
+    "vaal": "Vaal",
+}
 WORDS_ROW_SIZE = 64
 WORDS_EN_NAME_OFFSET = 4
 WORDS_DISPLAY_NAME_OFFSET = 48
@@ -1462,6 +1481,18 @@ def build_scout_prices(
     unique_categories: list[dict[str, Any]] = []
     unique_items: list[dict[str, Any]] = []
     unique_fetch_error = ""
+    currency_categories: list[dict[str, Any]] = []
+    category_index_error = ""
+    listed_unique: list[dict[str, Any]] = []
+    try:
+        listed = fetch_item_categories(client, api_base, league)
+        currency_categories = [dict(item) for item in listed.get("currency") or []]
+        listed_unique = [dict(item) for item in listed.get("unique") or []]
+        if not include_uniques:
+            unique_categories = listed_unique
+    except Exception as exc:
+        category_index_error = f"{type(exc).__name__}: {exc}"
+        progress("poe2scout：分类清单读取失败，仅保留价格对")
     if include_uniques:
         try:
             unique_categories, unique_items = fetch_unique_items(
@@ -1469,6 +1500,7 @@ def build_scout_prices(
                 api_base,
                 league,
                 max_workers=max(1, max_workers),
+                discovered_categories=listed_unique or None,
             )
         except Exception as exc:
             unique_fetch_error = f"{type(exc).__name__}: {exc}"
@@ -1508,6 +1540,25 @@ def build_scout_prices(
     scout["enabled_unique_categories"] = enabled_unique_categories
     scout["healthy_unique_categories"] = healthy_unique_categories
     scout["failed_unique_categories"] = failed_unique_categories
+    category_health = build_scout_category_health(unique_categories, currency_categories)
+    if category_index_error:
+        category_health = dict(category_health)
+        category_health["index_error"] = category_index_error
+        category_health["alerts"] = list(category_health.get("alerts") or []) + [
+            "category_index_failed"
+        ]
+        category_health["has_alerts"] = True
+    scout["currency_categories"] = category_health["currency_categories"]
+    scout["category_health"] = category_health
+    if category_health.get("has_alerts"):
+        alert_text = ", ".join(category_health.get("alerts") or [])
+        progress(f"poe2scout：分类健康项告警 {alert_text}")
+        scout["warning"] = "; ".join(
+            value for value in (scout.get("warning"), f"category_health:{alert_text}") if value
+        )
+        if scout.get("status") == "ok":
+            scout["status"] = "partial"
+            scout["health_state"] = "partial"
     return scout, best, unique_categories, unique_items
 
 
@@ -1770,18 +1821,81 @@ def fetch_poecurrency_summary(
     return normalize_poecurrency_summary(data)
 
 
+def fetch_item_categories(
+    client: RetryingRequests, api_base: str, league: str
+) -> dict[str, list[dict[str, Any]]]:
+    data = client.get_json(f"{api_base}/poe2/Leagues/{league}/Items/Categories")
+    if not isinstance(data, dict):
+        raise ValueError("poe2scout category response root is not an object")
+    unique = data.get("UniqueCategories") or []
+    currency = data.get("CurrencyCategories") or []
+    if not isinstance(unique, list) or any(not isinstance(item, dict) for item in unique):
+        raise ValueError("poe2scout UniqueCategories is not an array of objects")
+    if not isinstance(currency, list) or any(
+        not isinstance(item, dict) for item in currency
+    ):
+        raise ValueError("poe2scout CurrencyCategories is not an array of objects")
+    return {"unique": unique, "currency": currency}
+
+
 def fetch_unique_categories(
     client: RetryingRequests, api_base: str, league: str
 ) -> list[dict[str, Any]]:
-    data = client.get_json(f"{api_base}/poe2/Leagues/{league}/Items/Categories")
-    if not isinstance(data, dict):
-        raise ValueError("poe2scout unique category response root is not an object")
-    categories = data.get("UniqueCategories") or []
-    if not isinstance(categories, list) or any(
-        not isinstance(category, dict) for category in categories
-    ):
-        raise ValueError("poe2scout UniqueCategories is not an array of objects")
-    return categories
+    return fetch_item_categories(client, api_base, league)["unique"]
+
+
+def fetch_currency_categories(
+    client: RetryingRequests, api_base: str, league: str
+) -> list[dict[str, Any]]:
+    return fetch_item_categories(client, api_base, league)["currency"]
+
+
+def category_api_ids(categories: list[dict[str, Any]]) -> list[str]:
+    ids: list[str] = []
+    seen: set[str] = set()
+    for category in categories:
+        api_id = str(category.get("ApiId") or "").strip()
+        if not api_id or api_id in seen:
+            continue
+        seen.add(api_id)
+        ids.append(api_id)
+    return ids
+
+
+def build_scout_category_health(
+    unique_categories: list[dict[str, Any]],
+    currency_categories: list[dict[str, Any]],
+) -> dict[str, Any]:
+    unique_ids = category_api_ids(unique_categories)
+    currency_ids = category_api_ids(currency_categories)
+    hardcoded_unique = list(DEFAULT_UNIQUE_CATEGORIES)
+    hardcoded_set = set(hardcoded_unique)
+    unique_set = set(unique_ids)
+    ninja_types = set(POE_NINJA_EXCHANGE_TYPES)
+    ninja_untracked = []
+    for api_id in currency_ids:
+        mapped = SCOUT_TO_NINJA_CURRENCY.get(api_id.casefold(), api_id)
+        if mapped not in ninja_types:
+            ninja_untracked.append({"scout": api_id, "expected_ninja": mapped})
+    discovered_unique_only = [item for item in unique_ids if item not in hardcoded_set]
+    hardcoded_unique_only = [item for item in hardcoded_unique if item not in unique_set]
+    alerts = []
+    if discovered_unique_only:
+        alerts.append("new_unique_categories")
+    if hardcoded_unique_only:
+        alerts.append("missing_hardcoded_unique_categories")
+    if ninja_untracked:
+        alerts.append("ninja_untracked_currency")
+    return {
+        "unique_categories": unique_ids,
+        "currency_categories": currency_ids,
+        "hardcoded_unique_categories": hardcoded_unique,
+        "discovered_unique_only": discovered_unique_only,
+        "hardcoded_unique_only": hardcoded_unique_only,
+        "ninja_untracked_currency": ninja_untracked,
+        "alerts": alerts,
+        "has_alerts": bool(alerts),
+    }
 
 
 def fetch_unique_category_items(
@@ -1842,12 +1956,26 @@ def fetch_unique_items(
     api_base: str,
     league: str,
     max_workers: int,
+    discovered_categories: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    discovered = discovered_categories
+    if discovered is None:
+        discovered = fetch_unique_categories(client, api_base, league)
     categories = [
         dict(category)
-        for category in fetch_unique_categories(client, api_base, league)
-        if category.get("ApiId") in DEFAULT_UNIQUE_CATEGORIES
+        for category in discovered
+        if str(category.get("ApiId") or "").strip()
     ]
+    extra_unique = [
+        str(category.get("ApiId") or "").strip()
+        for category in categories
+        if str(category.get("ApiId") or "").strip() not in DEFAULT_UNIQUE_CATEGORIES
+    ]
+    if extra_unique:
+        progress(
+            "poe2scout：发现未写入本地点名清单的传奇分类，将继续抓取："
+            + ", ".join(extra_unique)
+        )
     progress(f"poe2scout：发现 {len(categories)} 个传奇装备分类")
     all_items: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=max(1, max_workers)) as pool:
