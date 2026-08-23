@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.8</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.9</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -22,6 +22,8 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
+`v0.5.9` 恢复国服 POE1 圣甲虫的国际服回填，补上 POE1 数据源健康审计与 poe2scout 分类清单检查，并修复部分电脑启动内置 Python 时要求提权（Win32 740）的问题。
+
 `v0.5.8` 修复 POE1/POE2 传奇装备在易刷中无法精确查价或误选同底材传奇的问题。实测确认当前易刷的两代解析器使用不同清洗顺序，因此不再强行共用一种标签：POE1 使用 `传奇名[<<价格>>]`，POE2 使用 `[价格|传奇名]`；两者在对应易刷解析器和 PoE Overlay II 中都会还原为精确传奇名。POE1 国际服一键汉化也改为后台监控执行，窗口会持续显示运行秒数和当前阶段，不再因同步等待表现为无响应。
 
 `v0.5.7` 重做 POE1/POE2 还原底板：每个游戏目录按游戏代数、客户端类型和语言保存专属基线，POE2 官方 GGPK、Steam/Epic 与国服不会再互相覆盖同名还原包。连续更新只复用已经验证的干净基线；旧共享包仅作为只读迁移输入。专属包丢失或游戏版本变化时，程序会先在临时目录只清除本工具能确认的价格/岛屿标记并严格读回，无法证明安全时才要求平台修复。
@@ -41,7 +43,7 @@
 - POE2 国际服：主源 poe2scout（全量 SnapshotPairs），备用 poe.ninja / poe2db。
 - POE2 国服：主源 `poecurrency.top/api/summary?version=2`，没有国服价的条目再用国际参考源补。
 - POE1 国际服：主源 poe.ninja，备用 poe2scout / poedb。
-- POE1 国服：主源 `poecurrency.top/api/summary?version=1`，再用 poe.ninja / scout / poedb 补缺；**圣甲虫只保留国服价，不用国际服圣甲虫价回填**。
+- POE1 国服：主源 `poecurrency.top/api/summary?version=1`，再用 poe.ninja / scout / poedb 补缺。
 - 构建时会对照 poe2scout `Items/Categories` 做分类健康检查：新分类只报警并继续抓取，不会默默丢掉。
 - 只读契约审计见 `物价补丁/tools/audit_price_sources.py`，覆盖 POE1/POE2。
 
@@ -55,6 +57,14 @@
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/8/23 更新（v0.5.9）
+
+- 国服 POE1 圣甲虫恢复国际服回填：`poecurrency-cn` 缺价时仍可用 ninja / scout / poedb 补上圣甲虫价。
+- 只读数据源审计补上 POE1（poe.ninja、poecurrency version=1、poe2scout PC、poedb），并刷新契约 baseline。
+- poe2scout 分类清单纳入构建健康项：新传奇分类不再默默丢弃；ninja 未覆盖的通货分类写入告警。
+- 修复部分电脑启动内置 Python 时要求提权（Win32 740）的问题：以 `RunAsInvoker` 调用，并优先使用 `poe_python.exe`。
+- 修复发布包 `payload.zip` 与源脚本换行不一致导致 Windows Release 检查失败的问题。
 
 ### 26/8/13 更新（v0.5.8）
 

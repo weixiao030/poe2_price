@@ -941,53 +941,6 @@ def collect_poecurrency_prices(
     return prices, divine_chaos, quality
 
 
-CN_ISOLATED_ITEM_MARKERS = ("scarab", "圣甲虫", "聖甲蟲")
-
-
-def is_cn_isolated_market_item(
-    *,
-    category: str = "",
-    en_name: str = "",
-    localized_name: str = "",
-    metadata_path: str = "",
-    source_pair: str = "",
-) -> bool:
-    """Return True for scarabs that must not use international prices on CN."""
-
-    path = str(metadata_path or "").replace("\\", "/").casefold()
-    if "/scarabs/" in path or path.rstrip("/").endswith("scarab"):
-        return True
-    blob = " ".join(
-        (
-            str(category or ""),
-            str(en_name or ""),
-            str(localized_name or ""),
-            str(source_pair or ""),
-            path,
-        )
-    ).casefold()
-    return any(marker.casefold() in blob for marker in CN_ISOLATED_ITEM_MARKERS)
-
-
-def filter_cn_isolated_prices(
-    prices: dict[str, Poe1Price],
-) -> tuple[dict[str, Poe1Price], int]:
-    kept: dict[str, Poe1Price] = {}
-    dropped = 0
-    for key, price in prices.items():
-        if is_cn_isolated_market_item(
-            category=price.category,
-            en_name=price.en_name,
-            localized_name=price.localized_name,
-            metadata_path=price.metadata_path,
-            source_pair=price.source_pair,
-        ):
-            dropped += 1
-            continue
-        kept[key] = price
-    return kept, dropped
-
-
 def match_base_items(
     prices: dict[str, Poe1Price],
     base_pairs: list[BaseItemPair],
@@ -1501,9 +1454,6 @@ def main(argv: list[str]) -> int:
     source_matched_items: dict[str, int] = {}
     source_rows_added: dict[str, int] = {}
     fallback_rows_added_by_source: dict[str, int] = {}
-    isolate_cn_scarabs = args.price_source == "poecurrency-cn"
-    isolated_international_scarabs = 0
-    isolated_scarabs_by_source: dict[str, int] = {}
     if patch_base_items:
         source_order = (
             ["poecurrency-cn", "poe-ninja", "poe2scout", "poedb-economy"]
@@ -1516,14 +1466,6 @@ def main(argv: list[str]) -> int:
             )
             if not prices:
                 continue
-            if isolate_cn_scarabs and source != "poecurrency-cn":
-                prices, dropped = filter_cn_isolated_prices(prices)
-                isolated_scarabs_by_source[source] = dropped
-                isolated_international_scarabs += dropped
-                if dropped:
-                    progress(
-                        f"国服圣甲虫隔离：已丢弃 {source} 的 {dropped} 条国际服圣甲虫价格"
-                    )
             source_rows, source_missing = match_base_items(
                 prices,
                 base_pairs,
@@ -1754,11 +1696,6 @@ def main(argv: list[str]) -> int:
             },
         },
         "feature_degradations": feature_degradations,
-        "cn_scarab_isolation": {
-            "enabled": isolate_cn_scarabs,
-            "dropped_international_items": isolated_international_scarabs,
-            "dropped_by_source": isolated_scarabs_by_source,
-        },
         "http_request_count": len(client.request_metrics()),
         "http_requests": client.request_metrics(),
     }

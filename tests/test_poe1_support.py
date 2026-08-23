@@ -911,65 +911,6 @@ def test_poe1_logical_restore_installs_only_game_dat_entries(tmp_path: Path):
 
 
 
-def test_cn_scarab_isolation_detects_scarab_paths_and_names():
-    assert poe1.is_cn_isolated_market_item(
-        metadata_path="Metadata/Items/Scarabs/ScarabAmbush"
-    )
-    assert poe1.is_cn_isolated_market_item(
-        category="Scarab",
-        en_name="Ambush Scarab",
-    )
-    assert poe1.is_cn_isolated_market_item(
-        localized_name="伏击圣甲虫",
-        source_pair="poe.ninja/Scarab/Ambush Scarab",
-    )
-    assert not poe1.is_cn_isolated_market_item(
-        category="Currency",
-        en_name="Chaos Orb",
-        metadata_path="Metadata/Items/Currency/CurrencyRerollRare",
-    )
-
-
-def test_cn_scarab_isolation_drops_international_fallback():
-    prices = {
-        "ninja:scarab:ambush": poe1.Poe1Price(
-            api_id="ninja:scarab:ambush",
-            en_name="Ambush Scarab",
-            localized_name="",
-            category="Scarab",
-            price_chaos=Decimal("4"),
-            volume=Decimal("10"),
-            source_pair="poe.ninja/Scarab/Ambush Scarab",
-            display_price="4C",
-            metadata_path="Metadata/Items/Scarabs/ScarabAmbush",
-        ),
-        "ninja:currency:binding": poe1.Poe1Price(
-            api_id="ninja:currency:binding",
-            en_name="Orb of Binding",
-            localized_name="",
-            category="Currency",
-            price_chaos=Decimal("5"),
-            volume=Decimal("10"),
-            source_pair="poe.ninja/Currency/Orb of Binding",
-            display_price="5C",
-        ),
-    }
-
-    kept, dropped = poe1.filter_cn_isolated_prices(prices)
-    assert dropped == 1
-    assert "ninja:scarab:ambush" not in kept
-    assert "ninja:currency:binding" in kept
-
-    pairs = [
-        BaseItemPair("Metadata/Items/Scarabs/ScarabAmbush", "Ambush Scarab", "伏击圣甲虫"),
-        BaseItemPair("Metadata/Items/Currency/CurrencyUpgradeRandomly", "Orb of Binding", "绑定石"),
-    ]
-    matched, _missing = poe1.match_base_items(kept, pairs, prefer_localized=False)
-    assert [row["metadata_path"] for row in matched] == [
-        "Metadata/Items/Currency/CurrencyUpgradeRandomly"
-    ]
-
-
 def test_python_invocation_avoids_admin_elevation():
     common = COMMON.read_text(encoding="utf-8-sig")
     invoke = powershell_function(common, "Invoke-Poe2Python")
