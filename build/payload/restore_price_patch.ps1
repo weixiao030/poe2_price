@@ -20,7 +20,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.6.1"
+$script:PatchVersion = "v0.6.2"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
 
@@ -481,6 +481,32 @@ function Add-Poe2RestoreManifest {
         if (-not [string]::IsNullOrWhiteSpace($TempDat) -and (Test-Path -LiteralPath $TempDat -PathType Leaf)) {
             Remove-Item -LiteralPath $TempDat -Force -ErrorAction SilentlyContinue
         }
+    }
+    return $ZipPath
+}
+
+function Remove-Poe2RestoreManifestForPatchBundle {
+    param([Parameter(Mandatory = $true)][string]$ZipPath)
+
+    # PatchBundle3 accepts only files that already exist in the Bundles2 index.
+    # Keep the manifest for validation, then remove it from the install payload
+    # immediately before handing that payload to the native patcher.
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Archive = [System.IO.Compression.ZipFile]::Open(
+        [System.IO.Path]::GetFullPath($ZipPath),
+        [System.IO.Compression.ZipArchiveMode]::Update
+    )
+    try {
+        foreach ($Name in @('poe2-restore-manifest.json', 'manifest.json')) {
+            $Entry = $Archive.GetEntry($Name)
+            if ($null -ne $Entry) {
+                $Entry.Delete()
+            }
+        }
+    }
+    finally {
+        $Archive.Dispose()
     }
     return $ZipPath
 }
@@ -1672,6 +1698,7 @@ if ($GameMode -eq "Bundles2") {
     $InstallRestoreZip = Add-CleanCurrentEndgameMapsToRestoreZip -ZipPath $InstallRestoreZip
     Add-Poe2RestoreManifest -ZipPath $InstallRestoreZip -BaselineKind "restore-install-payload" | Out-Null
     Assert-RestoreZip $InstallRestoreZip
+    Remove-Poe2RestoreManifestForPatchBundle -ZipPath $InstallRestoreZip | Out-Null
 }
 
 if ($NoInstall) {

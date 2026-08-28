@@ -3380,6 +3380,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "is discovered automatically, with a known-good fallback."
         ),
     )
+    parser.add_argument(
+        "--league-is-current",
+        choices=("true", "false"),
+        default="true",
+        help="Whether the selected league is the current softcore league; historical leagues never preserve old price labels.",
+    )
     parser.add_argument("--en-baseitems", type=Path, default=DEFAULT_EN_BASEITEMS)
     parser.add_argument("--tc-baseitems", type=Path, default=DEFAULT_TC_BASEITEMS)
     parser.add_argument("--en-words", type=Path, default=DEFAULT_EN_WORDS)
@@ -4038,6 +4044,7 @@ def main(argv: list[str]) -> int:
         ),
         "league": args.league,
         "poe_ninja_league": args.poe_ninja_league,
+        "league_is_current": args.league_is_current == "true",
         "league_selection_source": league_selection_source,
         "league_discovery_url": league_discovery_url,
         "league_warnings": league_warnings,
@@ -4106,6 +4113,7 @@ def main(argv: list[str]) -> int:
                 game_path=args.game_path,
                 preserve_unmatched_existing_price=(
                     local_match_gate["state"] in {"degraded", "unavailable"}
+                    and args.league_is_current == "true"
                 ),
             )
         else:

@@ -213,6 +213,14 @@ class PriceMarkerCleanupTests(unittest.TestCase):
             "markup",
         )
         self.assertEqual(
+            self.price_patch.parse_args(["--league-is-current", "false"]).league_is_current,
+            "false",
+        )
+        self.assertEqual(
+            self.poe1_price_patch.parse_args(["--league-is-current", "false"]).league_is_current,
+            "false",
+        )
+        self.assertEqual(
             self.poe1_price_patch.parse_args([]).unique_price_label_mode,
             "suffix",
         )

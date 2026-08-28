@@ -25,7 +25,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.6.1"
+$script:PatchVersion = "v0.6.2"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -559,6 +559,7 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($League)) {
             $BuilderArgs += @(
                 "--league", $League,
+                "--league-is-current", $(if ($LeagueIsCurrent) { "true" } else { "false" }),
                 "--fallback-price-sources", "poe2scout"
             )
         }

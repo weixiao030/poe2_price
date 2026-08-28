@@ -1829,19 +1829,27 @@ function Assert-Poe2Bundles2MutationFingerprintCurrent {
 
 function ConvertTo-Poe2UtcDateTimeOffset {
     param(
-        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)]$Text,
         [string]$Name = "timestamp"
     )
 
+    if ($Text -is [System.DateTimeOffset]) {
+        return $Text.ToUniversalTime()
+    }
+    if ($Text -is [System.DateTime]) {
+        return [System.DateTimeOffset]$Text.ToUniversalTime()
+    }
+
     [System.DateTimeOffset]$Parsed = [System.DateTimeOffset]::MinValue
+    $TextValue = [string]$Text
     $Ok = [System.DateTimeOffset]::TryParse(
-        $Text,
+        $TextValue,
         [System.Globalization.CultureInfo]::InvariantCulture,
         [System.Globalization.DateTimeStyles]::RoundtripKind,
         [ref]$Parsed
     )
     if (-not $Ok) {
-        throw "无法解析真实还原包的 $Name：$Text"
+        throw "无法解析真实还原包的 $Name：$TextValue"
     }
     return $Parsed.ToUniversalTime()
 }
@@ -1907,8 +1915,8 @@ function Assert-Poe2PhysicalRestoreManifestCurrent {
                 throw "真实还原包已过期：官方底板文件长度已变化：$Relative"
             }
 
-            $ExpectedTime = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$File.last_write_time_utc) -Name "$Relative LastWriteTimeUtc"
-            $CurrentTime = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$CurrentFile.last_write_time_utc) -Name "$Relative current LastWriteTimeUtc"
+            $ExpectedTime = ConvertTo-Poe2UtcDateTimeOffset -Text $File.last_write_time_utc -Name "$Relative LastWriteTimeUtc"
+            $CurrentTime = ConvertTo-Poe2UtcDateTimeOffset -Text $CurrentFile.last_write_time_utc -Name "$Relative current LastWriteTimeUtc"
             if ($ExpectedTime.UtcDateTime.Ticks -ne $CurrentTime.UtcDateTime.Ticks) {
                 throw "真实还原包已过期：官方底板文件时间已变化：$Relative"
             }
@@ -1925,13 +1933,13 @@ function Assert-Poe2PhysicalRestoreManifestCurrent {
     }
 
     if ($ManifestVersion -eq 1) {
-        $CreatedAt = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$Manifest.created_at) -Name "created_at"
+        $CreatedAt = ConvertTo-Poe2UtcDateTimeOffset -Text $Manifest.created_at -Name "created_at"
         if ($CreatedAt -gt [System.DateTimeOffset]::UtcNow.AddMinutes(5)) {
             throw "旧版真实还原包的 created_at 晚于当前时间，无法安全确认兼容性：$($CreatedAt.ToString('o'))。"
         }
         $LatestAllowed = $CreatedAt.AddSeconds([Math]::Max(0, $LegacyClockToleranceSeconds))
         foreach ($File in @($Current.files)) {
-            $CurrentTime = ConvertTo-Poe2UtcDateTimeOffset -Text ([string]$File.last_write_time_utc) -Name "$($File.path) current LastWriteTimeUtc"
+            $CurrentTime = ConvertTo-Poe2UtcDateTimeOffset -Text $File.last_write_time_utc -Name "$($File.path) current LastWriteTimeUtc"
             if ($CurrentTime -gt $LatestAllowed) {
                 throw "旧版真实还原包已过期：$($File.path) 的修改时间 $($CurrentTime.ToString('o')) 晚于备份创建时间 $($CreatedAt.ToString('o'))。"
             }
@@ -2898,7 +2906,7 @@ function Get-PoePatchLeagueOptions {
     # an unrelated hard-coded name.
     $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
     $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
-    $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.1" } `
+    $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.2" } `
         -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
     $Rows = @($Response)
     if ($Rows.Count -eq 0) { throw "赛季目录为空：$DiscoveryUrl" }

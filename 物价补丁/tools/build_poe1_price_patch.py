@@ -1163,6 +1163,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Comma-separated POE1 base-item fallback chain or none.",
     )
     parser.add_argument("--league")
+    parser.add_argument(
+        "--league-is-current",
+        choices=("true", "false"),
+        default="true",
+        help="Whether the selected league is current; historical leagues must not preserve old price labels.",
+    )
     parser.add_argument("--en-baseitems", type=Path, default=DEFAULT_EN_BASEITEMS)
     parser.add_argument("--tc-baseitems", type=Path, default=DEFAULT_TC_BASEITEMS)
     parser.add_argument("--en-words", type=Path, default=DEFAULT_EN_WORDS)
@@ -1554,7 +1560,7 @@ def main(argv: list[str]) -> int:
             mode=args.mode,
             patched_dat=args.patched_dat,
             game_path=args.game_path,
-            preserve_unmatched=patch_base_items,
+            preserve_unmatched=patch_base_items and args.league_is_current == "true",
         )
 
         words_game_path = args.words_game_path or derive_words_game_path(args.game_path)
@@ -1641,6 +1647,7 @@ def main(argv: list[str]) -> int:
         "fallback_price_sources": args.fallback_price_sources,
         "patch_scope": args.patch_scope,
         "league": league,
+        "league_is_current": args.league_is_current == "true",
         "league_selection_source": league_source,
         "league_warnings": league_warnings,
         "base_currency": "Chaos Orb",

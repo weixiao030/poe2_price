@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.6.1"
+PATCH_VERSION = "v0.6.2"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
