@@ -2862,3 +2862,126 @@ function Ensure-PythonRequests {
     Write-Host "==> Prepare local Python runtime" -ForegroundColor Cyan
     return Install-LocalPythonRuntime -RepoRoot $RepoRoot
 }
+function ConvertTo-PoePatchBoolean {
+    param($Value)
+
+    if ($Value -is [bool]) { return [bool]$Value }
+    if ($Value -is [string]) {
+        return @("true", "1", "yes", "y", "current") -contains $Value.Trim().ToLowerInvariant()
+    }
+    if ($null -eq $Value) { return $false }
+    return [bool]$Value
+}
+
+function Get-PoePatchLeagueCacheToken {
+    param(
+        [string]$ScoutLeague = "",
+        [string]$PoeNinjaLeague = ""
+    )
+
+    $Identity = "$ScoutLeague`n$PoeNinjaLeague"
+    $Digest = Get-Poe2TextSha256Hex -Text $Identity
+    return $Digest.Substring(0, 24)
+}
+
+function Get-PoePatchLeagueOptions {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("poe1", "poe2")]
+        [string]$GameVersion,
+        [int]$TimeoutSeconds = 20
+    )
+
+    # poe2scout keeps one schema for both realms and includes archived leagues.
+    # The GUI uses this directory only; prices are fetched later with the exact
+    # identifiers selected here so a newly created league never falls through to
+    # an unrelated hard-coded name.
+    $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
+    $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
+    $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.0" } `
+        -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
+    $Rows = @($Response)
+    if ($Rows.Count -eq 0) { throw "赛季目录为空：$DiscoveryUrl" }
+
+    $Options = New-Object System.Collections.Generic.List[object]
+    $Seen = @{}
+    $Order = 0
+    foreach ($Row in $Rows) {
+        if ($null -eq $Row) { $Order += 1; continue }
+        $ValueProperty = $Row.PSObject.Properties["Value"]
+        if ($null -eq $ValueProperty) { $ValueProperty = $Row.PSObject.Properties["Name"] }
+        $ShortProperty = $Row.PSObject.Properties["ShortName"]
+        if ($null -eq $ShortProperty) { $ShortProperty = $Row.PSObject.Properties["Slug"] }
+        $Value = if ($null -ne $ValueProperty) { [string]$ValueProperty.Value } else { "" }
+        $ShortName = if ($null -ne $ShortProperty) { [string]$ShortProperty.Value } else { "" }
+        $Value = $Value.Trim()
+        $ShortName = $ShortName.Trim()
+        if ([string]::IsNullOrWhiteSpace($Value) -or [string]::IsNullOrWhiteSpace($ShortName)) { $Order += 1; continue }
+        $HardcoreProperty = $Row.PSObject.Properties["IsHardcore"]
+        $IsHardcore = if ($null -ne $HardcoreProperty) {
+            ConvertTo-PoePatchBoolean $HardcoreProperty.Value
+        }
+        else {
+            $Value -match "^(?i:HC |Hardcore )" -or $Value -match "^(?i:Hardcore)$" -or $ShortName -match "(?i)(?:hc|hardcore)$"
+        }
+        if ($IsHardcore) { $Order += 1; continue }
+        $Key = "$ShortName|$Value".ToLowerInvariant()
+        if ($Seen.ContainsKey($Key)) { $Order += 1; continue }
+        $Seen[$Key] = $true
+        $CurrentProperty = $Row.PSObject.Properties["IsCurrent"]
+        $IsCurrent = if ($null -ne $CurrentProperty) {
+            ConvertTo-PoePatchBoolean $CurrentProperty.Value
+        }
+        else { $false }
+        $Options.Add([pscustomobject]@{
+                Label = if ($IsCurrent) { "$Value（最新）" } else { $Value }
+                Value = $Value
+                ScoutLeague = $ShortName
+                PoeNinjaLeague = $Value
+                IsCurrent = $IsCurrent
+                DiscoveryUrl = $DiscoveryUrl
+                Order = $Order
+            })
+        $Order += 1
+    }
+    if ($Options.Count -eq 0) { throw "赛季目录中没有可用的软核赛季：$DiscoveryUrl" }
+    return @($Options | Sort-Object @{ Expression = { if ($_.IsCurrent) { 0 } else { 1 } } }, @{ Expression = { $_.Order }; Descending = $true })
+}
+
+function Resolve-PoePatchLeagueSelection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("poe1", "poe2")]
+        [string]$GameVersion,
+        [string]$League = "",
+        [string]$PoeNinjaLeague = "",
+        [int]$TimeoutSeconds = 20
+    )
+
+    $Options = @(Get-PoePatchLeagueOptions -GameVersion $GameVersion -TimeoutSeconds $TimeoutSeconds)
+    $League = $League.Trim()
+    $PoeNinjaLeague = $PoeNinjaLeague.Trim()
+    if ([string]::IsNullOrWhiteSpace($League)) {
+        $Matches = @($Options | Where-Object { $_.IsCurrent })
+        if ($Matches.Count -ne 1) {
+            throw "赛季目录中必须且只能有一个当前软核赛季，实际找到 $($Matches.Count) 个。"
+        }
+        return $Matches[0]
+    }
+
+    if ($GameVersion -eq "poe1") {
+        $Matches = @($Options | Where-Object {
+                [string]$_.PoeNinjaLeague -ieq $League
+            })
+    }
+    else {
+        $Matches = @($Options | Where-Object {
+                [string]$_.ScoutLeague -ieq $League -and
+                ([string]::IsNullOrWhiteSpace($PoeNinjaLeague) -or [string]$_.PoeNinjaLeague -ieq $PoeNinjaLeague)
+            })
+    }
+    if ($Matches.Count -ne 1) {
+        throw "所选赛季不在当前 $GameVersion 赛季目录中，或 provider 标识不匹配；已停止以避免跨赛季混用价格。"
+    }
+    return $Matches[0]
+}

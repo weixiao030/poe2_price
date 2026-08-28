@@ -59,6 +59,38 @@ class LeagueDiscoveryTests(unittest.TestCase):
         self.assertFalse(selected.used_fallback)
         self.assertEqual(client.urls, ["https://api.poe2scout.com/poe2/Leagues"])
 
+    def test_discovers_all_softcore_options_with_current_first(self):
+        client = FakeClient(
+            [
+                {"Value": "Old League", "ShortName": "old", "IsCurrent": False},
+                {"Value": "HC Current", "ShortName": "currenthc", "IsCurrent": True},
+                {"Value": "Current League", "ShortName": "current", "IsCurrent": True},
+                {"Value": "Old League", "ShortName": "old", "IsCurrent": False},
+            ]
+        )
+
+        options = self.league.discover_league_options(
+            client, "https://api.poe2scout.com"
+        )
+
+        self.assertEqual(
+            [(item.scout, item.poe_ninja, item.is_current) for item in options],
+            [("current", "Current League", True), ("old", "Old League", False)],
+        )
+        self.assertEqual(client.urls, ["https://api.poe2scout.com/poe2/Leagues"])
+
+    def test_discovers_poe1_pc_realm_without_reusing_poe2_realm(self):
+        client = FakeClient(
+            [{"Value": "PC League", "ShortName": "pc-league", "IsCurrent": True}]
+        )
+
+        options = self.league.discover_realm_league_options(
+            client, "https://api.poe2scout.com", "pc"
+        )
+
+        self.assertEqual(options[0].scout, "pc-league")
+        self.assertEqual(client.urls, ["https://api.poe2scout.com/pc/Leagues"])
+
     def test_accepts_wrapped_response_and_field_aliases(self):
         client = FakeClient(
             {
@@ -195,6 +227,21 @@ class LeagueDiscoveryTests(unittest.TestCase):
         self.assertEqual(
             (selected.scout, selected.poe_ninja),
             ("softcorehc", "HC-like Softcore Name"),
+        )
+
+    def test_dynamic_options_keep_provider_ids_paired_per_season(self):
+        client = FakeClient(
+            [
+                {"Value": "Season One", "ShortName": "one", "IsCurrent": False},
+                {"Value": "Season Two", "ShortName": "two", "IsCurrent": True},
+            ]
+        )
+
+        options = self.league.discover_league_options(client, "https://example.invalid")
+
+        self.assertEqual(
+            [(item.scout, item.poe_ninja) for item in options],
+            [("two", "Season Two"), ("one", "Season One")],
         )
 
 

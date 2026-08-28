@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.5.9</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.6.0</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -22,7 +22,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.5.9` 恢复国服 POE1 圣甲虫的国际服回填，补上 POE1 数据源健康审计与 poe2scout 分类清单检查，并修复部分电脑启动内置 Python 时要求提权（Win32 740）的问题。
+`v0.6.0` 新增运行时赛季发现和 GUI 下拉选择：从 poe2scout 实时读取 POE1/POE2 全部软核赛季，默认选中最新赛季；选中的赛季标识会传入所有支持赛季的价格请求并隔离缓存。POE1/POE2 国服价格源只支持当前赛季，选择历史赛季会明确拒绝，避免跨赛季混用价格。
 
 ---
 
@@ -38,6 +38,7 @@
 - POE1 国服：主源 `poecurrency.top/api/summary?version=1`，再用 poe.ninja / scout / poedb 补缺。
 - 构建时会对照 poe2scout `Items/Categories` 做分类健康检查：新分类只报警并继续抓取，不会默默丢掉。
 - 只读契约审计见 `物价补丁/tools/audit_price_sources.py`，覆盖 POE1/POE2。
+- 赛季目录由 `https://api.poe2scout.com/poe2/Leagues`（POE2）和 `/pc/Leagues`（POE1）运行时发现；历史赛季不会复用当前赛季缓存或无赛季参数的数据源，国服只允许当前赛季。
 
 ## 后续开发计划
 

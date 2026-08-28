@@ -6,7 +6,10 @@
     [switch]$NoPoe2dbFallback,
     [switch]$IslandRumourHints,
     [ValidateSet("", "all", "currency", "uniques", "none")]
-    [string]$PatchScope = ""
+    [string]$PatchScope = "",
+    [string]$League = "",
+    [string]$PoeNinjaLeague = "",
+    [bool]$LeagueIsCurrent = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +28,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.5.9"
+$script:PatchVersion = "v0.6.0"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -2890,7 +2893,18 @@ if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
 $IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*"
-$PriceSourceName = if ($IsChinaClient) { "国服 poecurrency.top" } else { "POE2 Scout" }
+if ($PatchPriceFetchEnabled) {
+    $SelectedLeague = Resolve-PoePatchLeagueSelection -GameVersion "poe2" `
+        -League $League -PoeNinjaLeague $PoeNinjaLeague -TimeoutSeconds 20
+    $League = [string]$SelectedLeague.ScoutLeague
+    $PoeNinjaLeague = [string]$SelectedLeague.PoeNinjaLeague
+    $LeagueIsCurrent = [bool]$SelectedLeague.IsCurrent
+    if (-not $LeagueIsCurrent -and $IsChinaClient) {
+        throw "POE2 国服价格源只支持当前赛季，不能为国服生成历史赛季补丁。请在 GUI 中选择当前赛季。"
+    }
+}
+$UseChinaPriceSource = $IsChinaClient
+$PriceSourceName = if ($UseChinaPriceSource) { "国服 poecurrency.top" } else { "POE2 Scout" }
 
 if ($GameMode -eq "GGPK") {
     Assert-File $ContentGgpk "Content.ggpk"
@@ -3128,6 +3142,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_BUILD_MODE)) {
         throw "Invalid POE2_PATCH_BUILD_MODE '$($env:POE2_PATCH_BUILD_MODE)'. Use append or fixed."
     }
 }
+$LeagueCacheToken = Get-PoePatchLeagueCacheToken -ScoutLeague $League -PoeNinjaLeague $PoeNinjaLeague
 $PriceCacheKey = [string]::Concat(
     ($InstallInfo.InstallKind -replace '[^A-Za-z0-9._-]', '_'),
     "_",
@@ -3139,7 +3154,9 @@ $PriceCacheKey = [string]::Concat(
     "_unique-",
     $(if ($CanPatchUniqueWords) { "on" } else { "off" }),
     "_island-",
-    $(if ($PatchIslandRumourHintsEnabled) { "on" } else { "off" })
+    $(if ($PatchIslandRumourHintsEnabled) { "on" } else { "off" }),
+    "_league-",
+    $LeagueCacheToken
 )
 $CachedPatchZip = Join-Path $PriceCacheDir ($PriceCacheKey + ".zip")
 $CachedSummaryJson = Join-Path $PriceCacheDir ($PriceCacheKey + ".summary.json")
@@ -3225,10 +3242,17 @@ else {
     }
     $BuildArgs += "--no-uniques"
 }
-if (-not $NoPoe2dbFallback -and -not $IsChinaClient) {
+if (-not [string]::IsNullOrWhiteSpace($League)) {
+    $BuildArgs += @(
+        "--league", $League,
+        "--poe-ninja-league", $(if ([string]::IsNullOrWhiteSpace($PoeNinjaLeague)) { $League } else { $PoeNinjaLeague }),
+        "--fallback-price-sources", "poe-ninja"
+    )
+}
+elseif (-not $NoPoe2dbFallback -and -not $IsChinaClient) {
     $BuildArgs += "--poe2db-fallback"
 }
-if ($IsChinaClient) {
+if ($UseChinaPriceSource) {
     $CnReferenceSource = if ($EnglishBaseItemsUnavailable) { "poe2db-economy" } else { "poe2scout" }
     $BuildArgs += @(
         "--price-source", "poecurrency-cn",

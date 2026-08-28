@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.5.9"
+$script:PatchVersion = "v0.6.0"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -333,6 +333,39 @@ function Show-PoePatchLauncherDialog {
     }
     $AutoGameButton.Checked = $true
 
+    $SeasonLabel = New-Object System.Windows.Forms.Label
+    $SeasonLabel.Text = "价格赛季"
+    $SeasonLabel.AutoSize = $true
+    $SeasonLabel.Location = New-Object System.Drawing.Point(420, 100)
+    $SeasonLabel.Font = New-Object System.Drawing.Font($Form.Font.FontFamily, 9, [System.Drawing.FontStyle]::Bold)
+    $Form.Controls.Add($SeasonLabel)
+
+    $SeasonCombo = New-Object System.Windows.Forms.ComboBox
+    $SeasonCombo.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
+    $SeasonCombo.Location = New-Object System.Drawing.Point(480, 96)
+    $SeasonCombo.Size = New-Object System.Drawing.Size(140, 25)
+    $SeasonCombo.DropDownWidth = 280
+    $SeasonCombo.DisplayMember = "Label"
+    $SeasonCombo.Enabled = $false
+    $Form.Controls.Add($SeasonCombo)
+
+    $SeasonRefreshButton = New-Object System.Windows.Forms.Button
+    $SeasonRefreshButton.Text = "刷新"
+    $SeasonRefreshButton.Location = New-Object System.Drawing.Point(624, 94)
+    $SeasonRefreshButton.Size = New-Object System.Drawing.Size(72, 30)
+    $SeasonRefreshButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $SeasonRefreshButton.FlatAppearance.BorderColor = $BorderColor
+    $SeasonRefreshButton.Enabled = $false
+    $Form.Controls.Add($SeasonRefreshButton)
+
+    $SeasonStatus = New-Object System.Windows.Forms.Label
+    $SeasonStatus.Text = ""
+    $SeasonStatus.Location = New-Object System.Drawing.Point(420, 129)
+    $SeasonStatus.Size = New-Object System.Drawing.Size(276, 38)
+    $SeasonStatus.ForeColor = $Muted
+    $SeasonStatus.AutoEllipsis = $true
+    $Form.Controls.Add($SeasonStatus)
+
     $PathGroup = New-Object System.Windows.Forms.GroupBox
     $PathGroup.Text = "游戏客户端"
     $PathGroup.Location = New-Object System.Drawing.Point(24, 178)
@@ -432,6 +465,8 @@ function Show-PoePatchLauncherDialog {
     $ToolTip.SetToolTip($BrowseButton, "浏览游戏根目录")
     $ToolTip.SetToolTip($RefreshButton, "重新扫描已安装的 POE 客户端")
     $ToolTip.SetToolTip($LanguageCombo, "汉化补丁模式会写入 POE1 繁体中文资源表")
+    $ToolTip.SetToolTip($SeasonCombo, "从 poe2scout 实时读取软核赛季；价格请求严格使用所选赛季")
+    $ToolTip.SetToolTip($SeasonRefreshButton, "重新读取 poe2scout 的赛季目录")
     $ToolTip.SetToolTip($LocalizeButton, "每次点击都会下载 PoEDB 推荐的最新 PoeChinese3，并使用法语入口")
 
     $PathStatus = New-Object System.Windows.Forms.Label
@@ -534,10 +569,10 @@ function Show-PoePatchLauncherDialog {
     $SetOperationLayout = {
         $IsUpdate = ($OperationState.Value -eq "update")
         $ScopeGroup.Visible = $IsUpdate
-        $Form.ClientSize = New-Object System.Drawing.Size(720, $(if ($IsUpdate) { 652 } else { 542 }))
-        $BottomY = if ($IsUpdate) { 598 } else { 488 }
-        $WarningY = if ($IsUpdate) { 532 } else { 424 }
-        $LinkY = if ($IsUpdate) { 568 } else { 460 }
+        $Form.ClientSize = New-Object System.Drawing.Size(720, $(if ($IsUpdate) { 688 } else { 578 }))
+        $BottomY = if ($IsUpdate) { 634 } else { 524 }
+        $WarningY = if ($IsUpdate) { 568 } else { 460 }
+        $LinkY = if ($IsUpdate) { 604 } else { 496 }
         $WarningLabel.Location = New-Object System.Drawing.Point(26, $WarningY)
         $RepositoryLink.Location = New-Object System.Drawing.Point(26, $LinkY)
         $CaimoguLink.Location = New-Object System.Drawing.Point(286, $LinkY)
@@ -560,6 +595,13 @@ function Show-PoePatchLauncherDialog {
             return [string]$LanguageCombo.SelectedItem.Mode
         }
         return "auto"
+    }
+
+    $GetSelectedSeason = {
+        if ($SeasonCombo.SelectedItem) {
+            return $SeasonCombo.SelectedItem
+        }
+        return $null
     }
 
     $SetStatus = {
@@ -697,6 +739,7 @@ function Show-PoePatchLauncherDialog {
             $LocalizationControls = @($GameButtons) + @(
                 $AutoPathRadio, $ManualPathRadio, $RefreshButton, $ClientCombo,
                 $PathTextBox, $BrowseButton, $LanguageCombo, $LocalizeButton,
+                $SeasonCombo, $SeasonRefreshButton,
                 $CurrencyCheck, $UniqueCheck, $IslandCheck,
                 $CancelButton, $RestoreButton, $StartButton
             )
@@ -787,11 +830,21 @@ function Show-PoePatchLauncherDialog {
         else {
             $ScopeStatus.Text = "POE2 使用崇高石 / 神圣石计价。"
         }
+        $ShowSeason = $IsUpdate -and ($Version -in @("poe1", "poe2"))
+        $SeasonLabel.Visible = $ShowSeason
+        $SeasonCombo.Visible = $ShowSeason
+        $SeasonRefreshButton.Visible = $ShowSeason
+        $SeasonStatus.Visible = $ShowSeason
         & $UpdateLanguageControl
         if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
     }
 
     $CandidateCache = @{}
+    $SeasonState = [pscustomobject]@{
+        Busy = $false
+        GameVersion = ""
+        Options = @()
+    }
     $GetClientShortName = {
         param($Candidate)
 
@@ -874,12 +927,87 @@ function Show-PoePatchLauncherDialog {
         & $UpdateScopeForGame
     }
 
+    $RefreshSeasons = {
+        param([bool]$ForceRefresh = $false)
+
+        $Version = & $GetRequestedGameVersion
+        if ($Version -eq "auto" -and $ClientCombo.SelectedItem) {
+            $Version = [string]$ClientCombo.SelectedItem.Candidate.GameVersion
+        }
+        if ($Version -notin @("poe1", "poe2") -or -not ($OperationState.Value -eq "update")) {
+            $SeasonCombo.Items.Clear()
+            $SeasonCombo.Enabled = $false
+            $SeasonRefreshButton.Enabled = $false
+            $SeasonState.Options = @()
+            $SeasonState.GameVersion = ""
+            $SeasonStatus.Text = "更新物价时自动读取赛季目录。"
+            return
+        }
+        if (-not $ForceRefresh -and $SeasonState.GameVersion -eq $Version -and $SeasonState.Options.Count -gt 0) {
+            return
+        }
+        $PreviousKey = if ($SeasonCombo.SelectedItem) {
+            "$($SeasonCombo.SelectedItem.ScoutLeague)|$($SeasonCombo.SelectedItem.PoeNinjaLeague)"
+        }
+        $SeasonCombo.Items.Clear()
+        $SeasonCombo.Enabled = $false
+        $SeasonRefreshButton.Enabled = $false
+        $SeasonState.Busy = $true
+        $Form.UseWaitCursor = $true
+        try {
+            $Options = @(Get-PoePatchLeagueOptions -GameVersion $Version -TimeoutSeconds 15)
+            $IsChina = $false
+            if ($ClientCombo.SelectedItem -and $ClientCombo.SelectedItem.Candidate.InstallInfo) {
+                $IsChina = [bool]$ClientCombo.SelectedItem.Candidate.InstallInfo.IsChina
+            }
+            if ($IsChina) {
+                $Options = @($Options | Where-Object { $_.IsCurrent })
+                if ($Options.Count -eq 0) {
+                    throw "国服价格源只提供当前赛季，未找到当前赛季。"
+                }
+            }
+            foreach ($Option in $Options) { [void]$SeasonCombo.Items.Add($Option) }
+            $SeasonState.Options = @($Options)
+            $SeasonState.GameVersion = $Version
+            if ($SeasonCombo.Items.Count -eq 0) { throw "赛季目录中没有可用的软核赛季。" }
+            $SelectedIndex = 0
+            for ($Index = 0; $Index -lt $SeasonCombo.Items.Count; $Index += 1) {
+                $Item = $SeasonCombo.Items[$Index]
+                if ("$($Item.ScoutLeague)|$($Item.PoeNinjaLeague)" -eq $PreviousKey) {
+                    $SelectedIndex = $Index
+                    break
+                }
+            }
+            $SeasonCombo.SelectedIndex = $SelectedIndex
+            $SeasonCombo.Enabled = $true
+            $SeasonRefreshButton.Enabled = $true
+            $SeasonStatus.ForeColor = $Muted
+            $SeasonStatus.Text = if ($IsChina) {
+                "已读取当前赛季；国服数据源不支持历史赛季。"
+            }
+            else {
+                "已读取 $($SeasonCombo.Items.Count) 个软核赛季；默认选择最新。"
+            }
+        }
+        catch {
+            $SeasonState.Options = @()
+            $SeasonState.GameVersion = $Version
+            $SeasonStatus.Text = "赛季目录读取失败：$($_.Exception.Message)；请点击刷新重试。"
+            $SeasonStatus.ForeColor = $ErrorColor
+        }
+        finally {
+            $SeasonState.Busy = $false
+            $Form.UseWaitCursor = $false
+        }
+    }
+
     foreach ($Button in $GameButtons) {
         $Button.Add_CheckedChanged({
                 if ($this.Checked) {
                     & $UpdateGameButtonStyle
                     if ($AutoPathRadio.Checked) { & $RefreshCandidates }
                     else { & $UpdateScopeForGame }
+                    if (-not $ConstructOnly) { & $RefreshSeasons $true }
                 }
             })
     }
@@ -889,6 +1017,7 @@ function Show-PoePatchLauncherDialog {
             $PathTextBox.Enabled = -not $AutoPathRadio.Checked
             $BrowseButton.Enabled = -not $AutoPathRadio.Checked
             if ($AutoPathRadio.Checked) { & $RefreshCandidates }
+            if (-not $ConstructOnly) { & $RefreshSeasons $true }
         })
     $ManualPathRadio.Add_CheckedChanged({
             if ($ManualPathRadio.Checked) {
@@ -902,14 +1031,16 @@ function Show-PoePatchLauncherDialog {
                 & $UpdateLanguageControl
                 if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
             }
-        })
+    })
     $RefreshButton.Add_Click({ & $RefreshCandidates $true })
+    $SeasonRefreshButton.Add_Click({ & $RefreshSeasons $true })
     $ClientCombo.Add_SelectedIndexChanged({
             if ($ClientCombo.SelectedItem) {
                 $Candidate = $ClientCombo.SelectedItem.Candidate
                 $PathTextBox.Text = [string]$Candidate.Path
                 & $UpdateScopeForGame
                 & $ShowCandidateStatus $Candidate | Out-Null
+                if (-not $ConstructOnly) { & $RefreshSeasons $true }
                 if ($null -ne $UpdateLocalizationButton) { & $UpdateLocalizationButton }
             }
         })
@@ -1011,6 +1142,12 @@ function Show-PoePatchLauncherDialog {
                 }
 
                 $SelectedLanguageMode = & $GetSelectedLanguageMode
+                $SelectedSeason = & $GetSelectedSeason
+                if ($RequestedOperation -eq "update" -and
+                    $Candidate.GameVersion -in @("poe1", "poe2") -and
+                    $null -eq $SelectedSeason) {
+                    throw "未读取到赛季目录，请点击赛季旁的刷新按钮后再继续。"
+                }
                 $SelectedInstallInfo = $Candidate.InstallInfo
                 if ([string]$Candidate.GameVersion -eq "poe1") {
                     $SelectedInstallInfo = Get-Poe1InstallInfo -GameDirectory $Candidate.Path `
@@ -1035,6 +1172,10 @@ function Show-PoePatchLauncherDialog {
                     GameDirectory = [string]$Candidate.Path
                     InstallInfo = $SelectedInstallInfo
                     Poe1LanguageMode = $SelectedLanguageMode
+                    Poe1League = if ($Candidate.GameVersion -eq "poe1" -and $null -ne $SelectedSeason) { [string]$SelectedSeason.PoeNinjaLeague } else { "" }
+                    Poe2League = if ($Candidate.GameVersion -eq "poe2" -and $null -ne $SelectedSeason) { [string]$SelectedSeason.ScoutLeague } else { "" }
+                    Poe2NinjaLeague = if ($Candidate.GameVersion -eq "poe2" -and $null -ne $SelectedSeason) { [string]$SelectedSeason.PoeNinjaLeague } else { "" }
+                    LeagueIsCurrent = if ($null -ne $SelectedSeason) { [bool]$SelectedSeason.IsCurrent } else { $true }
                     PathMode = $(if ($AutoPathRadio.Checked) { "auto" } else { "manual" })
                     PatchScope = $PatchScope
                     IslandRumourHints = [bool]($Candidate.GameVersion -eq "poe2" -and $IslandCheck.Checked)
@@ -1053,6 +1194,8 @@ function Show-PoePatchLauncherDialog {
     & $SetOperationLayout
     & $UpdateGameButtonStyle
     & $RefreshCandidates
+    & $UpdateScopeForGame
+    if (-not $ConstructOnly) { & $RefreshSeasons $true }
 
     if ($ConstructOnly) {
         $Form.Dispose()
@@ -1118,6 +1261,15 @@ else {
 
 if ($Selection.Operation -eq "update") {
     $ScriptParameters["PatchScope"] = [string]$Selection.PatchScope
+    if ($Selection.GameVersion -eq "poe1" -and -not [string]::IsNullOrWhiteSpace([string]$Selection.Poe1League)) {
+        $ScriptParameters["League"] = [string]$Selection.Poe1League
+        $ScriptParameters["LeagueIsCurrent"] = [bool]$Selection.LeagueIsCurrent
+    }
+    elseif ($Selection.GameVersion -eq "poe2" -and -not [string]::IsNullOrWhiteSpace([string]$Selection.Poe2League)) {
+        $ScriptParameters["League"] = [string]$Selection.Poe2League
+        $ScriptParameters["PoeNinjaLeague"] = [string]$Selection.Poe2NinjaLeague
+        $ScriptParameters["LeagueIsCurrent"] = [bool]$Selection.LeagueIsCurrent
+    }
     if ($Selection.GameVersion -eq "poe2" -and $Selection.IslandRumourHints) {
         $ScriptParameters["IslandRumourHints"] = $true
     }

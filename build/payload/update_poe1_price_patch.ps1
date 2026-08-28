@@ -6,7 +6,9 @@
     [switch]$NoInstall,
     [switch]$SkipGameDirectoryMutex,
     [ValidateSet("", "all", "currency", "uniques", "none")]
-    [string]$PatchScope = ""
+    [string]$PatchScope = "",
+    [string]$League = "",
+    [bool]$LeagueIsCurrent = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,7 +25,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.5.9"
+$script:PatchVersion = "v0.6.0"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -85,6 +87,7 @@ function Test-Poe1CacheUsable {
         if ([string]$Metadata.game_version -ne "poe1" -or
             [string]$Metadata.patch_scope -ne $Scope -or
             [string]$Metadata.price_source -ne $Source -or
+            ([string]$Metadata.league -ne [string]$League -and -not [string]::IsNullOrWhiteSpace([string]$Metadata.league)) -or
             [string]$Metadata.baseitems_path -ne [string]$InstallInfo.TcBaseItemsPath -or
             [string]$Metadata.words_path -ne [string]$InstallInfo.TcWordsPath) { return $false }
         $BaseTemp = Get-Poe1ZipEntryTempFile -ZipPath $CacheZip -EntryName $InstallInfo.TcBaseItemsPath
@@ -387,7 +390,17 @@ try {
     if ([string]::IsNullOrWhiteSpace($PatchScope)) { $PatchScope = "all" }
     $InstallInfo = Get-Poe1InstallInfo -GameDirectory $Poe1Dir -LanguageMode $Poe1LanguageMode
     $DisplayLanguage = Get-Poe1DisplayLanguageName -Name $InstallInfo.LanguageName
-    $PriceSource = if ([bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "POE1-CN-*") {
+    $IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "POE1-CN-*"
+    if ($PatchScope -ne "none") {
+        $SelectedLeague = Resolve-PoePatchLeagueSelection -GameVersion "poe1" `
+            -League $League -TimeoutSeconds 20
+        $League = [string]$SelectedLeague.PoeNinjaLeague
+        $LeagueIsCurrent = [bool]$SelectedLeague.IsCurrent
+        if ($IsChinaClient -and -not $LeagueIsCurrent) {
+            throw "POE1 国服价格源只支持当前赛季，不能使用历史赛季，已停止以避免混用数据。"
+        }
+    }
+    $PriceSource = if ($IsChinaClient) {
         "poecurrency-cn"
     }
     else {
@@ -502,11 +515,13 @@ try {
 
     Write-Poe1Step "获取实时 POE1 价格并生成 C/D 补丁"
     $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
+    $LeagueCacheToken = Get-PoePatchLeagueCacheToken -ScoutLeague $League -PoeNinjaLeague $League
     $CacheKey = [string]::Join("_", @(
             ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_'),
             ([string]$InstallInfo.EffectiveLanguageCode -replace '[^A-Za-z0-9_-]+', '_'),
             $PatchScope,
-            $PriceSource
+            $PriceSource,
+            $LeagueCacheToken
         ))
     $CacheDir = Join-Path $RepoRoot ("output\poe1_price_patch_cache\" + $CacheKey)
     $CachedPatchZip = Join-Path $CacheDir "POE1物价补丁.zip"
@@ -541,6 +556,12 @@ try {
             (Test-Path -LiteralPath $Extracted.EnglishWords -PathType Leaf)) {
             $BuilderArgs += @("--en-words", $Extracted.EnglishWords)
         }
+        if (-not [string]::IsNullOrWhiteSpace($League)) {
+            $BuilderArgs += @(
+                "--league", $League,
+                "--fallback-price-sources", "poe2scout"
+            )
+        }
         $Result = Invoke-Poe2Python -Python $Python -ArgumentList $BuilderArgs
         if ($Result.ExitCode -ne 0) {
             throw "POE1 实时价格构建失败，退出码：$($Result.ExitCode)。$($Result.Text)"
@@ -564,6 +585,8 @@ try {
                 game_version = "poe1"
                 patch_scope = $PatchScope
                 price_source = $PriceSource
+                league = $League
+                league_is_current = [bool]$LeagueIsCurrent
                 install_kind = [string]$InstallInfo.InstallKind
                 baseitems_path = [string]$InstallInfo.TcBaseItemsPath
                 words_path = [string]$InstallInfo.TcWordsPath

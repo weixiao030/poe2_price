@@ -369,3 +369,54 @@ def test_release_payload_copies_stay_in_sync():
     assert UPDATE.read_bytes() == PAYLOAD_UPDATE.read_bytes()
     assert RESTORE.read_bytes() == PAYLOAD_RESTORE.read_bytes()
     assert GUI.read_bytes() == PAYLOAD_GUI.read_bytes()
+
+
+def test_gui_and_update_scripts_forward_explicit_league_without_cross_season_fallback():
+    gui = GUI.read_text(encoding="utf-8-sig")
+    update = UPDATE.read_text(encoding="utf-8-sig")
+    common = COMMON.read_text(encoding="utf-8-sig")
+
+    for expected in (
+        "Get-PoePatchLeagueOptions",
+        "SeasonCombo",
+        "Poe2League",
+        "Poe2NinjaLeague",
+        "LeagueIsCurrent",
+    ):
+        assert expected in gui
+    assert '"--fallback-price-sources", "poe-ninja"' in update
+    assert "POE2 国服价格源只支持当前赛季" in update
+    assert "$UseChinaPriceSource = $IsChinaClient" in update
+    assert "Resolve-PoePatchLeagueSelection" in update
+    assert "--poe2db-fallback" in update
+    assert "-not $IsChinaClient" in update
+    assert "ConvertTo-PoePatchBoolean" in common
+    assert "Get-PoePatchLeagueCacheToken" in common
+
+
+def test_powershell_league_parser_handles_string_booleans_without_mixing_seasons():
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; "
+        "function global:Invoke-RestMethod { "
+        "param([string]$Uri,[hashtable]$Headers,[int]$TimeoutSec); "
+        "return @("
+        "[pscustomobject]@{Value='Old';ShortName='old';IsCurrent='false';IsHardcore='false'},"
+        "[pscustomobject]@{Value='Current';ShortName='current';IsCurrent='true';IsHardcore='false'},"
+        "[pscustomobject]@{Value='HC Current';ShortName='currenthc';IsCurrent='true';IsHardcore='true'}) "
+        "}; "
+        "$items=@(Get-PoePatchLeagueOptions -GameVersion poe2); "
+        "if($items.Count -ne 2 -or $items[0].PoeNinjaLeague -ne 'Current' -or $items[1].IsCurrent){throw 'season parser mismatch'}; "
+        "Write-Output 'STRING_BOOLEAN_SEASON_PARSE_OK'"
+    )
+    assert output == "STRING_BOOLEAN_SEASON_PARSE_OK"
+
+
+def test_explicit_poe1_league_uses_seasoned_fallback_chain():
+    update = (ROOT / "物价补丁" / "tools" / "update_poe1_price_patch.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+    gui = GUI.read_text(encoding="utf-8-sig")
+    assert "Poe1League" in gui
+    assert '"--fallback-price-sources", "poe2scout"' in update
+    assert "league_is_current" in update
+    assert "Resolve-PoePatchLeagueSelection" in update

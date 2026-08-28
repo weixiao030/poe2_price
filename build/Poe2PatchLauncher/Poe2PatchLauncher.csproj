@@ -5,10 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Poe2PatchLauncher</AssemblyName>
-    <Version>0.5.9</Version>
-    <AssemblyVersion>0.5.9</AssemblyVersion>
-    <FileVersion>0.5.9</FileVersion>
-    <InformationalVersion>0.5.9</InformationalVersion>
+    <Version>0.6.0</Version>
+    <AssemblyVersion>0.6.0</AssemblyVersion>
+    <FileVersion>0.6.0</FileVersion>
+    <InformationalVersion>0.6.0</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <ItemGroup>

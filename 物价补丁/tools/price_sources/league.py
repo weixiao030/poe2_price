@@ -1,4 +1,4 @@
-"""Resolve the current softcore league shared by poe2scout and poe.ninja.
+"""Discover and resolve softcore leagues shared by poe2scout and poe.ninja.
 
 The discovery endpoint belongs to poe2scout.  Callers may override either
 provider independently; an unavailable or incompatible endpoint must never
@@ -39,6 +39,61 @@ class LeagueSelection:
         return "fallback" in self.source
 
 
+@dataclass(frozen=True)
+class LeagueOption:
+    """One dynamically discovered softcore league and its provider IDs."""
+
+    scout: str
+    poe_ninja: str
+    is_current: bool
+    order: int = 0
+
+    @property
+    def label(self) -> str:
+        return f"{self.poe_ninja}（最新）" if self.is_current else self.poe_ninja
+
+
+def discover_league_options(
+    client: Any, api_base: str, *, realm: str = "poe2"
+) -> tuple[LeagueOption, ...]:
+    """Return all deduplicated softcore leagues from the live poe2scout realm."""
+
+    url = f"{str(api_base).rstrip('/')}/{realm.strip('/')}/Leagues"
+    rows = _league_rows(client.get_json(url))
+    options: list[LeagueOption] = []
+    seen: set[tuple[str, str]] = set()
+    for order, row in enumerate(rows):
+        if not isinstance(row, Mapping) or _is_hardcore(row):
+            continue
+        scout = _clean_text(_field(row, "ShortName", "short_name", "short", "slug"))
+        ninja = _clean_text(_field(row, "Value", "value", "Name", "name", "league"))
+        if not scout or not ninja:
+            continue
+        key = (scout.casefold(), ninja.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append(
+            LeagueOption(
+                scout=scout,
+                poe_ninja=ninja,
+                is_current=_as_bool(_field(row, "IsCurrent", "is_current", "current")),
+                order=order,
+            )
+        )
+    if not options:
+        raise ValueError("赛季响应中没有可用的软核赛季")
+    return tuple(
+        sorted(options, key=lambda item: (not item.is_current, -item.order))
+    )
+
+
+def discover_realm_league_options(client: Any, api_base: str, realm: str) -> tuple[LeagueOption, ...]:
+    """Discover a realm-specific list, e.g. ``pc`` for POE1."""
+
+    return discover_league_options(client, api_base, realm=realm)
+
+
 def resolve_current_leagues(
     client: Any,
     api_base: str,
@@ -72,8 +127,11 @@ def resolve_current_leagues(
     warnings: list[str] = []
     discovered: tuple[str, str] | None = None
     try:
-        payload = client.get_json(url)
-        discovered = _current_softcore_pair(payload)
+        options = discover_league_options(client, api_base, realm="poe2")
+        current = [item for item in options if item.is_current]
+        if len(current) != 1:
+            raise ValueError("赛季响应包含多个或没有当前软核赛季")
+        discovered = (current[0].scout, current[0].poe_ninja)
     except Exception as exc:  # Discovery is advisory; preserve the old path.
         detail = str(exc).strip()
         if detail:
