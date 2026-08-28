@@ -394,6 +394,18 @@ def test_gui_and_update_scripts_forward_explicit_league_without_cross_season_fal
     assert "Get-PoePatchLeagueCacheToken" in common
 
 
+def test_gui_shows_season_for_auto_detected_version_and_refreshes_on_client_switch():
+    gui = GUI.read_text(encoding="utf-8-sig")
+    assert (
+        '$ShowSeason = ($OperationState.Value -eq "update") -and '
+        '($Version -in @("poe1", "poe2"))'
+    ) in gui
+    assert (
+        '$Version = [string]$ClientCombo.SelectedItem.Candidate.GameVersion'
+    ) in gui
+    assert '$RefreshSeasons $true' in gui
+
+
 def test_powershell_league_parser_handles_string_booleans_without_mixing_seasons():
     output = run_powershell(
         f". {ps_quote(COMMON)}; "

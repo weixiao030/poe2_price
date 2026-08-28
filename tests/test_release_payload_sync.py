@@ -98,7 +98,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.6.0"
+    assert version == "0.6.1"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -168,6 +168,8 @@ def test_release_document_describes_fail_safe_behavior():
         "持续显示已运行秒数和当前阶段",
         "POE1 传奇写成 传奇名[<<价格>>]，POE2 写成 [价格|传奇名]",
         "价格赛季",
+        "价格赛季位于窗口顶部“游戏版本”右侧",
+        "自动识别时会随客户端下拉框切换 POE1/POE2 赛季",
         "默认最新，可点击刷新发现新赛季",
         "历史赛季使用独立的赛季标识和缓存",
         "POE1/POE2 国服只支持当前赛季",

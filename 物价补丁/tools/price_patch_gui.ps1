@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.6.0"
+$script:PatchVersion = "v0.6.1"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -830,7 +830,7 @@ function Show-PoePatchLauncherDialog {
         else {
             $ScopeStatus.Text = "POE2 使用崇高石 / 神圣石计价。"
         }
-        $ShowSeason = $IsUpdate -and ($Version -in @("poe1", "poe2"))
+        $ShowSeason = ($OperationState.Value -eq "update") -and ($Version -in @("poe1", "poe2"))
         $SeasonLabel.Visible = $ShowSeason
         $SeasonCombo.Visible = $ShowSeason
         $SeasonRefreshButton.Visible = $ShowSeason
