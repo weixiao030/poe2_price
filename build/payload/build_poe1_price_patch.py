@@ -92,6 +92,9 @@ POE_NINJA_UNIQUE_TYPES = (
     "UniqueRelic",
     "UniqueMap",
 )
+# Cloudflare may challenge a burst of API calls from one client IP. Keep this
+# separate from the local matching worker count so source requests stay gentle.
+POE_NINJA_MAX_WORKERS = 4
 
 PATCH_ROOT = SCRIPT_DIR.parent
 DEFAULT_EN_BASEITEMS = (
@@ -443,7 +446,9 @@ def fetch_poe_ninja_prices(
     unique_payloads: dict[str, dict[str, Any]] = {}
     errors: dict[str, str] = {}
     stats: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=min(8, max(1, len(specs)))) as pool:
+    with ThreadPoolExecutor(
+        max_workers=min(POE_NINJA_MAX_WORKERS, max(1, len(specs)))
+    ) as pool:
         futures = {
             pool.submit(client.get_json, url): (kind, item_type, url)
             for kind, item_type, url in specs

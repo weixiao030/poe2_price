@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import json
+import math
 import queue
 import sys
 import threading
 import time
+import urllib.parse
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 
 DEFAULT_REQUEST_TIME_BUDGET = 45.0
 HTTP_READ_CHUNK_SIZE = 64 * 1024
 MAX_HTTP_RESPONSE_BYTES = 64 * 1024 * 1024
+RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+POE_NINJA_RETRYABLE_HOSTS = frozenset({"poe.ninja", "www.poe.ninja"})
+MIN_POE_NINJA_403_RETRY_DELAY = 1.5
 
 
 def compact_text(value: Any, limit: int = 140) -> str:
@@ -33,6 +40,7 @@ class HttpResponse:
     content: bytes
     encoding: str = "utf-8"
     content_type: str = ""
+    retry_after_seconds: float | None = None
 
     @property
     def text(self) -> str:
@@ -68,7 +76,7 @@ class RetryingRequests:
         self.timeout = max(0.1, float(timeout))
         self.total_timeout = max(0.1, float(total_timeout))
         self.user_agent = user_agent
-        self.retry_statuses = {429, 500, 502, 503, 504}
+        self.retry_statuses = set(RETRYABLE_HTTP_STATUSES)
         self._metrics_lock = threading.Lock()
         self._request_metrics: list[dict[str, Any]] = []
 
@@ -91,9 +99,11 @@ class RetryingRequests:
         if callable(get_content_charset):
             encoding = get_content_charset() or encoding
         content_type = ""
+        retry_after_seconds = None
         get_header = getattr(headers, "get", None)
         if callable(get_header):
             content_type = str(get_header("Content-Type", "") or "")
+            retry_after_seconds = self._parse_retry_after(get_header("Retry-After"))
         return HttpResponse(
             url=url,
             status_code=status_code,
@@ -101,7 +111,56 @@ class RetryingRequests:
             content=content,
             encoding=encoding,
             content_type=content_type,
+            retry_after_seconds=retry_after_seconds,
         )
+
+    @staticmethod
+    def _parse_retry_after(value: Any) -> float | None:
+        """Parse both HTTP Retry-After forms without trusting invalid values."""
+
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            seconds = float(text)
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(text)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                seconds = (retry_at - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                return None
+        if not math.isfinite(seconds) or seconds < 0:
+            return None
+        return seconds
+
+    def _is_retryable_response(self, url: str, status_code: int) -> bool:
+        if status_code in self.retry_statuses:
+            return True
+        if status_code != 403:
+            return False
+        hostname = (urllib.parse.urlsplit(url).hostname or "").lower()
+        return hostname in POE_NINJA_RETRYABLE_HOSTS
+
+    def _retry_delay(
+        self,
+        attempt: int,
+        response: HttpResponse | None,
+        backoff: float,
+    ) -> float:
+        delay = backoff * (2**attempt)
+        if response is not None and response.retry_after_seconds is not None:
+            delay = max(delay, response.retry_after_seconds)
+        if (
+            response is not None
+            and response.status_code == 403
+            and self._is_retryable_response(response.url, response.status_code)
+        ):
+            delay = max(delay, MIN_POE_NINJA_403_RETRY_DELAY)
+        return delay
 
     def _record_request_metric(
         self,
@@ -250,6 +309,7 @@ class RetryingRequests:
 
     def get(self, url: str, **kwargs: Any) -> HttpResponse:
         last_error: Exception | None = None
+        last_response: HttpResponse | None = None
         request_started = time.monotonic()
         request_deadline = request_started + self.total_timeout
         attempts = 0
@@ -271,11 +331,12 @@ class RetryingRequests:
                         url, request_started, attempts, response=response
                     )
                     return response
-                if response.status_code not in self.retry_statuses:
+                if not self._is_retryable_response(url, response.status_code):
                     self._record_request_metric(
                         url, request_started, attempts, response=response
                     )
                     return response
+                last_response = response
                 last_error = RuntimeError(f"{response.status_code} {response.reason}: {url}")
             except RequestDeadlineExceeded as exc:
                 # The daemon may still be unwinding a blocked DNS/TLS/socket call.
@@ -284,9 +345,10 @@ class RetryingRequests:
                 last_error = exc
                 break
             except Exception as exc:
+                last_response = None
                 last_error = exc
             if attempt < self.max_retries:
-                delay = self.backoff * (2**attempt)
+                delay = self._retry_delay(attempt, last_response, self.backoff)
                 remaining = request_deadline - time.monotonic()
                 if remaining <= 0:
                     last_error = TimeoutError(
@@ -303,7 +365,13 @@ class RetryingRequests:
                 )
                 time.sleep(delay)
         assert last_error is not None
-        self._record_request_metric(url, request_started, attempts, error=last_error)
+        self._record_request_metric(
+            url,
+            request_started,
+            attempts,
+            response=last_response,
+            error=last_error,
+        )
         raise last_error
 
     def get_json(self, url: str) -> Any:

@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATCH_VERSION = "v0.6.2"
+PATCH_VERSION = "v0.6.3"
 DOC_PATHS = [
     ROOT / "物价补丁" / "使用文档.docx",
     ROOT / "发布版" / "物价补丁" / "使用文档.docx",
@@ -381,6 +381,7 @@ def build():
             "POE1 安装第三方汉化补丁时保留“自动识别”或选择“汉化补丁”；自动模式会检查最新客户端日志，检测到中文区域名后写入繁中表。更新与还原必须使用同一目标语言。",
             "POE1 国际服使用 poe.ninja 主源，再由 poe2scout、PoEDB 逐物品补缺；POE1 国服使用 poecurrency.top 主源，再按 poe.ninja、poe2scout、PoEDB 的顺序补缺。国服主源已有价格不会被国际服来源覆盖。",
             "POE1 价格追加为 C/D，Chaos/Divine 比例按各来源实时计算；POE2 继续使用原有 poe2scout、poe.ninja、PoEDB 与 poecurrency.top v2 链路和 D/E 规则。",
+            "poe.ninja 请求限制为最多 4 个并发；遇到 403/429 或临时网络失败会按 Retry-After 和指数退避重试，核心分类失败只进入同一赛季的备用源，不会跨赛季回退。",
             "国服优先使用 latest_buy1 / latest_sell1 最新盘口价，缺失时回退到 buy_avg / sell_avg；双边价差正常时取几何均值，差距过大时取较低一侧以降低过期均价和 OCR 异常价影响。",
             "同一个显示名对应多个游戏元数据路径时会为全部别名写入价格；国服翻译重名时使用 engname 英文别名消歧，避免漏价或串价。",
             "程序会按游戏代数、客户端类型和目标语言生成独立还原基线，工作输出再按游戏目录哈希隔离；权威副本保存在对应游戏根目录的 .poe1-price-patch 或 .poe2-price-patch。",

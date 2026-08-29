@@ -2906,7 +2906,7 @@ function Get-PoePatchLeagueOptions {
     # an unrelated hard-coded name.
     $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
     $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
-    $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.2" } `
+    $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.3" } `
         -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
     $Rows = @($Response)
     if ($Rows.Count -eq 0) { throw "赛季目录为空：$DiscoveryUrl" }

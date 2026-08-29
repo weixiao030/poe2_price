@@ -167,6 +167,86 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(metrics[0]["content_type"], "application/json; charset=utf-8")
         self.assertEqual(metrics[0]["content_bytes"], len(response.content))
 
+    def test_poe_ninja_403_is_retried_but_other_forbidden_responses_are_not(self):
+        url = (
+            "https://poe.ninja/poe2/api/economy/exchange/current/overview"
+            "?league=Runes+of+Aldur&type=Currency"
+        )
+        client = self.price_patch.RetryingRequests(
+            max_retries=1,
+            backoff=0,
+            timeout=1,
+            total_timeout=2,
+        )
+        responses = [
+            self.price_patch.HttpResponse(
+                url=url,
+                status_code=403,
+                reason="Forbidden",
+                content=b"",
+            ),
+            self.price_patch.HttpResponse(
+                url=url,
+                status_code=200,
+                reason="OK",
+                content=b"{}",
+            ),
+        ]
+        with patch.object(client, "_get_once_with_deadline", side_effect=responses) as request:
+            response = client.get(url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(client.request_metrics()[0]["attempts"], 2)
+
+        other = self.price_patch.RetryingRequests(
+            max_retries=1,
+            backoff=0,
+            timeout=1,
+            total_timeout=2,
+        )
+        forbidden = self.price_patch.HttpResponse(
+            url="https://example.invalid/forbidden",
+            status_code=403,
+            reason="Forbidden",
+            content=b"",
+        )
+        with patch.object(other, "_get_once_with_deadline", return_value=forbidden) as request:
+            response = other.get(forbidden.url)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(request.call_count, 1)
+
+    def test_retry_after_header_controls_retry_delay(self):
+        http_client = importlib.import_module("price_sources.http_client")
+        url = "https://poe.ninja/poe2/api/data/index-state"
+        client = self.price_patch.RetryingRequests(
+            max_retries=1,
+            backoff=0,
+            timeout=1,
+            total_timeout=5,
+        )
+        responses = [
+            self.price_patch.HttpResponse(
+                url=url,
+                status_code=403,
+                reason="Forbidden",
+                content=b"",
+                retry_after_seconds=2,
+            ),
+            self.price_patch.HttpResponse(
+                url=url,
+                status_code=200,
+                reason="OK",
+                content=b"{}",
+            ),
+        ]
+        with patch.object(client, "_get_once_with_deadline", side_effect=responses):
+            with patch.object(http_client.time, "sleep") as sleep:
+                client.get(url)
+
+        sleep.assert_called_once_with(2)
+
     def test_latest_buy_price_wins_over_avg_price(self):
         price, field = self.price_patch.poecurrency_item_price(
             {

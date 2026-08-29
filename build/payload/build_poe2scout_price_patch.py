@@ -149,6 +149,9 @@ POE_NINJA_ITEM_TYPES = (
     "UniqueTablets",
     "PrecursorTablets",
 )
+# Cloudflare may challenge a burst of API calls from one client IP. Keep this
+# separate from the local matching worker count so source requests stay gentle.
+POE_NINJA_MAX_WORKERS = 4
 SCOUT_TO_NINJA_CURRENCY = {
     "currency": "Currency",
     "fragments": "Fragments",
@@ -1212,7 +1215,9 @@ def build_poe_ninja_currency_prices(
     progress(f"poe.ninja：开始抓取 {len(source_specs)} 个分类")
     payloads: dict[tuple[str, str], dict[str, Any]] = {}
     category_errors: dict[tuple[str, str], str] = {}
-    with ThreadPoolExecutor(max_workers=min(8, len(source_specs))) as pool:
+    with ThreadPoolExecutor(
+        max_workers=min(POE_NINJA_MAX_WORKERS, len(source_specs))
+    ) as pool:
         futures = {
             pool.submit(client.get_json, source_url): (source_kind, item_type, source_url)
             for source_kind, item_type, source_url in source_specs
