@@ -244,6 +244,32 @@ class LeagueDiscoveryTests(unittest.TestCase):
             [("two", "Season Two"), ("one", "Season One")],
         )
 
+    def test_current_options_keep_provider_order_with_transition_duplicates(self):
+        client = FakeClient(
+            [
+                {"Value": "Forbidden Rites", "ShortName": "forbiddenrites", "IsCurrent": True},
+                {"Value": "HC Forbidden Rites", "ShortName": "forbiddenriteshc", "IsCurrent": True},
+                {"Value": "Runes of Aldur", "ShortName": "runes", "IsCurrent": True},
+                {"Value": "HC Runes of Aldur", "ShortName": "runeshc", "IsCurrent": True},
+            ]
+        )
+
+        options = self.league.discover_league_options(
+            client, "https://example.invalid"
+        )
+
+        self.assertEqual(
+            [(item.scout, item.poe_ninja) for item in options],
+            [
+                ("forbiddenrites", "Forbidden Rites"),
+                ("runes", "Runes of Aldur"),
+            ],
+        )
+        self.assertEqual(
+            [item.label for item in options],
+            ["Forbidden Rites（最新）", "Runes of Aldur"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

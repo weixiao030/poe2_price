@@ -424,6 +424,30 @@ def test_powershell_league_parser_handles_string_booleans_without_mixing_seasons
     assert output == "STRING_BOOLEAN_SEASON_PARSE_OK"
 
 
+def test_powershell_league_parser_keeps_newest_current_first_during_transition():
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; "
+        "function global:Invoke-RestMethod { "
+        "param([string]$Uri,[hashtable]$Headers,[int]$TimeoutSec); "
+        "return @("
+        "[pscustomobject]@{Value='Forbidden Rites';ShortName='forbiddenrites';IsCurrent=$true;IsHardcore=$false},"
+        "[pscustomobject]@{Value='HC Forbidden Rites';ShortName='forbiddenriteshc';IsCurrent=$true;IsHardcore=$true},"
+        "[pscustomobject]@{Value='Runes of Aldur';ShortName='runes';IsCurrent=$true;IsHardcore=$false}) "
+        "}; "
+        "$items=@(Get-PoePatchLeagueOptions -GameVersion poe2); "
+        "if($items.Count -ne 2 -or $items[0].PoeNinjaLeague -ne 'Forbidden Rites' -or $items[1].PoeNinjaLeague -ne 'Runes of Aldur' -or $items[0].Label -ne 'Forbidden Rites（最新）' -or $items[1].Label -ne 'Runes of Aldur'){throw 'newest season or label was not kept first'}; "
+        "Write-Output 'NEWEST_CURRENT_SEASON_FIRST_OK'"
+    )
+    assert output == "NEWEST_CURRENT_SEASON_FIRST_OK"
+
+
+def test_gui_forced_season_refresh_does_not_restore_stale_selection():
+    gui = GUI.read_text(encoding="utf-8-sig")
+    assert (
+        "$PreviousKey = if (-not $ForceRefresh -and $SeasonCombo.SelectedItem)"
+    ) in gui
+
+
 def test_explicit_poe1_league_uses_seasoned_fallback_chain():
     update = (ROOT / "物价补丁" / "tools" / "update_poe1_price_patch.ps1").read_text(
         encoding="utf-8-sig"

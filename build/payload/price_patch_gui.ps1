@@ -946,7 +946,10 @@ function Show-PoePatchLauncherDialog {
         if (-not $ForceRefresh -and $SeasonState.GameVersion -eq $Version -and $SeasonState.Options.Count -gt 0) {
             return
         }
-        $PreviousKey = if ($SeasonCombo.SelectedItem) {
+        # A forced refresh is used on startup, client switches and the refresh
+        # button. Always select the provider's newest item after that request;
+        # retaining a stale historical selection would defeat auto refresh.
+        $PreviousKey = if (-not $ForceRefresh -and $SeasonCombo.SelectedItem) {
             "$($SeasonCombo.SelectedItem.ScoutLeague)|$($SeasonCombo.SelectedItem.PoeNinjaLeague)"
         }
         $SeasonCombo.Items.Clear()

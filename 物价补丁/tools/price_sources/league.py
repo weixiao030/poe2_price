@@ -7,7 +7,7 @@ prevent the existing, known-good defaults from being used.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping, Sequence
 
 
@@ -47,10 +47,11 @@ class LeagueOption:
     poe_ninja: str
     is_current: bool
     order: int = 0
+    is_latest: bool = False
 
     @property
     def label(self) -> str:
-        return f"{self.poe_ninja}（最新）" if self.is_current else self.poe_ninja
+        return f"{self.poe_ninja}（最新）" if self.is_latest else self.poe_ninja
 
 
 def discover_league_options(
@@ -83,8 +84,13 @@ def discover_league_options(
         )
     if not options:
         raise ValueError("赛季响应中没有可用的软核赛季")
+    # poe2scout returns the newest league first. Keep that provider order so
+    # a response that briefly marks more than one softcore league as current
+    # still presents the newest one first instead of reviving an older league.
+    ordered = sorted(options, key=lambda item: (not item.is_current, item.order))
     return tuple(
-        sorted(options, key=lambda item: (not item.is_current, -item.order))
+        replace(item, is_latest=index == 0)
+        for index, item in enumerate(ordered)
     )
 
 

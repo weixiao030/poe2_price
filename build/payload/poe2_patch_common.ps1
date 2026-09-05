@@ -2953,7 +2953,20 @@ function Get-PoePatchLeagueOptions {
         $Order += 1
     }
     if ($Options.Count -eq 0) { throw "赛季目录中没有可用的软核赛季：$DiscoveryUrl" }
-    return @($Options | Sort-Object @{ Expression = { if ($_.IsCurrent) { 0 } else { 1 } } }, @{ Expression = { $_.Order }; Descending = $true })
+    # poe2scout returns the newest league first. Keep that order so a newly
+    # published league remains the default even while an older league still
+    # carries IsCurrent=true during the provider's transition. Only the first
+    # sorted item receives the display-only latest marker.
+    $SortedOptions = @($Options | Sort-Object @{ Expression = { if ($_.IsCurrent) { 0 } else { 1 } } }, @{ Expression = { $_.Order } })
+    for ($Index = 0; $Index -lt $SortedOptions.Count; $Index += 1) {
+        $SortedOptions[$Index].Label = if ($Index -eq 0) {
+            "$($SortedOptions[$Index].Value)（最新）"
+        }
+        else {
+            [string]$SortedOptions[$Index].Value
+        }
+    }
+    return $SortedOptions
 }
 
 function Resolve-PoePatchLeagueSelection {
