@@ -60,15 +60,19 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pytest
 
-      - name: Verify committed release assets
-        shell: powershell
-        run: |
-          python -m pytest -q tests/test_release_payload_sync.py
-
       - name: Build release folder
         shell: powershell
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File .\build\make_release.ps1 -SkipDoc
+
+      # make_release.ps1 rebuilds payload.zip, payload.enc and the launcher
+      # from the checked-out source. Verify those generated artifacts after
+      # the rebuild so a stale committed binary cannot block publishing before
+      # the normal build has had a chance to synchronize it.
+      - name: Verify generated release assets
+        shell: powershell
+        run: |
+          python -m pytest -q tests/test_release_payload_sync.py
 
       - name: Run tests
         shell: powershell
