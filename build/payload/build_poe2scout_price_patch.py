@@ -63,6 +63,7 @@ def progress(message: str) -> None:
 DEFAULT_SCOUT_API = "https://api.poe2scout.com"
 DEFAULT_POECURRENCY_SUMMARY_API = "https://poecurrency.top/api/summary?version=2"
 DEFAULT_POE_NINJA_CURRENCY_URL = "https://poe.ninja/poe2/economy/runesofaldur/currency"
+DEFAULT_POE_NINJA_UNIQUE_ARMOURS_URL = "https://poe.ninja/poe2/economy/forbiddenrites/unique-armours"
 DEFAULT_POE_NINJA_API_URL = "https://poe.ninja/poe2/api/economy/exchange/current/overview"
 DEFAULT_POE_NINJA_ITEM_API_URL = "https://poe.ninja/poe2/api/economy/stash/current/item/overview"
 DEFAULT_POE_NINJA_LEAGUE = "Runes of Aldur"
@@ -884,6 +885,20 @@ def poe_ninja_api_url(api_url: str, league: str, item_type: str) -> str:
     return f"{api_url}?{query}"
 
 
+def poe_ninja_unique_armours_api_url(
+    page_url: str, item_api_url: str, league: str
+) -> str:
+    """Resolve the configured UniqueArmours page to its JSON endpoint.
+
+    The page URL remains the user-facing configuration, while the request
+    always uses the runtime-selected league instead of pinning to its slug.
+    """
+
+    if "?" in page_url and "/api/" in page_url:
+        return page_url
+    return poe_ninja_api_url(item_api_url, league, "UniqueArmours")
+
+
 def decimal_from_text(text: str) -> Decimal:
     cleaned = re.sub(r"[^0-9.]", "", text)
     if not cleaned:
@@ -1200,13 +1215,27 @@ def build_poe_ninja_currency_prices(
     api_url: str,
     league: str,
     item_api_url: str | None = None,
+    unique_armours_page_url: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, PriceObservation]]:
     item_api_url = item_api_url or DEFAULT_POE_NINJA_ITEM_API_URL
+    unique_armours_page_url = (
+        unique_armours_page_url or DEFAULT_POE_NINJA_UNIQUE_ARMOURS_URL
+    )
     source_specs = [
         ("exchange", item_type, poe_ninja_api_url(api_url, league, item_type))
         for item_type in POE_NINJA_EXCHANGE_TYPES
     ] + [
-        ("item", item_type, poe_ninja_api_url(item_api_url, league, item_type))
+        (
+            "item",
+            item_type,
+            (
+                poe_ninja_unique_armours_api_url(
+                    unique_armours_page_url, item_api_url, league
+                )
+                if item_type == "UniqueArmours"
+                else poe_ninja_api_url(item_api_url, league, item_type)
+            ),
+        )
         for item_type in POE_NINJA_ITEM_TYPES
     ]
     if "?" in page_url and "/api/" in page_url:
@@ -1283,6 +1312,7 @@ def build_poe_ninja_currency_prices(
     }
 
     category_stats: list[dict[str, Any]] = []
+    unique_observations_by_name: dict[str, PriceObservation] = {}
     for source_kind, item_type, source_url in source_specs:
         error = category_errors.get((source_kind, item_type), "")
         if error:
@@ -1300,6 +1330,7 @@ def build_poe_ninja_currency_prices(
             continue
         data = payloads.get((source_kind, item_type)) or {}
         lines = data.get("lines") or []
+        primary_unit = str((data.get("core") or {}).get("primary") or "").strip().lower()
         category_stats.append(
             {
                 "kind": source_kind,
@@ -1308,6 +1339,7 @@ def build_poe_ninja_currency_prices(
                 "lines": len(lines),
                 "items": len(data.get("items") or []),
                 "status": "ok",
+                "primary_unit": primary_unit or None,
             }
         )
         if source_kind == "exchange":
@@ -1345,19 +1377,57 @@ def build_poe_ninja_currency_prices(
             name = str(line.get("name") or line.get("baseType") or "").strip()
             if not details_id or not name:
                 continue
+            if line.get("corrupted") is True or str(
+                line.get("corrupted") or ""
+            ).strip().lower() in {"true", "1", "yes"}:
+                continue
+            if "listingCount" in line and to_decimal(line.get("listingCount")) <= 0:
+                continue
             primary_value = to_decimal(line.get("primaryValue"))
-            price_exalted = primary_value * divine_exalted
+            if primary_value <= 0:
+                continue
+            if primary_unit in {"exalted", "exalts", "e"}:
+                price_exalted = primary_value
+            elif primary_unit in {"divine", "divines", "d"}:
+                price_exalted = primary_value * divine_exalted
+            else:
+                # Older fixtures and cached responses omitted core.primary;
+                # retain the historical conversion for that legacy shape.
+                price_exalted = primary_value * divine_exalted
             if price_exalted <= 0:
                 continue
             api_id = f"unique:{normalize_name(details_id)}"
-            best[api_id] = PriceObservation(
+            observation = PriceObservation(
                 api_id=api_id,
                 en_name=name,
                 category=f"unique:{item_type}",
                 price_exalted=price_exalted,
                 value_traded=to_decimal(line.get("listingCount")),
-                source_pair=f"poe.ninja/{item_type}/{name}; primary_value={primary_value}",
+                source_pair=(
+                    f"poe.ninja/{item_type}/{name}; primary_value={primary_value}"
+                    f" {primary_unit or 'legacy-divine'}"
+                ),
             )
+            if item_type == "UniqueArmours":
+                # A unique name may have several base-type rows.  Keep the
+                # most observed row, then the cheaper quote on ties, so the
+                # Words lookup receives one deterministic value per name.
+                name_key = normalize_name(name)
+                previous = unique_observations_by_name.get(name_key)
+                if previous is not None:
+                    previous_rank = (
+                        previous.value_traded,
+                        -previous.price_exalted,
+                    )
+                    current_rank = (
+                        observation.value_traded,
+                        -observation.price_exalted,
+                    )
+                    if current_rank <= previous_rank:
+                        continue
+                    best.pop(previous.api_id, None)
+                unique_observations_by_name[name_key] = observation
+            best[api_id] = observation
 
     discovered_categories = [f"{kind}:{item_type}" for kind, item_type, _ in source_specs]
     succeeded_categories = [
@@ -1382,6 +1452,7 @@ def build_poe_ninja_currency_prices(
         "health_state": source_status,
         "warning": warning,
         "url": poe_ninja_api_url_from_page(page_url, api_url, league),
+        "unique_armours_page_url": unique_armours_page_url,
         "category_count": len(source_specs),
         "discovered_categories": discovered_categories,
         "enabled_categories": discovered_categories,
@@ -1631,6 +1702,11 @@ def fetch_price_source(
             args.poe_ninja_api_url,
             args.poe_ninja_league,
             args.poe_ninja_item_api_url,
+            getattr(
+                args,
+                "poe_ninja_unique_armours_url",
+                DEFAULT_POE_NINJA_UNIQUE_ARMOURS_URL,
+            ),
         )
         return PriceSourceResult(
             source=source,
@@ -2873,12 +2949,25 @@ def price_observation_merge_key(obs: PriceObservation) -> str:
 def merge_price_source_results(
     results: list[PriceSourceResult],
 ) -> dict[str, PriceObservation]:
+    # UniqueArmours is the authoritative POE2 unique-armour feed.  Process
+    # those observations first so the generic poe2scout/fallback rows cannot
+    # silently replace a valid poe.ninja quote for the same display name.
+    ordered_entries: list[tuple[int, int, PriceObservation]] = []
+    for result_index, result in enumerate(results):
+        for observation in (result.prices or {}).values():
+            is_primary_unique_armour = (
+                result.source == "poe-ninja"
+                and observation.category.lower() == "unique:uniquearmours"
+            )
+            ordered_entries.append(
+                (0 if is_primary_unique_armour else 1, result_index, observation)
+            )
+    ordered_entries.sort(key=lambda entry: (entry[0], entry[1]))
     merged_by_key: dict[str, PriceObservation] = {}
-    for result in results:
-        for obs in (result.prices or {}).values():
-            key = price_observation_merge_key(obs)
-            if key not in merged_by_key:
-                merged_by_key[key] = obs
+    for _priority, _result_index, obs in ordered_entries:
+        key = price_observation_merge_key(obs)
+        if key not in merged_by_key:
+            merged_by_key[key] = obs
 
     merged: dict[str, PriceObservation] = {}
     for obs in merged_by_key.values():
@@ -3348,6 +3437,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--api-base", default=DEFAULT_SCOUT_API)
     parser.add_argument("--poecurrency-summary-url", default=DEFAULT_POECURRENCY_SUMMARY_API)
     parser.add_argument("--poe-ninja-currency-url", default=DEFAULT_POE_NINJA_CURRENCY_URL)
+    parser.add_argument(
+        "--poe-ninja-unique-armours-url",
+        default=DEFAULT_POE_NINJA_UNIQUE_ARMOURS_URL,
+        help=(
+            "POE2 UniqueArmours page/API used as the authoritative unique-armour "
+            "source; the runtime-selected poe.ninja league is applied to page URLs."
+        ),
+    )
     parser.add_argument("--poe-ninja-api-url", default=DEFAULT_POE_NINJA_API_URL)
     parser.add_argument("--poe-ninja-item-api-url", default=DEFAULT_POE_NINJA_ITEM_API_URL)
     parser.add_argument(
@@ -4049,6 +4146,7 @@ def main(argv: list[str]) -> int:
         ),
         "league": args.league,
         "poe_ninja_league": args.poe_ninja_league,
+        "poe_ninja_unique_armours_url": args.poe_ninja_unique_armours_url,
         "league_is_current": args.league_is_current == "true",
         "league_selection_source": league_selection_source,
         "league_discovery_url": league_discovery_url,

@@ -1021,6 +1021,112 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertTrue(any("type=Runes" in url for url in client.urls))
         self.assertTrue(any("type=UniqueWeapons" in url for url in client.urls))
 
+    def test_poe_ninja_unique_armours_use_declared_exalted_unit_and_runtime_league(self):
+        class FakeClient:
+            def __init__(self):
+                self.urls = []
+
+            def get_json(self, url):
+                self.urls.append(url)
+                if "type=Currency" in url:
+                    return {
+                        "core": {"rates": {"exalted": 400}},
+                        "lines": [{"id": "divine", "primaryValue": 1}],
+                        "items": [{"id": "divine", "name": "Divine Orb", "category": "Currency"}],
+                    }
+                if "type=UniqueArmours" in url:
+                    return {
+                        "core": {"primary": "exalted", "secondary": "divine", "rates": {}},
+                        "lines": [
+                            {
+                                "detailsId": "test-armour-low-volume",
+                                "name": "Test Armour",
+                                "baseType": "Iron Mantle",
+                                "primaryValue": 29.3,
+                                "listingCount": 1,
+                                "corrupted": False,
+                            },
+                            {
+                                "detailsId": "test-armour-high-volume",
+                                "name": "Test Armour",
+                                "baseType": "Steel Mantle",
+                                "primaryValue": 31,
+                                "listingCount": 4,
+                                "corrupted": False,
+                            },
+                            {
+                                "detailsId": "corrupted-armour",
+                                "name": "Corrupted Armour",
+                                "primaryValue": 2,
+                                "listingCount": 20,
+                                "corrupted": True,
+                            },
+                            {
+                                "detailsId": "empty-armour",
+                                "name": "Empty Armour",
+                                "primaryValue": 0,
+                                "listingCount": 0,
+                                "corrupted": False,
+                            },
+                        ],
+                    }
+                raise AssertionError(f"unexpected URL: {url}")
+
+        client = FakeClient()
+        with patch.object(self.price_patch, "POE_NINJA_EXCHANGE_TYPES", ("Currency",)), patch.object(
+            self.price_patch, "POE_NINJA_ITEM_TYPES", ("UniqueArmours",)
+        ):
+            raw, best = self.price_patch.build_poe_ninja_currency_prices(
+                client,
+                "https://poe.ninja/poe2/economy/runesofaldur/currency",
+                "https://poe.ninja/poe2/api/economy/exchange/current/overview",
+                "Forbidden Rites",
+                "https://poe.ninja/poe2/api/economy/stash/current/item/overview",
+                "https://poe.ninja/poe2/economy/forbiddenrites/unique-armours",
+            )
+
+        unique_url = next(url for url in client.urls if "type=UniqueArmours" in url)
+        self.assertIn("league=Forbidden+Rites", unique_url)
+        self.assertEqual(best["unique:testarmourhighvolume"].price_exalted, Decimal("31"))
+        self.assertNotIn("unique:corruptedarmour", best)
+        self.assertNotIn("unique:emptyarmour", best)
+        self.assertEqual(raw["unique_armours_page_url"], "https://poe.ninja/poe2/economy/forbiddenrites/unique-armours")
+        unique_stat = next(stat for stat in raw["category_stats"] if stat["type"] == "UniqueArmours")
+        self.assertEqual(unique_stat["primary_unit"], "exalted")
+
+    def test_poe_ninja_unique_armours_override_scout_same_name_during_merge(self):
+        scout = self.price_patch.PriceSourceResult(
+            source="poe2scout",
+            prices={
+                "unique:scout": self.price_patch.PriceObservation(
+                    api_id="unique:scout",
+                    en_name="Test Armour",
+                    category="unique:armour",
+                    price_exalted=Decimal("5"),
+                    value_traded=Decimal("10"),
+                    source_pair="poe2scout",
+                )
+            },
+        )
+        ninja = self.price_patch.PriceSourceResult(
+            source="poe-ninja",
+            prices={
+                "unique:ninja": self.price_patch.PriceObservation(
+                    api_id="unique:ninja",
+                    en_name="Test Armour",
+                    category="unique:UniqueArmours",
+                    price_exalted=Decimal("31"),
+                    value_traded=Decimal("4"),
+                    source_pair="poe.ninja/UniqueArmours",
+                )
+            },
+        )
+
+        merged = self.price_patch.merge_price_source_results([scout, ninja])
+
+        self.assertEqual(merged["unique:ninja"].price_exalted, Decimal("31"))
+        self.assertNotIn("unique:scout", merged)
+
     def test_poe_ninja_keeps_core_prices_when_optional_category_fails(self):
         class FakeClient:
             def get_json(self, url):

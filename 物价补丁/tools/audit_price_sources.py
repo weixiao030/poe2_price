@@ -666,6 +666,7 @@ def audit_poe_ninja(
         builder.DEFAULT_POE_NINJA_API_URL,
         league.poe_ninja,
         builder.DEFAULT_POE_NINJA_ITEM_API_URL,
+        builder.DEFAULT_POE_NINJA_UNIQUE_ARMOURS_URL,
     )
     enabled = [
         f"exchange:{name}" for name in builder.POE_NINJA_EXCHANGE_TYPES

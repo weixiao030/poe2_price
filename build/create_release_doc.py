@@ -93,8 +93,10 @@ def copy_template_doc() -> bool:
         ),
         "4. 程序会抓取 poe2scout 国际服价格，并把价格追加为“=数字D/E”。": (
             "4. 程序会按版本、客户端类型和所选价格赛季抓取价格：POE1 国际服使用 poe.ninja 主源，再由 poe2scout 和 PoEDB 逐物品补缺；"
-            "POE1 国服使用 poecurrency.top 主源，再按 poe.ninja、poe2scout、PoEDB 的顺序补缺；POE2 数据源和 D/E 规则保持不变。"
+            "POE1 国服使用 poecurrency.top 主源，再按 poe.ninja、poe2scout、PoEDB 的顺序补缺；"
+            "POE2 通货和其它分类继续使用 poe2scout，并保留 poe.ninja、PoEDB 与 poecurrency.top v2 补缺；传奇护甲优先读取 poe.ninja UniqueArmours JSON 接口，按当前赛季请求。"
             "各来源独立失败和降级，POE1 使用 C/D，POE2 使用 D/E，比例使用当前数据源实时值。"
+            "UniqueArmours 的 Exalted 单位价格不会重复换算，腐化和无有效挂牌行会被过滤；同名多底材按挂牌数和价格确定性去重。"
             "同一个显示名对应多个游戏元数据路径时会为全部别名写入价格；国服翻译重名时使用 engname 英文别名消歧，避免漏价或串价。"
         ),
         "5. 程序会生成“物价补丁.zip”和“还原物价补丁.zip”。Bundles2 模式还会生成“真实还原物价补丁.zip”。": (
@@ -380,7 +382,7 @@ def build():
             "点击底部“开始/更新物价补丁”执行更新，或点击“还原物价补丁”恢复原版；更新会提取英文表和当前客户端目标语言表，还原会直接使用已验证的还原包或逻辑还原基线。",
             "POE1 安装第三方汉化补丁时保留“自动识别”或选择“汉化补丁”；自动模式会检查最新客户端日志，检测到中文区域名后写入繁中表。更新与还原必须使用同一目标语言。",
             "POE1 国际服使用 poe.ninja 主源，再由 poe2scout、PoEDB 逐物品补缺；POE1 国服使用 poecurrency.top 主源，再按 poe.ninja、poe2scout、PoEDB 的顺序补缺。国服主源已有价格不会被国际服来源覆盖。",
-            "POE1 价格追加为 C/D，Chaos/Divine 比例按各来源实时计算；POE2 继续使用原有 poe2scout、poe.ninja、PoEDB 与 poecurrency.top v2 链路和 D/E 规则。",
+            "POE1 价格追加为 C/D，Chaos/Divine 比例按各来源实时计算；POE2 通货和其它分类继续使用 poe2scout、poe.ninja、PoEDB 与 poecurrency.top v2 链路，传奇护甲优先使用 poe.ninja UniqueArmours JSON 接口并按 Exalted 单位读取。",
             "poe.ninja 请求限制为最多 4 个并发；遇到 403/429 或临时网络失败会按 Retry-After 和指数退避重试，核心分类失败只进入同一赛季的备用源，不会跨赛季回退。",
             "国服优先使用 latest_buy1 / latest_sell1 最新盘口价，缺失时回退到 buy_avg / sell_avg；双边价差正常时取几何均值，差距过大时取较低一侧以降低过期均价和 OCR 异常价影响。",
             "同一个显示名对应多个游戏元数据路径时会为全部别名写入价格；国服翻译重名时使用 engname 英文别名消歧，避免漏价或串价。",

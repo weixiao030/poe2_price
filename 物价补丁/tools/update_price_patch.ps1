@@ -9,6 +9,7 @@
     [string]$PatchScope = "",
     [string]$League = "",
     [string]$PoeNinjaLeague = "",
+    [string]$PoeNinjaUniqueArmoursUrl = "https://poe.ninja/poe2/economy/forbiddenrites/unique-armours",
     [bool]$LeagueIsCurrent = $true
 )
 
@@ -2675,7 +2676,8 @@ function Get-CoreOnlyPriceBuildArgs {
         "--tc-words",
         "--unique-gold-prices",
         "--patched-words",
-        "--words-game-path"
+        "--words-game-path",
+        "--poe-ninja-unique-armours-url"
     )
     $Result = New-Object System.Collections.Generic.List[object]
     for ($Index = 0; $Index -lt $ArgumentList.Count; $Index++) {
@@ -3246,6 +3248,7 @@ if (-not [string]::IsNullOrWhiteSpace($League)) {
     $BuildArgs += @(
         "--league", $League,
         "--poe-ninja-league", $(if ([string]::IsNullOrWhiteSpace($PoeNinjaLeague)) { $League } else { $PoeNinjaLeague }),
+        "--poe-ninja-unique-armours-url", $PoeNinjaUniqueArmoursUrl,
         "--league-is-current", $(if ($LeagueIsCurrent) { "true" } else { "false" }),
         "--fallback-price-sources", "poe-ninja"
     )

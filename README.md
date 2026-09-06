@@ -22,7 +22,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.6.4` 优化启动体验：统一启动器会在解密内置运行文件和启动操作界面期间打印当前阶段与“正在加载中，请稍候...”提示，不再让刚打开的窗口长时间保持空白。此前 `v0.6.3` 对 poe.ninja 403 退避重试、赛季刷新默认值等修复继续保留。
+`v0.6.4` 优化启动体验：统一启动器会在解密内置运行文件和启动操作界面期间打印当前阶段与“正在加载中，请稍候...”提示，不再让刚打开的窗口长时间保持空白；POE2 传奇护甲改用 poe.ninja 的 `UniqueArmours` JSON 接口作为优先价格源，按接口声明的 Exalted 单位读取，避免把价格重复换算。此前 `v0.6.3` 对 poe.ninja 403 退避重试、赛季刷新默认值等修复继续保留。
 
 ---
 
@@ -32,7 +32,7 @@
 
 当前**没有**使用官方 Trade 接口。
 
-- POE2 国际服：主源 poe2scout（全量 SnapshotPairs），备用 poe.ninja / poe2db。
+- POE2 国际服：通货和可交易分类继续使用 poe2scout（全量 SnapshotPairs）并保留 poe.ninja / poe2db 补缺；传奇护甲单独优先使用 [poe.ninja UniqueArmours](https://poe.ninja/poe2/economy/forbiddenrites/unique-armours) 对应的 JSON 接口，运行时自动替换为当前所选赛季，只有接口缺失或无有效报价时才回退到其它来源。
 - POE2 国服：主源 `poecurrency.top/api/summary?version=2`，没有国服价的条目再用国际参考源补。
 - POE1 国际服：主源 poe.ninja，备用 poe2scout / poedb。
 - POE1 国服：主源 `poecurrency.top/api/summary?version=1`，再用 poe.ninja / scout / poedb 补缺。
@@ -40,6 +40,7 @@
 - 只读契约审计见 `物价补丁/tools/audit_price_sources.py`，覆盖 POE1/POE2。
 - 赛季目录由 `https://api.poe2scout.com/poe2/Leagues`（POE2）和 `/pc/Leagues`（POE1）运行时发现；每次打开工具或手动刷新都会重新读取，默认选中最新软核赛季且只显示一个“（最新）”标记。历史赛季不会复用当前赛季缓存或无赛季参数的数据源，国服只允许当前赛季。
 - poe.ninja 请求使用站点专用的低并发和 403/429 退避重试；核心分类仍需成功返回，失败时只进入同赛季备用源，不会回退到其它赛季。
+- UniqueArmours 读取 `core.primary`、`primaryValue`、`listingCount` 和 `corrupted` 字段：接口声明 Exalted 时不再乘 Divine 汇率，腐化、零挂牌和无效价格行会被过滤；同名多底材优先保留挂牌更多、价格更低的稳定行。
 
 ## 后续开发计划
 
@@ -52,7 +53,15 @@
 
 完整更新记录见 [更新日志.md](更新日志.md)。
 
+### 26/9/6 更新（v0.6.4）
+
+- POE2 UniqueArmours 改用 poe.ninja 页面对应的 JSON 接口：请求地址为 `/poe2/api/economy/stash/current/item/overview?league=<当前赛季>&type=UniqueArmours`，页面中的 `forbiddenrites` 只作为默认配置示例，不会固定使用旧赛季。
+- 该接口的 `primaryValue` 在 `core.primary=exalted` 时已经是 Exalted 单位，构建器会直接读取；只接受正价格和有效挂牌数，过滤腐化行，并对同名多底材行按挂牌数和价格做确定性去重。
+- 合并价格时，poe.ninja 的 UniqueArmours 行优先覆盖 poe2scout 同名护甲传奇；通货、碎片、武器和其它来源仍保留原有顺序和补缺逻辑。
+- 同步更新 PowerShell 更新器、payload、启动器元数据、使用文档和完整更新日志，版本号统一保持 `0.6.4`。
+
 ### 26/8/23 更新（v0.5.9）
+
 
 - 国服 POE1 圣甲虫恢复国际服回填：`poecurrency-cn` 缺价时仍可用 ninja / scout / poedb 补上圣甲虫价。
 - 只读数据源审计补上 POE1（poe.ninja、poecurrency version=1、poe2scout PC、poedb），并刷新契约 baseline。
