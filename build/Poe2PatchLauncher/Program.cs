@@ -8,10 +8,12 @@ using System.Text.Json;
 internal static class Program
 {
     private static readonly byte[] KeySeed = Encoding.UTF8.GetBytes("poe2-price-patch-launcher-v1");
+    private const string PatchVersion = "0.6.4";
 
     public static int Main(string[] args)
     {
         Console.OutputEncoding = Encoding.UTF8;
+        PrintStartupMessage();
         try
         {
             var mode = "select";
@@ -58,6 +60,7 @@ internal static class Program
             Directory.CreateDirectory(tempRoot);
             try
             {
+                Console.WriteLine("正在解密并准备内置运行文件，请稍候...");
                 ExtractPayload(tempRoot);
                 var scriptPath = Path.Combine(tempRoot, scriptName);
                 if (!File.Exists(scriptPath))
@@ -88,6 +91,7 @@ internal static class Program
                 startInfo.Environment["POE2_PATCH_ROOT"] = patchRoot;
                 startInfo.Environment["POE2_PATCH_RELEASE"] = "1";
 
+                Console.WriteLine("正在启动操作界面...");
                 using var process = Process.Start(startInfo);
                 if (process == null)
                 {
@@ -122,6 +126,15 @@ internal static class Program
             WaitForEnter();
             return 1;
         }
+    }
+
+    private static void PrintStartupMessage()
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"POE1/POE2 物价补丁 v{PatchVersion}");
+        Console.WriteLine("正在加载中，请稍候...");
+        Console.ResetColor();
+        Console.WriteLine("正在准备启动界面，请不要关闭此窗口。\n");
     }
 
     private static string CreateInstanceMutexName(string gameDirectory)

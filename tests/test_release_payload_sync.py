@@ -98,7 +98,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.6.3"
+    assert version == "0.6.4"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -140,6 +140,18 @@ def test_declared_version_is_consistent():
     title = core_properties.find("{http://purl.org/dc/elements/1.1/}title")
     assert title is not None
     assert title.text == f"POE1 / POE2 物价补丁使用文档 v{version}"
+
+
+def test_launcher_prints_startup_progress_before_loading_payload():
+    launcher = (ROOT / "build" / "Poe2PatchLauncher" / "Program.cs").read_text(
+        encoding="utf-8-sig"
+    )
+    startup_call = launcher.index("PrintStartupMessage();")
+    payload_load = launcher.index("ExtractPayload(tempRoot);")
+    assert startup_call < payload_load
+    assert '正在加载中，请稍候...' in launcher
+    assert '正在解密并准备内置运行文件，请稍候...' in launcher
+    assert '正在启动操作界面...' in launcher
 
 
 def test_release_document_describes_fail_safe_behavior():
