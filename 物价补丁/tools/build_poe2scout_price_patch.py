@@ -1381,7 +1381,8 @@ def build_poe_ninja_currency_prices(
                 line.get("corrupted") or ""
             ).strip().lower() in {"true", "1", "yes"}:
                 continue
-            if "listingCount" in line and to_decimal(line.get("listingCount")) <= 0:
+            listing_count = to_decimal(line.get("listingCount"))
+            if item_type == "UniqueArmours" and listing_count <= 0:
                 continue
             primary_value = to_decimal(line.get("primaryValue"))
             if primary_value <= 0:
@@ -1402,7 +1403,7 @@ def build_poe_ninja_currency_prices(
                 en_name=name,
                 category=f"unique:{item_type}",
                 price_exalted=price_exalted,
-                value_traded=to_decimal(line.get("listingCount")),
+                value_traded=listing_count,
                 source_pair=(
                     f"poe.ninja/{item_type}/{name}; primary_value={primary_value}"
                     f" {primary_unit or 'legacy-divine'}"

@@ -1068,6 +1068,12 @@ class PoecurrencyPricingTests(unittest.TestCase):
                                 "listingCount": 0,
                                 "corrupted": False,
                             },
+                            {
+                                "detailsId": "missing-count-armour",
+                                "name": "Missing Count Armour",
+                                "primaryValue": 4,
+                                "corrupted": False,
+                            },
                         ],
                     }
                 raise AssertionError(f"unexpected URL: {url}")
@@ -1090,6 +1096,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(best["unique:testarmourhighvolume"].price_exalted, Decimal("31"))
         self.assertNotIn("unique:corruptedarmour", best)
         self.assertNotIn("unique:emptyarmour", best)
+        self.assertNotIn("unique:missingcountarmour", best)
         self.assertEqual(raw["unique_armours_page_url"], "https://poe.ninja/poe2/economy/forbiddenrites/unique-armours")
         unique_stat = next(stat for stat in raw["category_stats"] if stat["type"] == "UniqueArmours")
         self.assertEqual(unique_stat["primary_unit"], "exalted")
