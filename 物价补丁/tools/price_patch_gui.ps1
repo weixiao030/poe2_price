@@ -984,8 +984,12 @@ function Show-PoePatchLauncherDialog {
             $SeasonCombo.SelectedIndex = $SelectedIndex
             $SeasonCombo.Enabled = $true
             $SeasonRefreshButton.Enabled = $true
-            $SeasonStatus.ForeColor = $Muted
-            $SeasonStatus.Text = if ($IsChina) {
+            $HasFallback = @($Options | Where-Object { [bool]$_.DiscoveryFallback }).Count -gt 0
+            $SeasonStatus.ForeColor = if ($HasFallback) { [System.Drawing.Color]::DarkOrange } else { $Muted }
+            $SeasonStatus.Text = if ($HasFallback) {
+                [string]$Options[0].DiscoveryMessage
+            }
+            elseif ($IsChina) {
                 "已读取当前赛季；国服数据源不支持历史赛季。"
             }
             else {

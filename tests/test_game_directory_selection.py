@@ -441,6 +441,47 @@ def test_powershell_league_parser_keeps_newest_current_first_during_transition()
     assert output == "NEWEST_CURRENT_SEASON_FIRST_OK"
 
 
+def test_powershell_league_parser_uses_builtin_current_season_when_discovery_fails():
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; "
+        "function global:Invoke-RestMethod { throw 'simulated timeout' }; "
+        "$items=@(Get-PoePatchLeagueOptions -GameVersion poe2); "
+        "if($items.Count -ne 1 -or $items[0].ScoutLeague -ne 'runes' -or "
+        "$items[0].PoeNinjaLeague -ne 'Runes of Aldur' -or -not $items[0].IsCurrent -or "
+        "-not $items[0].DiscoveryFallback) { throw 'builtin season fallback mismatch' }; "
+        "Write-Output 'BUILTIN_SEASON_FALLBACK_OK'"
+    )
+    assert output == "BUILTIN_SEASON_FALLBACK_OK"
+
+
+def test_powershell_ggpk_installer_dependencies_are_repaired_from_extractor(tmp_path: Path):
+    installer = tmp_path / "一键安装特殊补丁工具"
+    fallback = tmp_path / "tools" / "GGPKExtractor"
+    installer.mkdir(parents=True)
+    fallback.mkdir(parents=True)
+    required = (
+        "LibBundle3.dll",
+        "LibBundledGGPK3.dll",
+        "LibGGPK3.dll",
+        "SystemExtensions.dll",
+        "oo2core.dll",
+        "vcruntime140.dll",
+    )
+    for name in required:
+        (fallback / name).write_bytes(name.encode("ascii"))
+    (installer / "LibGGPK3.dll").unlink(missing_ok=True)
+
+    output = run_powershell(
+        f". {ps_quote(COMMON)}; "
+        f"$copied=@(Ensure-Poe2GgpkInstallerDependencies -BundledInstallerDir {ps_quote(installer)} -FallbackDirectories @({ps_quote(fallback)})); "
+        f"$required=@({','.join(repr(name) for name in required)}); "
+        "if($copied -notcontains 'LibGGPK3.dll' -or @($required | Where-Object { -not (Test-Path (Join-Path "
+        f"{ps_quote(installer)} $_) -PathType Leaf) }}).Count -ne 0) {{ throw 'GGPK dependency repair mismatch' }}; "
+        "Write-Output 'GGPK_DEPENDENCY_REPAIR_OK'"
+    )
+    assert output == "GGPK_DEPENDENCY_REPAIR_OK"
+
+
 def test_gui_forced_season_refresh_does_not_restore_stale_selection():
     gui = GUI.read_text(encoding="utf-8-sig")
     assert (

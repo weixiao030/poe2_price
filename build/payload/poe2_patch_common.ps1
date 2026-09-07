@@ -2892,6 +2892,41 @@ function Get-PoePatchLeagueCacheToken {
     return $Digest.Substring(0, 24)
 }
 
+function Get-PoePatchBuiltinLeagueOptions {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("poe1", "poe2")]
+        [string]$GameVersion,
+        [Parameter(Mandatory = $true)][string]$DiscoveryUrl,
+        [string]$Reason = ""
+    )
+
+    if ($GameVersion -eq "poe1") {
+        $ScoutLeague = "Standard"
+        $League = "Standard"
+    }
+    else {
+        $ScoutLeague = "runes"
+        $League = "Runes of Aldur"
+    }
+
+    $Message = "赛季目录暂时无法访问，已使用内置当前赛季：$League。"
+    if (-not [string]::IsNullOrWhiteSpace($Reason)) {
+        $Message = "$Message 原因：$Reason"
+    }
+    return @([pscustomobject]@{
+            Label             = "$League（最新）"
+            Value             = $League
+            ScoutLeague       = $ScoutLeague
+            PoeNinjaLeague    = $League
+            IsCurrent         = $true
+            DiscoveryUrl      = $DiscoveryUrl
+            DiscoveryFallback = $true
+            DiscoveryMessage  = $Message
+            Order             = 0
+        })
+}
+
 function Get-PoePatchLeagueOptions {
     param(
         [Parameter(Mandatory = $true)]
@@ -2906,10 +2941,23 @@ function Get-PoePatchLeagueOptions {
     # an unrelated hard-coded name.
     $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
     $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
-    $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.4" } `
-        -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
+    try {
+        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.4" } `
+            -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
+    }
+    catch {
+        return Get-PoePatchBuiltinLeagueOptions `
+            -GameVersion $GameVersion `
+            -DiscoveryUrl $DiscoveryUrl `
+            -Reason $_.Exception.Message
+    }
     $Rows = @($Response)
-    if ($Rows.Count -eq 0) { throw "赛季目录为空：$DiscoveryUrl" }
+    if ($Rows.Count -eq 0) {
+        return Get-PoePatchBuiltinLeagueOptions `
+            -GameVersion $GameVersion `
+            -DiscoveryUrl $DiscoveryUrl `
+            -Reason "服务返回空目录。"
+    }
 
     $Options = New-Object System.Collections.Generic.List[object]
     $Seen = @{}
@@ -2952,7 +3000,12 @@ function Get-PoePatchLeagueOptions {
             })
         $Order += 1
     }
-    if ($Options.Count -eq 0) { throw "赛季目录中没有可用的软核赛季：$DiscoveryUrl" }
+    if ($Options.Count -eq 0) {
+        return Get-PoePatchBuiltinLeagueOptions `
+            -GameVersion $GameVersion `
+            -DiscoveryUrl $DiscoveryUrl `
+            -Reason "服务返回的目录中没有可用的软核赛季。"
+    }
     # poe2scout returns the newest league first. Keep that order so a newly
     # published league remains the default even while an older league still
     # carries IsCurrent=true during the provider's transition. Only the first
@@ -2967,6 +3020,68 @@ function Get-PoePatchLeagueOptions {
         }
     }
     return $SortedOptions
+}
+
+function Ensure-Poe2GgpkInstallerDependencies {
+    param(
+        [Parameter(Mandatory = $true)][string]$BundledInstallerDir,
+        [string[]]$FallbackDirectories = @()
+    )
+
+    $RequiredFiles = @(
+        "LibBundle3.dll",
+        "LibBundledGGPK3.dll",
+        "LibGGPK3.dll",
+        "SystemExtensions.dll",
+        "oo2core.dll",
+        "vcruntime140.dll"
+    )
+    if (-not (Test-Path -LiteralPath $BundledInstallerDir -PathType Container)) {
+        throw "GGPK 安装器目录不存在：$BundledInstallerDir"
+    }
+
+    $InstallerParent = Split-Path -Parent $BundledInstallerDir
+    $Candidates = @($FallbackDirectories) + @(
+        (Join-Path $InstallerParent "GGPKExtractor"),
+        (Join-Path $InstallerParent "tools\GGPKExtractor")
+    ) | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([string]$_) -and
+        (Test-Path -LiteralPath $_ -PathType Container)
+    } | Select-Object -Unique
+
+    $Copied = New-Object System.Collections.Generic.List[string]
+    foreach ($FileName in $RequiredFiles) {
+        $Target = Join-Path $BundledInstallerDir $FileName
+        if (Test-Path -LiteralPath $Target -PathType Leaf) {
+            continue
+        }
+        $Source = $null
+        foreach ($Candidate in $Candidates) {
+            $CandidateFile = Join-Path $Candidate $FileName
+            if (Test-Path -LiteralPath $CandidateFile -PathType Leaf) {
+                $Source = $CandidateFile
+                break
+            }
+        }
+        if ($null -eq $Source) {
+            continue
+        }
+        try {
+            Copy-Item -LiteralPath $Source -Destination $Target -Force -ErrorAction Stop
+            $Copied.Add($FileName)
+        }
+        catch {
+            throw "无法修复 GGPK 安装器依赖 $FileName：$($_.Exception.Message)"
+        }
+    }
+
+    $Missing = @($RequiredFiles | Where-Object {
+        -not (Test-Path -LiteralPath (Join-Path $BundledInstallerDir $_) -PathType Leaf)
+    })
+    if ($Missing.Count -gt 0) {
+        throw "GGPK 安装器缺少必要依赖：$($Missing -join ', ')。请重新解压完整发布包。"
+    }
+    return @($Copied.ToArray())
 }
 
 function Resolve-PoePatchLeagueSelection {

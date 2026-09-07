@@ -2910,6 +2910,9 @@ $PriceSourceName = if ($UseChinaPriceSource) { "国服 poecurrency.top" } else {
 
 if ($GameMode -eq "GGPK") {
     Assert-File $ContentGgpk "Content.ggpk"
+    Ensure-Poe2GgpkInstallerDependencies `
+        -BundledInstallerDir $BundledInstallerDir `
+        -FallbackDirectories @((Join-Path $PublicToolsRoot "GGPKExtractor")) | Out-Null
     Assert-File $Extractor "GGPKExtractor"
     Assert-File $BundledPatchDll "PatchBundledGGPK3.dll"
     Assert-File $BundledPatchRuntimeConfig "PatchBundledGGPK3.runtimeconfig.json"
