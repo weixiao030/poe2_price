@@ -26,7 +26,9 @@ def test_bundle_extractor_has_single_load_batch_mode():
     assert 'args[0].Equals("--extract-list"' in source
     batch = source[source.index("static int ExtractFiles"):]
     assert "LoadIndex(indexPath, parsePaths: false)" in batch
-    assert "TryGetFile(filePath" in batch
+    assert "TryGetFile(requestedPath" in batch
+    assert "TryResolveFile(loaded.Index, filePath" in batch
+    assert "Found unique similar file" in source
 
 
 def test_published_bundle_extractor_exposes_batch_mode():
@@ -40,6 +42,20 @@ def test_published_bundle_extractor_exposes_batch_mode():
     )
     assert result.returncode == 1
     assert "--extract-list" in result.stdout
+
+
+def test_update_batches_bundle_extraction_and_retries_transient_index_failures():
+    script = read(UPDATE)
+    assert "function Invoke-Poe2BundleExtractBatch" in script
+    batch = powershell_function(script, "Invoke-Poe2BundleExtractBatch", "Test-PricePatchZipCompatible")
+    assert "--extract-list" in batch
+    assert "MaxAttempts = 3" in batch
+    assert "RetryDelaySeconds = 2" in batch
+    assert "Start-Sleep" in batch
+    extraction = script[script.index('Write-Step "使用 BundleExtractor 从 Bundles2 提取最新 BaseItemTypes"') :]
+    assert "Invoke-Poe2BundleExtractBatch" in extraction
+    assert "索引只加载一次" in extraction
+    assert "Failed to extract $($Entry.Label)" in extraction
 
 
 def test_update_does_not_repack_untouched_libggpk3_entries():

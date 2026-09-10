@@ -167,6 +167,22 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(metrics[0]["content_type"], "application/json; charset=utf-8")
         self.assertEqual(metrics[0]["content_bytes"], len(response.content))
 
+    def test_http_client_rejects_non_http_urls(self):
+        client = self.price_patch.RetryingRequests(
+            max_retries=0,
+            timeout=0.1,
+            total_timeout=0.1,
+        )
+        for url in (
+            "file:///C:/Windows/win.ini",
+            "ftp://example.invalid/data",
+            "//example.invalid/no-scheme",
+            "relative/path",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(ValueError, "unsupported HTTP URL scheme"):
+                    client.get(url)
+
     def test_poe_ninja_403_is_retried_but_other_forbidden_responses_are_not(self):
         url = (
             "https://poe.ninja/poe2/api/economy/exchange/current/overview"

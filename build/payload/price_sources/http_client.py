@@ -238,7 +238,8 @@ class RetryingRequests:
         deadline = time.monotonic() + timeout
         request = urllib.request.Request(url, headers=self._headers(), method="GET")
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            # URL scheme/host are validated by get() before reaching this path.
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
                 content = self._read_response_content(
                     response,
                     url,
@@ -308,6 +309,11 @@ class RetryingRequests:
         raise value
 
     def get(self, url: str, **kwargs: Any) -> HttpResponse:
+        parsed_url = urllib.parse.urlsplit(str(url))
+        if parsed_url.scheme.lower() not in {"http", "https"} or not parsed_url.netloc:
+            raise ValueError(
+                f"unsupported HTTP URL scheme or missing host: {compact_text(url)}"
+            )
         last_error: Exception | None = None
         last_response: HttpResponse | None = None
         request_started = time.monotonic()
@@ -364,7 +370,8 @@ class RetryingRequests:
                     flush=True,
                 )
                 time.sleep(delay)
-        assert last_error is not None
+        if last_error is None:
+            last_error = RuntimeError(f"request failed without an error: {url}")
         self._record_request_metric(
             url,
             request_started,

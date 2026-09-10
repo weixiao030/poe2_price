@@ -311,33 +311,7 @@ class Program
         try
         {
             using var loaded = LoadIndex(indexPath, parsePaths: false);
-
-            loaded.Index.TryGetFile(filePath, out FileRecord? targetFile);
-
-            if (targetFile == null)
-            {
-                // Keep the old fuzzy fallback for diagnostics, but only pay the full
-                // multi-million-path parsing cost when the exact hash lookup failed.
-                loaded.Index.ParsePaths();
-                var similarFiles = loaded.Index.Files.Values
-                    .Where(file => IsSafeFuzzyPathMatch(file.Path, filePath))
-                    .Take(6)
-                    .ToArray();
-                if (similarFiles.Length == 1)
-                {
-                    Console.WriteLine($"Found unique similar file: {similarFiles[0].Path}");
-                    targetFile = similarFiles[0];
-                }
-                else if (similarFiles.Length > 1)
-                {
-                    Console.WriteLine($"Error: File path is ambiguous: {filePath}");
-                    foreach (var file in similarFiles.Take(5))
-                        Console.WriteLine($"  Candidate: {file.Path}");
-                    return 1;
-                }
-            }
-
-            if (targetFile == null)
+            if (!TryResolveFile(loaded.Index, filePath, out FileRecord? targetFile) || targetFile == null)
             {
                 Console.WriteLine($"Error: File not found in bundle: {filePath}");
                 return 1;
@@ -420,7 +394,7 @@ class Program
             {
                 string filePath = requestedPaths[i];
                 string outputPath = Path.Combine(outputRoot, $"{i:D6}.bin");
-                if (!loaded.Index.TryGetFile(filePath, out FileRecord? targetFile))
+                if (!TryResolveFile(loaded.Index, filePath, out FileRecord? targetFile) || targetFile == null)
                 {
                     Console.WriteLine($"Error: File not found in bundle: {filePath}");
                     failed++;
@@ -454,6 +428,37 @@ class Program
             PrintError(ex);
             return 1;
         }
+    }
+
+    static bool TryResolveFile(LibBundle3.Index index, string requestedPath, out FileRecord? targetFile)
+    {
+        targetFile = null;
+        if (index.TryGetFile(requestedPath, out targetFile) && targetFile != null)
+        {
+            return true;
+        }
+
+        // Game updates occasionally add a locale/root prefix while preserving the
+        // logical DAT path. Parse paths only after the fast hash lookup misses.
+        index.ParsePaths();
+        var similarFiles = index.Files.Values
+            .Where(file => IsSafeFuzzyPathMatch(file.Path, requestedPath))
+            .Take(6)
+            .ToArray();
+        if (similarFiles.Length == 1)
+        {
+            Console.WriteLine($"Found unique similar file: {similarFiles[0].Path}");
+            targetFile = similarFiles[0];
+            return true;
+        }
+
+        if (similarFiles.Length > 1)
+        {
+            Console.WriteLine($"Error: File path is ambiguous: {requestedPath}");
+            foreach (var file in similarFiles.Take(5))
+                Console.WriteLine($"  Candidate: {file.Path}");
+        }
+        return false;
     }
 
     static LoadedIndex LoadIndex(string indexPath, bool parsePaths = true)

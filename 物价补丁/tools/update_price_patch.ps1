@@ -2572,6 +2572,118 @@ function Resolve-BundleExtractor {
     }
 }
 
+function Invoke-Poe2BundleExtractBatch {
+    param(
+        [Parameter(Mandatory = $true)][string]$IndexPath,
+        [Parameter(Mandatory = $true)][object[]]$Entries,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [int]$MaxAttempts = 3,
+        [int]$RetryDelaySeconds = 2
+    )
+
+    if ($Entries.Count -eq 0) {
+        return [pscustomobject]@{
+            ExitCode = 0
+            Entries = @()
+            LogPath = $LogPath
+        }
+    }
+
+    $TempDir = Join-Path $env:TEMP ([string]::Concat("poe2_extract_batch_", [Guid]::NewGuid().ToString("N")))
+    $RequestListPath = Join-Path $TempDir "request.txt"
+    $OutputDir = Join-Path $TempDir "output"
+    $ResolvedEntries = @($Entries | ForEach-Object {
+            [pscustomobject]@{
+                Path = ([string]$_.Path).Replace("\", "/")
+                Destination = [string]$_.Destination
+                Label = [string]$_.Label
+                Required = [bool]$_.Required
+            }
+        })
+    $LastExitCode = 1
+    $Found = @()
+    try {
+        New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+        foreach ($Entry in $ResolvedEntries) {
+            if (Test-Path -LiteralPath $Entry.Destination -PathType Leaf) {
+                Remove-Item -LiteralPath $Entry.Destination -Force
+            }
+        }
+        [System.IO.File]::WriteAllLines(
+            $RequestListPath,
+            @($ResolvedEntries | ForEach-Object { $_.Path }),
+            (New-Object System.Text.UTF8Encoding($false))
+        )
+        if (Test-Path -LiteralPath $LogPath -PathType Leaf) {
+            Remove-Item -LiteralPath $LogPath -Force
+        }
+
+        for ($Attempt = 1; $Attempt -le [Math]::Max(1, $MaxAttempts); $Attempt++) {
+            if (Test-Path -LiteralPath $OutputDir -PathType Container) {
+                Remove-Item -LiteralPath $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+            Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value "--- BundleExtractor attempt $Attempt/$([Math]::Max(1, $MaxAttempts)) ---"
+
+            $AttemptOutput = @(& $BundledBundleExtractorExe --extract-list $IndexPath $RequestListPath $OutputDir 2>&1)
+            $LastExitCode = $LASTEXITCODE
+            $AttemptOutput | ForEach-Object { Write-Host $_ }
+            if ($AttemptOutput.Count -gt 0) {
+                $AttemptOutput | Out-File -LiteralPath $LogPath -Encoding UTF8 -Append
+            }
+
+            $Found = @()
+            for ($Index = 0; $Index -lt $ResolvedEntries.Count; $Index++) {
+                $Source = Join-Path $OutputDir ([string]::Format("{0:D6}.bin", $Index))
+                if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+                    continue
+                }
+                $Destination = $ResolvedEntries[$Index].Destination
+                New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Destination) | Out-Null
+                Copy-Poe2FileAtomically -Source $Source -Destination $Destination | Out-Null
+                $Found += [pscustomobject]@{
+                    Path = $ResolvedEntries[$Index].Path
+                    Destination = $Destination
+                    Label = $ResolvedEntries[$Index].Label
+                    Required = $ResolvedEntries[$Index].Required
+                    Found = $true
+                }
+            }
+            $FoundPaths = @($Found | ForEach-Object { $_.Path })
+            $Missing = @($ResolvedEntries | Where-Object { $FoundPaths -notcontains $_.Path })
+            if ($LastExitCode -eq 0 -and $Missing.Count -eq 0) {
+                return [pscustomobject]@{
+                    ExitCode = 0
+                    Entries = @($Found)
+                    LogPath = $LogPath
+                }
+            }
+            if ($Missing.Count -eq 0) {
+                return [pscustomobject]@{
+                    ExitCode = $LastExitCode
+                    Entries = @($Found)
+                    LogPath = $LogPath
+                }
+            }
+            if ($Attempt -lt [Math]::Max(1, $MaxAttempts)) {
+                Write-Warning "BundleExtractor 本次提取未完成（退出码：$LastExitCode，缺少 $($Missing.Count) 个文件），$RetryDelaySeconds 秒后重试。"
+                Start-Sleep -Seconds ([Math]::Max(0, $RetryDelaySeconds))
+            }
+        }
+
+        return [pscustomobject]@{
+            ExitCode = $LastExitCode
+            Entries = @($Found)
+            LogPath = $LogPath
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $TempDir -PathType Container) {
+            Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Test-PricePatchZipCompatible {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -2993,86 +3105,83 @@ if (-not $SkipExtract) {
         $DestDir = Join-Path $LatestDir "data"
         New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 
-        Write-Host "正在提取英文 BaseItemTypes..."
-        & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.EnBaseItemsPath $EnBaseItems
-        if ($LASTEXITCODE -ne 0) {
-            if ($IsChinaClient) {
-                $EnglishBaseItemsUnavailable = $true
-                if (Test-Path -LiteralPath $EnBaseItems -PathType Leaf) {
-                    Remove-Item -LiteralPath $EnBaseItems -Force
-                }
-                Write-Warning "国服 Bundles2 未包含英文 BaseItemTypes，将改用 Poe2DB Economy 做国际服价格参考。退出码：$LASTEXITCODE"
-            }
-            else {
-                throw "Failed to extract English BaseItemTypes. Exit code: $LASTEXITCODE"
-            }
-        }
-        else {
-            Write-Host "已提取到：$EnBaseItems"
-        }
-
-        Write-Host "正在提取$DisplayLanguageName BaseItemTypes..."
-        & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcBaseItemsPath $TcBaseItems
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to extract $($InstallInfo.LanguageName) BaseItemTypes. Exit code: $LASTEXITCODE"
-        }
-        Write-Host "已提取到：$TcBaseItems"
-
-        Write-Host "正在提取$DisplayLanguageName EndgameMaps..."
-        if (Test-Path -LiteralPath $TcEndgameMaps -PathType Leaf) {
-            Remove-Item -LiteralPath $TcEndgameMaps -Force
-        }
-        & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $InstallInfo.TcEndgameMapsPath $TcEndgameMaps
-        if ($LASTEXITCODE -ne 0) {
-            if ($PatchIslandRumourHintsEnabled) {
-                throw "Failed to extract $($InstallInfo.LanguageName) EndgameMaps. Exit code: $LASTEXITCODE"
-            }
-            Write-Warning "EndgameMaps 提取失败，将无法清理旧岛屿传言提示。退出码：$LASTEXITCODE"
-        }
-        else {
-            Write-Host "已提取到：$TcEndgameMaps"
-        }
+        $ExtractEntries = New-Object System.Collections.Generic.List[object]
+        $ExtractEntries.Add([pscustomobject]@{
+                Path = $InstallInfo.EnBaseItemsPath
+                Destination = $EnBaseItems
+                Label = "英文 BaseItemTypes"
+                Required = (-not $IsChinaClient)
+            })
+        $ExtractEntries.Add([pscustomobject]@{
+                Path = $InstallInfo.TcBaseItemsPath
+                Destination = $TcBaseItems
+                Label = "$DisplayLanguageName BaseItemTypes"
+                Required = $true
+            })
+        $ExtractEntries.Add([pscustomobject]@{
+                Path = $InstallInfo.TcEndgameMapsPath
+                Destination = $TcEndgameMaps
+                Label = "$DisplayLanguageName EndgameMaps"
+                Required = $PatchIslandRumourHintsEnabled
+            })
 
         if ($SupportsUniqueWords) {
-            Write-Host "正在提取英文 Words..."
-            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/words.datc64" $EnWords
-            if ($LASTEXITCODE -ne 0) {
-                if ($IsChinaClient) {
-                    $EnglishWordsUnavailable = $true
-                    if (Test-Path -LiteralPath $EnWords -PathType Leaf) {
-                        Remove-Item -LiteralPath $EnWords -Force
-                    }
-                    Write-Warning "国服 Bundles2 未包含英文 Words，将跳过依赖英文 Words 的传奇英文兜底。退出码：$LASTEXITCODE"
-                }
-                else {
-                    throw "Failed to extract English Words. Exit code: $LASTEXITCODE"
-                }
-            }
-            else {
-                Write-Host "已提取到：$EnWords"
-            }
-
-            Write-Host "正在提取$DisplayLanguageName Words..."
-            & $BundledBundleExtractorExe $Bundles2Paths.IndexBin $TcWordsPath $TcWords
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to extract $($InstallInfo.LanguageName) Words. Exit code: $LASTEXITCODE"
-            }
-            Write-Host "已提取到：$TcWords"
-
+            $ExtractEntries.Add([pscustomobject]@{
+                    Path = "data/balance/words.datc64"
+                    Destination = $EnWords
+                    Label = "英文 Words"
+                    Required = (-not $IsChinaClient)
+                })
+            $ExtractEntries.Add([pscustomobject]@{
+                    Path = $TcWordsPath
+                    Destination = $TcWords
+                    Label = "$DisplayLanguageName Words"
+                    Required = $true
+                })
             if ($PatchUniqueWordsEnabled) {
-                Write-Host "正在提取 UniqueGoldPrices..."
-                & $BundledBundleExtractorExe $Bundles2Paths.IndexBin "data/balance/uniquegoldprices.datc64" $UniqueGoldPrices
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Failed to extract UniqueGoldPrices. Exit code: $LASTEXITCODE"
-                }
-                Write-Host "已提取到：$UniqueGoldPrices"
-            }
-            else {
-                Write-Host "当前选择只打通货补丁，已跳过 UniqueGoldPrices 提取。" -ForegroundColor Yellow
+                $ExtractEntries.Add([pscustomobject]@{
+                        Path = "data/balance/uniquegoldprices.datc64"
+                        Destination = $UniqueGoldPrices
+                        Label = "UniqueGoldPrices"
+                        Required = $true
+                    })
             }
         }
-        else {
+
+        Write-Host "正在批量提取 $($ExtractEntries.Count) 个游戏数据文件（索引只加载一次，失败会自动重试）..."
+        $ExtractResult = Invoke-Poe2BundleExtractBatch `
+            -IndexPath $Bundles2Paths.IndexBin `
+            -Entries $ExtractEntries.ToArray() `
+            -LogPath $ExtractLog `
+            -MaxAttempts 3 `
+            -RetryDelaySeconds 2
+        $FoundByPath = @{}
+        foreach ($FoundEntry in @($ExtractResult.Entries)) {
+            $FoundByPath[[string]$FoundEntry.Path] = $FoundEntry
+            Write-Host "已提取到：$($FoundEntry.Label) -> $($FoundEntry.Destination)"
+        }
+        foreach ($Entry in $ExtractEntries) {
+            if ($FoundByPath.ContainsKey([string]$Entry.Path)) {
+                continue
+            }
+            if ([bool]$Entry.Required) {
+                throw "Failed to extract $($Entry.Label). Exit code: $($ExtractResult.ExitCode). Log: $ExtractLog"
+            }
+            Write-Warning "$($Entry.Label) 未提取到，将按可选资源缺失处理。退出码：$($ExtractResult.ExitCode)；日志：$ExtractLog"
+        }
+        $EnglishBaseItemsUnavailable = -not $FoundByPath.ContainsKey([string]$InstallInfo.EnBaseItemsPath)
+        $EnglishWordsUnavailable = $SupportsUniqueWords -and -not $FoundByPath.ContainsKey("data/balance/words.datc64")
+        if ($EnglishBaseItemsUnavailable -and $IsChinaClient) {
+            Write-Warning "国服 Bundles2 未包含英文 BaseItemTypes，将改用 Poe2DB Economy 做国际服价格参考。"
+        }
+        if ($EnglishWordsUnavailable -and $IsChinaClient) {
+            Write-Warning "国服 Bundles2 未包含英文 Words，将跳过依赖英文 Words 的传奇英文兜底。"
+        }
+        if (-not $SupportsUniqueWords) {
             Write-Host "当前语言不支持传奇物品 Words 提取，已跳过。语言：$DisplayLanguageName" -ForegroundColor Yellow
+        }
+        elseif (-not $PatchUniqueWordsEnabled) {
+            Write-Host "当前选择只打通货补丁，已跳过 UniqueGoldPrices 提取。" -ForegroundColor Yellow
         }
     }
 }
