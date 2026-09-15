@@ -14,10 +14,7 @@ $SpecialToolDir = Join-Path $PatchSourceDir "一键安装特殊补丁工具"
 $ReleaseDir = Join-Path $Root "发布版\物价补丁"
 $ReleaseToolsDir = Join-Path $ReleaseDir "tools"
 $PayloadDir = Join-Path $BuildDir "payload"
-$PayloadZip = Join-Path $BuildDir "payload.zip"
-$PayloadEnc = Join-Path $BuildDir "Poe2PatchLauncher\payload.enc"
 $LauncherProject = Join-Path $BuildDir "Poe2PatchLauncher\Poe2PatchLauncher.csproj"
-$PackerProject = Join-Path $BuildDir "PayloadPacker\PayloadPacker.csproj"
 $BundleExtractorProject = Join-Path $BuildDir "BundleExtractor\BundleExtractor.csproj"
 $PublishDir = Join-Path $BuildDir "publish-self"
 $BundleExtractorPublishDir = Join-Path $BuildDir "publish-bundle-extractor"
@@ -667,7 +664,7 @@ function Build-Docs {
 }
 
 function Build-Payload {
-    Write-Step "Build encrypted launcher payload"
+    Write-Step "Synchronize plaintext tools"
     Remove-TreeSafe -Path $PayloadDir -RootPath $Root
     New-DirectorySafe -Path $PayloadDir -RootPath $Root | Out-Null
 
@@ -712,17 +709,6 @@ function Build-Payload {
         Copy-Item -LiteralPath $Source -Destination (Join-Path $PayloadBundleExtractorDir $FileName) -Force
     }
 
-    if (Test-Path -LiteralPath $PayloadZip -PathType Leaf) {
-        Remove-Item -LiteralPath $PayloadZip -Force
-    }
-    Compress-Archive -Path (Join-Path $PayloadDir "*") -DestinationPath $PayloadZip -Force
-
-    Assert-File -Path $PackerProject -Name "PayloadPacker project"
-    Invoke-Checked -FilePath "dotnet" -ArgumentList @(
-        "run", "-c", "Release", "--project", $PackerProject, "--",
-        $PayloadZip,
-        $PayloadEnc
-    )
 }
 
 function Prepare-ReleaseSeedFiles {
@@ -822,6 +808,15 @@ function Build-ReleaseFolder {
     $LauncherExe = Join-Path $PublishDir "Poe2PatchLauncher.exe"
     Assert-File -Path $LauncherExe -Name "published launcher"
     Copy-Item -LiteralPath $LauncherExe -Destination (Join-Path $ReleaseDir "物价补丁.exe") -Force
+
+    # Scripts are intentionally shipped as plaintext files; the launcher loads
+    # them directly from the sibling tools directory.
+    foreach ($Source in @(Get-ChildItem -LiteralPath $PayloadDir -Recurse -File)) {
+        $Relative = $Source.FullName.Substring($PayloadDir.Length).TrimStart('\', '/')
+        $Destination = Join-Path $ReleaseToolsDir $Relative
+        New-DirectorySafe -Path (Split-Path -Parent $Destination) -RootPath $Root | Out-Null
+        Copy-Item -LiteralPath $Source.FullName -Destination $Destination -Force
+    }
 
     foreach ($FileName in @("使用文档.docx", "请先看使用文档.txt")) {
         $Source = Join-Path $PatchSourceDir $FileName

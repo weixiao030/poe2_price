@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.6.5"
+$script:PatchVersion = "v0.6.6"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -515,22 +515,79 @@ function Show-PoePatchLauncherDialog {
     $BackgroundGroup = New-Object System.Windows.Forms.GroupBox
     $BackgroundGroup.Text = "后台运行设置"
     $BackgroundGroup.Location = New-Object System.Drawing.Point(24, 524)
-    $BackgroundGroup.Size = New-Object System.Drawing.Size(672, 72)
+    $BackgroundGroup.Size = New-Object System.Drawing.Size(672, 88)
     $BackgroundGroup.BackColor = $PanelColor
     $Form.Controls.Add($BackgroundGroup)
-    $AutoStartCheck = New-Object System.Windows.Forms.CheckBox
-    $AutoStartCheck.Text = "开机自动启动（最小化到托盘）"
-    $AutoStartCheck.Location = New-Object System.Drawing.Point(18, 28)
-    $AutoStartCheck.AutoSize = $true
-    $BackgroundGroup.Controls.Add($AutoStartCheck)
-    $AutoUpdateCheck = New-Object System.Windows.Forms.CheckBox
-    $AutoUpdateCheck.Text = "每小时自动更新物价"
-    $AutoUpdateCheck.Location = New-Object System.Drawing.Point(350, 28)
-    $AutoUpdateCheck.AutoSize = $true
-    $BackgroundGroup.Controls.Add($AutoUpdateCheck)
-    $SavedAuto = Get-PoePatchAutoSettings
-    $AutoStartCheck.Checked = $SavedAuto.AutoStart
-    $AutoUpdateCheck.Checked = $SavedAuto.AutoUpdate
+    $AutoStartButton = New-Object System.Windows.Forms.Button
+    $AutoStartButton.Location = New-Object System.Drawing.Point(18, 25)
+    $AutoStartButton.Size = New-Object System.Drawing.Size(290, 30)
+    $AutoStartButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $AutoStartButton.FlatAppearance.BorderColor = $BorderColor
+    $BackgroundGroup.Controls.Add($AutoStartButton)
+    $AutoUpdateButton = New-Object System.Windows.Forms.Button
+    $AutoUpdateButton.Location = New-Object System.Drawing.Point(350, 25)
+    $AutoUpdateButton.Size = New-Object System.Drawing.Size(290, 30)
+    $AutoUpdateButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+    $AutoUpdateButton.FlatAppearance.BorderColor = $BorderColor
+    $BackgroundGroup.Controls.Add($AutoUpdateButton)
+    $AutoUpdateResultLabel = New-Object System.Windows.Forms.Label
+    $AutoUpdateResultLabel.Location = New-Object System.Drawing.Point(20, 59)
+    $AutoUpdateResultLabel.Size = New-Object System.Drawing.Size(620, 20)
+    $AutoUpdateResultLabel.ForeColor = $Muted
+    $BackgroundGroup.Controls.Add($AutoUpdateResultLabel)
+    $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+    $LauncherPath = [Environment]::GetEnvironmentVariable("POE2_PATCH_LAUNCHER")
+    if ([string]::IsNullOrWhiteSpace($LauncherPath) -and -not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) { $LauncherPath = Join-Path $env:POE2_PATCH_ROOT "物价补丁.exe" }
+    $GetAutoStartActualState = {
+        try {
+            $Registered = [string](Get-ItemPropertyValue -Path $RunKey -Name "Poe2PricePatch" -ErrorAction Stop)
+            return -not [string]::IsNullOrWhiteSpace($Registered) -and $Registered -match [regex]::Escape("--background")
+        }
+        catch { return $false }
+    }
+    $RefreshAutoSettings = {
+        $SavedAuto = Get-PoePatchAutoSettings
+        $AutoStartEnabled = & $GetAutoStartActualState
+        $AutoStartButton.Text = "开机自启：" + $(if ($AutoStartEnabled) { "已启用" } else { "未启用" })
+        $AutoStartButton.BackColor = if ($AutoStartEnabled) { [System.Drawing.Color]::FromArgb(39, 135, 87) } else { $PanelColor }
+        $AutoStartButton.ForeColor = if ($AutoStartEnabled) { [System.Drawing.Color]::White } else { $Form.ForeColor }
+        $AutoUpdateButton.Text = "每小时更新：" + $(if ($SavedAuto.AutoUpdate) { "已启用" } else { "未启用" })
+        $AutoUpdateButton.BackColor = if ($SavedAuto.AutoUpdate) { [System.Drawing.Color]::FromArgb(39, 135, 87) } else { $PanelColor }
+        $AutoUpdateButton.ForeColor = if ($SavedAuto.AutoUpdate) { [System.Drawing.Color]::White } else { $Form.ForeColor }
+        $When = if ([string]::IsNullOrWhiteSpace($SavedAuto.LastAutoUpdateUtc)) { "尚未自动更新" } else { "最近自动更新：" + $SavedAuto.LastAutoUpdateUtc }
+        $Result = if ([string]::IsNullOrWhiteSpace($SavedAuto.LastAutoUpdateStatus)) { "" } else { "，" + $SavedAuto.LastAutoUpdateStatus }
+        $Message = if ([string]::IsNullOrWhiteSpace($SavedAuto.LastAutoUpdateMessage)) { "" } else { "：" + $SavedAuto.LastAutoUpdateMessage }
+        $AutoUpdateResultLabel.Text = $When + $Result + $Message
+    }
+    & $RefreshAutoSettings
+    $AutoStartButton.Add_Click({
+        try {
+            $Enabled = -not (& $GetAutoStartActualState)
+            if ($Enabled) {
+                if ([string]::IsNullOrWhiteSpace($LauncherPath) -or -not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) { throw "无法定位启动器路径，未写入开机启动。" }
+                New-Item -Path $RunKey -Force | Out-Null
+                Set-ItemProperty -Path $RunKey -Name "Poe2PricePatch" -Value ('"' + $LauncherPath + '" --background')
+            }
+            else { Remove-ItemProperty -Path $RunKey -Name "Poe2PricePatch" -ErrorAction SilentlyContinue }
+            $Current = Get-PoePatchAutoSettings
+            Save-PoePatchAutoSettings -AutoStart $Enabled -AutoUpdate $Current.AutoUpdate | Out-Null
+            & $RefreshAutoSettings
+        }
+        catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "后台设置", "OK", "Error") | Out-Null }
+    })
+    $AutoUpdateButton.Add_Click({
+        try {
+            $Current = Get-PoePatchAutoSettings
+            $Enabled = -not $Current.AutoUpdate
+            if ($Enabled -and ($null -eq $Current.LastSelection -or -not [bool]$Current.LastSelection.confirmed)) {
+                [System.Windows.Forms.MessageBox]::Show("请先完成一次手动更新物价，后台更新才知道应使用的游戏路径和服务器。", "后台设置", "OK", "Information") | Out-Null
+                return
+            }
+            Save-PoePatchAutoSettings -AutoStart ([bool](& $GetAutoStartActualState)) -AutoUpdate $Enabled | Out-Null
+            & $RefreshAutoSettings
+        }
+        catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "后台设置", "OK", "Error") | Out-Null }
+    })
 
     $WarningLabel = New-Object System.Windows.Forms.Label
     $WarningLabel.Text = "运行前请关闭游戏和对应启动器；工具会先建立可验证的还原包。"
@@ -1254,9 +1311,12 @@ try {
     if ($Selection.GameVersion -eq "poe1") {
         Save-Poe1LanguageMode -LanguageMode $Selection.Poe1LanguageMode | Out-Null
     }
-    Save-PoePatchAutoSettings -AutoStart $AutoStartCheck.Checked -AutoUpdate $AutoUpdateCheck.Checked | Out-Null
+    $CurrentAuto = Get-PoePatchAutoSettings
     $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-    if ($AutoStartCheck.Checked) {
+    $AutoStartState = $false
+    try { $AutoStartState = -not [string]::IsNullOrWhiteSpace([string](Get-ItemPropertyValue -Path $RunKey -Name "Poe2PricePatch" -ErrorAction Stop)) } catch { }
+    Save-PoePatchAutoSettings -AutoStart $AutoStartState -AutoUpdate $CurrentAuto.AutoUpdate | Out-Null
+    if ($AutoStartState) {
         $LauncherPath = [Environment]::GetEnvironmentVariable("POE2_PATCH_LAUNCHER")
         if ([string]::IsNullOrWhiteSpace($LauncherPath) -and -not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) { $LauncherPath = Join-Path $env:POE2_PATCH_ROOT "物价补丁.exe" }
         if (-not [string]::IsNullOrWhiteSpace($LauncherPath) -and (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) {
@@ -1333,9 +1393,13 @@ if ($Selection.Operation -eq "update" -and $ExitCode -eq 0) {
         confirmed = $true
     }
     try {
-        Save-PoePatchAutoSettings -AutoStart $AutoStartCheck.Checked -AutoUpdate $AutoUpdateCheck.Checked -LastSelection $LastSelection | Out-Null
+        $CurrentAuto = Get-PoePatchAutoSettings
         $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-        if ($AutoStartCheck.Checked) {
+        $AutoStartState = $false
+        try { $AutoStartState = -not [string]::IsNullOrWhiteSpace([string](Get-ItemPropertyValue -Path $RunKey -Name "Poe2PricePatch" -ErrorAction Stop)) } catch { }
+        Save-PoePatchAutoSettings -AutoStart $AutoStartState -AutoUpdate $CurrentAuto.AutoUpdate -LastSelection $LastSelection | Out-Null
+        $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+        if ($AutoStartState) {
             $LauncherPath = [Environment]::GetEnvironmentVariable("POE2_PATCH_LAUNCHER")
             if ([string]::IsNullOrWhiteSpace($LauncherPath) -and -not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) { $LauncherPath = Join-Path $env:POE2_PATCH_ROOT "物价补丁.exe" }
             if ([string]::IsNullOrWhiteSpace($LauncherPath) -or -not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) { throw "无法定位启动器路径，未写入开机启动。" }

@@ -1,4 +1,3 @@
-import subprocess
 import zipfile
 import re
 import xml.etree.ElementTree as ET
@@ -7,11 +6,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "物价补丁" / "tools"
 PAYLOAD = ROOT / "build" / "payload"
-PAYLOAD_ZIP = ROOT / "build" / "payload.zip"
-PAYLOAD_ENC = ROOT / "build" / "Poe2PatchLauncher" / "payload.enc"
-PACKER_PROJECT = ROOT / "build" / "PayloadPacker" / "PayloadPacker.csproj"
 PUBLISHED_LAUNCHER = ROOT / "build" / "publish-self" / "Poe2PatchLauncher.exe"
 SOURCE_LAUNCHER = ROOT / "物价补丁" / "物价补丁.exe"
+RELEASE_DIR = ROOT / "发布版" / "物价补丁"
 LAUNCHER_PROJECT = ROOT / "build" / "Poe2PatchLauncher" / "Poe2PatchLauncher.csproj"
 SOURCE_DOC = ROOT / "物价补丁" / "使用文档.docx"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "build-release.yml"
@@ -52,38 +49,12 @@ def test_payload_folder_matches_tool_sources():
         assert payload.read_bytes() == source.read_bytes(), f"stale payload file: {relative}"
 
 
-def test_payload_zip_matches_payload_folder():
-    assert PAYLOAD_ZIP.exists(), "missing build/payload.zip"
-    with zipfile.ZipFile(PAYLOAD_ZIP, "r") as archive:
-        names = {name.replace("\\", "/") for name in archive.namelist()}
-        for relative in PAYLOAD_FILES:
-            assert relative in names, f"missing payload zip entry: {relative}"
-            assert archive.read(relative) == (PAYLOAD / relative).read_bytes(), (
-                f"stale payload zip entry: {relative}"
-            )
-
-
-def test_encrypted_payload_matches_payload_zip():
-    assert PAYLOAD_ENC.exists(), "missing build/Poe2PatchLauncher/payload.enc"
-    result = subprocess.run(
-        [
-            "dotnet",
-            "run",
-            "-c",
-            "Release",
-            "--project",
-            str(PACKER_PROJECT),
-            "--",
-            "--verify",
-            str(PAYLOAD_ZIP),
-            str(PAYLOAD_ENC),
-        ],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+def test_plaintext_release_tools_match_sources():
+    for relative in PAYLOAD_FILES:
+        source = TOOLS / Path(relative)
+        released = RELEASE_DIR / "tools" / Path(relative)
+        assert released.exists(), f"missing release tool: {relative}"
+        assert released.read_bytes() == source.read_bytes(), f"stale release tool: {relative}"
 
 
 def test_source_launchers_match_published_launcher():
@@ -99,7 +70,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.6.5"
+    assert version == "0.6.6"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -143,16 +114,14 @@ def test_declared_version_is_consistent():
     assert title.text == f"POE1 / POE2 物价补丁使用文档 v{version}"
 
 
-def test_launcher_prints_startup_progress_before_loading_payload():
+def test_launcher_uses_hidden_plaintext_tools_without_console():
     launcher = (ROOT / "build" / "Poe2PatchLauncher" / "Program.cs").read_text(
         encoding="utf-8-sig"
     )
-    startup_call = launcher.index("PrintStartupMessage();")
-    payload_load = launcher.index("ExtractPayload(tempRoot);")
-    assert startup_call < payload_load
-    assert '正在加载中，请稍候...' in launcher
-    assert '正在解密并准备内置运行文件，请稍候...' in launcher
-    assert '正在启动操作界面...' in launcher
+    assert 'CreateNoWindow = true' in launcher
+    assert 'tools", "price_patch_gui.ps1"' in launcher
+    assert 'ExtractPayload' not in launcher
+    assert 'payload.enc' not in launcher
 
 
 def test_release_document_describes_fail_safe_behavior():

@@ -2942,7 +2942,7 @@ function Get-PoePatchLeagueOptions {
     $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
     $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
     try {
-        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.5" } `
+        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.6" } `
             -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
     }
     catch {
