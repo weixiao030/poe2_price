@@ -22,7 +22,7 @@ else {
 }
 Set-Location -LiteralPath $RepoRoot
 $CodeToolsRoot = $PSScriptRoot
-$script:PatchVersion = "v0.6.7"
+$script:PatchVersion = "v0.6.8"
 $script:GameDirectoryMutex = $null
 $ValidationDir = ""
 

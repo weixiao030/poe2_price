@@ -43,7 +43,12 @@ internal static class Program
             var appDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory));
             var scriptPath = Path.Combine(appDir, "tools", "price_patch_gui.ps1");
             if (!File.Exists(scriptPath)) throw new FileNotFoundException("发布目录缺少 tools\\price_patch_gui.ps1，请完整解压发布包。", scriptPath);
-            var startInfo = CreatePowerShellStartInfo(appDir, scriptPath);
+            // The PowerShell host must not inherit a hidden window style here:
+            // WinForms dialogs created by a hidden PowerShell process are also
+            // hidden, which made a double-click appear to do nothing.  Keep
+            // CreateNoWindow=true (no console window) while allowing the GUI
+            // form itself to be shown.
+            var startInfo = CreatePowerShellStartInfo(appDir, scriptPath, showWindow: true);
             startInfo.ArgumentList.Add("-Mode"); startInfo.ArgumentList.Add(mode);
             foreach (var value in scriptArgs) startInfo.ArgumentList.Add(value);
             SetPatchEnvironment(startInfo, appDir);
@@ -177,9 +182,9 @@ internal static class Program
         }
     }
 
-    private static ProcessStartInfo CreatePowerShellStartInfo(string appDir, string scriptPath)
+    private static ProcessStartInfo CreatePowerShellStartInfo(string appDir, string scriptPath, bool showWindow = false)
     {
-        var info = new ProcessStartInfo { FileName = "powershell.exe", UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, WorkingDirectory = appDir };
+        var info = new ProcessStartInfo { FileName = "powershell.exe", UseShellExecute = false, CreateNoWindow = true, WindowStyle = showWindow ? ProcessWindowStyle.Normal : ProcessWindowStyle.Hidden, WorkingDirectory = appDir };
         foreach (var arg in new[] { "-NoProfile", "-STA", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath }) info.ArgumentList.Add(arg);
         return info;
     }

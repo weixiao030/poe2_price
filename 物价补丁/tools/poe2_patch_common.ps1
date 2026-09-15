@@ -2941,7 +2941,7 @@ function Get-PoePatchLeagueOptions {
         $Version = if ($GameVersion -eq "poe1") { "poe1" } else { "poe2" }
         $DiscoveryUrl = "https://poecurrency.top/api/season_list?version=$Version"
         try {
-            $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.7" } -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
+            $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.8" } -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
             $Values = @($Response | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
             if ($Values.Count -eq 0) { throw "服务返回空国服赛季目录。" }
             $Options = for ($Index = 0; $Index -lt $Values.Count; $Index += 1) {
@@ -2967,7 +2967,7 @@ function Get-PoePatchLeagueOptions {
                 try {
                     $SeasonUrl = $DiscoveryUrl -replace '/season_list\?version=', '/summary?version='
                     $SeasonUrl = "$SeasonUrl&season=$([Uri]::EscapeDataString([string]$Option.PoeCurrencySeason))"
-                    $Summary = Invoke-RestMethod -Uri $SeasonUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.7" } -TimeoutSec ([Math]::Min(10, [Math]::Max(5, $TimeoutSeconds)))
+                    $Summary = Invoke-RestMethod -Uri $SeasonUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.8" } -TimeoutSec ([Math]::Min(10, [Math]::Max(5, $TimeoutSeconds)))
                     $SummaryItems = @($Summary | ForEach-Object { if ($null -ne $_ -and $null -ne $_.items) { @($_.items).Count } else { 0 } } | Measure-Object -Sum).Sum
                     if ([int]$SummaryItems -gt 0) { $ValidOptions.Add($Option) }
                 }
@@ -2996,7 +2996,7 @@ function Get-PoePatchLeagueOptions {
     $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
     $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
     try {
-        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.7" } `
+        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.8" } `
             -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
     }
     catch {

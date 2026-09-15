@@ -70,7 +70,7 @@ def test_declared_version_is_consistent():
     match = re.search(r'\$script:PatchVersion\s*=\s*"v([0-9.]+)"', update_script)
     assert match, "missing PatchVersion"
     version = match.group(1)
-    assert version == "0.6.7"
+    assert version == "0.6.8"
 
     restore_script = (TOOLS / "restore_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore_match = re.search(
@@ -119,6 +119,8 @@ def test_launcher_uses_hidden_plaintext_tools_without_console():
         encoding="utf-8-sig"
     )
     assert 'CreateNoWindow = true' in launcher
+    assert 'CreatePowerShellStartInfo(appDir, scriptPath, showWindow: true)' in launcher
+    assert 'showWindow ? ProcessWindowStyle.Normal : ProcessWindowStyle.Hidden' in launcher
     assert 'tools", "price_patch_gui.ps1"' in launcher
     assert 'ExtractPayload' not in launcher
     assert 'payload.enc' not in launcher
