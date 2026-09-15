@@ -1,0 +1,35 @@
+diff --git "a/\347\211\251\344\273\267\350\241\245\344\270\201/tools/price_patch_gui.ps1" "b/\347\211\251\344\273\267\350\241\245\344\270\201/tools/price_patch_gui.ps1"
+index 085439e..425d2ac 100644
+--- "a/\347\211\251\344\273\267\350\241\245\344\270\201/tools/price_patch_gui.ps1"
++++ "b/\347\211\251\344\273\267\350\241\245\344\270\201/tools/price_patch_gui.ps1"
+@@ -1277,15 +1277,27 @@ function Show-PoePatchLauncherDialog {
+ 
+     & $SetOperationLayout
+     & $UpdateGameButtonStyle
+-    & $RefreshCandidates
+-    & $UpdateScopeForGame
+-    if (-not $ConstructOnly) { & $RefreshSeasons $true }
+ 
+     if ($ConstructOnly) {
+         $Form.Dispose()
+         return $null
+     }
+ 
++    # Paint the window first, then perform client discovery and season network
++    # requests on the first UI timer tick. This removes the several-second
++    # blank-start delay while retaining the same discovery behavior.
++    $StartupRefreshTimer = New-Object System.Windows.Forms.Timer
++    $StartupRefreshTimer.Interval = 50
++    $StartupRefreshTimer.Add_Tick({
++            $StartupRefreshTimer.Stop()
++            $StartupRefreshTimer.Dispose()
++            & $SetStatus "正在读取客户端与赛季信息，请稍候…" $false
++            & $RefreshCandidates
++            & $UpdateScopeForGame
++            if ($OperationState.Value -eq "update") { & $RefreshSeasons $true }
++        })
++    $Form.Add_Shown({ $StartupRefreshTimer.Start() })
++
+     $Result = $Form.ShowDialog()
+     $Selection = $Form.Tag
+     $Form.Dispose()

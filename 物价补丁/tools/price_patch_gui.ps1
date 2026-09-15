@@ -1277,14 +1277,26 @@ function Show-PoePatchLauncherDialog {
 
     & $SetOperationLayout
     & $UpdateGameButtonStyle
-    & $RefreshCandidates
-    & $UpdateScopeForGame
-    if (-not $ConstructOnly) { & $RefreshSeasons $true }
 
     if ($ConstructOnly) {
         $Form.Dispose()
         return $null
     }
+
+    # Paint the window first, then perform client discovery and season network
+    # requests on the first UI timer tick. This removes the several-second
+    # blank-start delay while retaining the same discovery behavior.
+    $StartupRefreshTimer = New-Object System.Windows.Forms.Timer
+    $StartupRefreshTimer.Interval = 50
+    $StartupRefreshTimer.Add_Tick({
+            $StartupRefreshTimer.Stop()
+            $StartupRefreshTimer.Dispose()
+            & $SetStatus "正在读取客户端与赛季信息，请稍候…" $false
+            & $RefreshCandidates
+            & $UpdateScopeForGame
+            if ($OperationState.Value -eq "update") { & $RefreshSeasons $true }
+        })
+    $Form.Add_Shown({ $StartupRefreshTimer.Start() })
 
     $Result = $Form.ShowDialog()
     $Selection = $Form.Tag
