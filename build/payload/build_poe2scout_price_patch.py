@@ -1900,7 +1900,23 @@ def fetch_poecurrency_summary(
     client: RetryingRequests, summary_url: str
 ) -> list[dict[str, Any]]:
     data = client.get_json(summary_url)
-    return normalize_poecurrency_summary(data)
+    normalized = normalize_poecurrency_summary(data)
+    item_count = sum(
+        len(category.get("items") or [])
+        for category in normalized
+        if isinstance(category, dict)
+    )
+    # poecurrency.top returns an empty JSON array for seasons that are listed
+    # but have no archived data (for example an old/placeholder season).  Do
+    # not treat that response as a successful primary source: callers may then
+    # use the configured international source only for an explicit missing-item
+    # supplement, rather than silently building a whole patch from the wrong
+    # season.
+    if not normalized or item_count <= 0:
+        raise ValueError(
+            f"poecurrency summary contains no usable season data (categories={len(normalized)}, items={item_count})"
+        )
+    return normalized
 
 
 def fetch_item_categories(
@@ -3880,6 +3896,12 @@ def main(argv: list[str]) -> int:
             source_health_reports.setdefault(
                 "poecurrency-cn",
                 failed_source_health("poecurrency-cn", exc).to_dict(),
+            )
+
+        if not best:
+            raise ValueError(
+                "poecurrency-cn 主数据源没有返回当前所选国服赛季的可用价格；"
+                "为避免把国际服价格误当国服主价，已拒绝使用国际源替代整个价格集。"
             )
 
         reference_chain = build_cn_reference_chain(

@@ -6,10 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Poe2PatchLauncher</AssemblyName>
-    <Version>0.6.6</Version>
-    <AssemblyVersion>0.6.6</AssemblyVersion>
-    <FileVersion>0.6.6</FileVersion>
-    <InformationalVersion>0.6.6</InformationalVersion>
+    <Version>0.6.7</Version>
+    <AssemblyVersion>0.6.7</AssemblyVersion>
+    <FileVersion>0.6.7</FileVersion>
+    <InformationalVersion>0.6.7</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 </Project>

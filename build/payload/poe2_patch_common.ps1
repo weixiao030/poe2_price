@@ -2918,7 +2918,8 @@ function Get-PoePatchBuiltinLeagueOptions {
             Label             = "$League（最新）"
             Value             = $League
             ScoutLeague       = $ScoutLeague
-            PoeNinjaLeague    = $League
+                PoeNinjaLeague    = $League
+                PoeCurrencySeason = $League
             IsCurrent         = $true
             DiscoveryUrl      = $DiscoveryUrl
             DiscoveryFallback = $true
@@ -2932,8 +2933,61 @@ function Get-PoePatchLeagueOptions {
         [Parameter(Mandatory = $true)]
         [ValidateSet("poe1", "poe2")]
         [string]$GameVersion,
+        [switch]$China,
         [int]$TimeoutSeconds = 20
     )
+
+    if ($China) {
+        $Version = if ($GameVersion -eq "poe1") { "poe1" } else { "poe2" }
+        $DiscoveryUrl = "https://poecurrency.top/api/season_list?version=$Version"
+        try {
+            $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.7" } -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
+            $Values = @($Response | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if ($Values.Count -eq 0) { throw "服务返回空国服赛季目录。" }
+            $Options = for ($Index = 0; $Index -lt $Values.Count; $Index += 1) {
+                $Value = $Values[$Index].Trim()
+                [pscustomobject]@{
+                    Label = if ($Index -eq 0) { "$Value（最新）" } else { $Value }
+                    Value = $Value
+                    ScoutLeague = $Value
+                    PoeNinjaLeague = $Value
+                    PoeCurrencySeason = $Value
+                    IsCurrent = ($Index -eq 0)
+                    DiscoveryUrl = $DiscoveryUrl
+                    Order = $Index
+                }
+            }
+            # The site may keep a season in the directory before it has any
+            # archived summary rows (POE1 currently exposes such placeholders).
+            # Probe the small directory asynchronously from the GUI's first
+            # refresh and omit only those unusable entries, so the default is
+            # always a season that can actually produce prices.
+            $ValidOptions = New-Object System.Collections.Generic.List[object]
+            foreach ($Option in @($Options)) {
+                try {
+                    $SeasonUrl = $DiscoveryUrl -replace '/season_list\?version=', '/summary?version='
+                    $SeasonUrl = "$SeasonUrl&season=$([Uri]::EscapeDataString([string]$Option.PoeCurrencySeason))"
+                    $Summary = Invoke-RestMethod -Uri $SeasonUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.7" } -TimeoutSec ([Math]::Min(10, [Math]::Max(5, $TimeoutSeconds)))
+                    $SummaryItems = @($Summary | ForEach-Object { if ($null -ne $_ -and $null -ne $_.items) { @($_.items).Count } else { 0 } } | Measure-Object -Sum).Sum
+                    if ([int]$SummaryItems -gt 0) { $ValidOptions.Add($Option) }
+                }
+                catch {
+                    # Keep probing other listed seasons; a transient failure
+                    # must not make an otherwise valid historical season vanish.
+                }
+            }
+            if ($ValidOptions.Count -eq 0) { throw "国服赛季目录没有可用价格数据。" }
+            for ($Index = 0; $Index -lt $ValidOptions.Count; $Index += 1) {
+                $ValidOptions[$Index].IsCurrent = ($Index -eq 0)
+                $ValidOptions[$Index].Label = if ($Index -eq 0) { "$($ValidOptions[$Index].Value)（最新）" } else { [string]$ValidOptions[$Index].Value }
+                $ValidOptions[$Index].Order = $Index
+            }
+            return @($ValidOptions.ToArray())
+        }
+        catch {
+            return Get-PoePatchBuiltinLeagueOptions -GameVersion $GameVersion -DiscoveryUrl $DiscoveryUrl -Reason $_.Exception.Message
+        }
+    }
 
     # poe2scout keeps one schema for both realms and includes archived leagues.
     # The GUI uses this directory only; prices are fetched later with the exact
@@ -2942,7 +2996,7 @@ function Get-PoePatchLeagueOptions {
     $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
     $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
     try {
-        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.6" } `
+        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.7" } `
             -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
     }
     catch {
@@ -3091,10 +3145,11 @@ function Resolve-PoePatchLeagueSelection {
         [string]$GameVersion,
         [string]$League = "",
         [string]$PoeNinjaLeague = "",
+        [switch]$China,
         [int]$TimeoutSeconds = 20
     )
 
-    $Options = @(Get-PoePatchLeagueOptions -GameVersion $GameVersion -TimeoutSeconds $TimeoutSeconds)
+    $Options = @(Get-PoePatchLeagueOptions -GameVersion $GameVersion -China:$China -TimeoutSeconds $TimeoutSeconds)
     $League = $League.Trim()
     $PoeNinjaLeague = $PoeNinjaLeague.Trim()
     if ([string]::IsNullOrWhiteSpace($League)) {

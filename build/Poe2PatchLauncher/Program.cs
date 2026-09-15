@@ -7,7 +7,7 @@ using Microsoft.Win32;
 
 internal static class Program
 {
-    private const string PatchVersion = "0.6.6";
+    private const string PatchVersion = "0.6.7";
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValueName = "Poe2PricePatch";
     private static Mutex? UiMutex;

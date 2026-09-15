@@ -10,6 +10,7 @@
     [string]$PatchScope = "",
     [string]$League = "",
     [string]$PoeNinjaLeague = "",
+    [string]$PoeCurrencySeason = "",
     [string]$PoeNinjaUniqueArmoursUrl = "https://poe.ninja/poe2/economy/forbiddenrites/unique-armours",
     [bool]$LeagueIsCurrent = $true
 )
@@ -30,7 +31,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.6.6"
+$script:PatchVersion = "v0.6.7"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -3027,13 +3028,11 @@ if ($InstallInfo.LanguageDefaulted) {
 $IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*"
 if ($PatchPriceFetchEnabled) {
     $SelectedLeague = Resolve-PoePatchLeagueSelection -GameVersion "poe2" `
-        -League $League -PoeNinjaLeague $PoeNinjaLeague -TimeoutSeconds 20
+        -League $League -PoeNinjaLeague $PoeNinjaLeague -China:$IsChinaClient -TimeoutSeconds 20
     $League = [string]$SelectedLeague.ScoutLeague
     $PoeNinjaLeague = [string]$SelectedLeague.PoeNinjaLeague
+    $PoeCurrencySeason = if (-not [string]::IsNullOrWhiteSpace([string]$SelectedLeague.PoeCurrencySeason)) { [string]$SelectedLeague.PoeCurrencySeason } else { $PoeNinjaLeague }
     $LeagueIsCurrent = [bool]$SelectedLeague.IsCurrent
-    if (-not $LeagueIsCurrent -and $IsChinaClient) {
-        throw "POE2 国服价格源只支持当前赛季，不能为国服生成历史赛季补丁。请在 GUI 中选择当前赛季。"
-    }
 }
 $UseChinaPriceSource = $IsChinaClient
 $PriceSourceName = if ($UseChinaPriceSource) { "国服 poecurrency.top" } else { "POE2 Scout" }
@@ -3390,7 +3389,7 @@ if ($UseChinaPriceSource) {
     $CnReferenceSource = if ($EnglishBaseItemsUnavailable) { "poe2db-economy" } else { "poe2scout" }
     $BuildArgs += @(
         "--price-source", "poecurrency-cn",
-        "--poecurrency-summary-url", "https://poecurrency.top/api/summary?version=2",
+        "--poecurrency-summary-url", $(if ([string]::IsNullOrWhiteSpace($PoeCurrencySeason)) { "https://poecurrency.top/api/summary?version=2" } else { "https://poecurrency.top/api/summary?version=2&season=" + [Uri]::EscapeDataString($PoeCurrencySeason) }),
         "--cn-reference-source", $CnReferenceSource
     )
     if ($EnglishBaseItemsUnavailable) {

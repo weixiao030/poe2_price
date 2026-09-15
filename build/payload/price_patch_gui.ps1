@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.6.6"
+$script:PatchVersion = "v0.6.7"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -465,8 +465,8 @@ function Show-PoePatchLauncherDialog {
     $ToolTip.SetToolTip($BrowseButton, "浏览游戏根目录")
     $ToolTip.SetToolTip($RefreshButton, "重新扫描已安装的 POE 客户端")
     $ToolTip.SetToolTip($LanguageCombo, "汉化补丁模式会写入 POE1 繁体中文资源表")
-    $ToolTip.SetToolTip($SeasonCombo, "从 poe2scout 实时读取软核赛季；价格请求严格使用所选赛季")
-    $ToolTip.SetToolTip($SeasonRefreshButton, "重新读取 poe2scout 的赛季目录")
+    $ToolTip.SetToolTip($SeasonCombo, "国际服从 poe2scout、国服从 poecurrency.top 实时读取软核赛季；价格请求严格使用所选赛季")
+    $ToolTip.SetToolTip($SeasonRefreshButton, "重新读取当前服区的赛季目录")
     $ToolTip.SetToolTip($LocalizeButton, "每次点击都会下载 PoEDB 推荐的最新 PoeChinese3，并使用法语入口")
 
     $PathStatus = New-Object System.Windows.Forms.Label
@@ -931,7 +931,10 @@ function Show-PoePatchLauncherDialog {
     }
 
     $RefreshCandidates = {
-        param([bool]$ForceRefresh = $false)
+        param(
+            [bool]$ForceRefresh = $false,
+            [bool]$FastOnly = $false
+        )
 
         $PreviousPath = if ($ClientCombo.SelectedItem) { [string]$ClientCombo.SelectedItem.Candidate.Path } else { "" }
         $ClientCombo.Items.Clear()
@@ -955,7 +958,7 @@ function Show-PoePatchLauncherDialog {
                 $Candidates = @(Get-PoePatchGameDirectoryCandidates `
                         -GameVersion $RequestedVersion `
                         -PreferredRoot $PreferredGameRoot `
-                        -SkipSystemGameDiscovery:$SkipSystemGameDiscovery)
+                        -SkipSystemGameDiscovery:($SkipSystemGameDiscovery -or $FastOnly))
                 $CandidateCache[$RequestedVersion] = @($Candidates)
                 if ($RequestedVersion -eq "auto") {
                     foreach ($Version in @("poe1", "poe2")) {
@@ -1027,7 +1030,7 @@ function Show-PoePatchLauncherDialog {
         # button. Always select the provider's newest item after that request;
         # retaining a stale historical selection would defeat auto refresh.
         $PreviousKey = if (-not $ForceRefresh -and $SeasonCombo.SelectedItem) {
-            "$($SeasonCombo.SelectedItem.ScoutLeague)|$($SeasonCombo.SelectedItem.PoeNinjaLeague)"
+            "$($SeasonCombo.SelectedItem.ScoutLeague)|$($SeasonCombo.SelectedItem.PoeNinjaLeague)|$($SeasonCombo.SelectedItem.PoeCurrencySeason)"
         }
         $SeasonCombo.Items.Clear()
         $SeasonCombo.Enabled = $false
@@ -1035,17 +1038,11 @@ function Show-PoePatchLauncherDialog {
         $SeasonState.Busy = $true
         $Form.UseWaitCursor = $true
         try {
-            $Options = @(Get-PoePatchLeagueOptions -GameVersion $Version -TimeoutSeconds 15)
             $IsChina = $false
             if ($ClientCombo.SelectedItem -and $ClientCombo.SelectedItem.Candidate.InstallInfo) {
                 $IsChina = [bool]$ClientCombo.SelectedItem.Candidate.InstallInfo.IsChina
             }
-            if ($IsChina) {
-                $Options = @($Options | Where-Object { $_.IsCurrent })
-                if ($Options.Count -eq 0) {
-                    throw "国服价格源只提供当前赛季，未找到当前赛季。"
-                }
-            }
+            $Options = @(Get-PoePatchLeagueOptions -GameVersion $Version -China:$IsChina -TimeoutSeconds 15)
             foreach ($Option in $Options) { [void]$SeasonCombo.Items.Add($Option) }
             $SeasonState.Options = @($Options)
             $SeasonState.GameVersion = $Version
@@ -1053,7 +1050,7 @@ function Show-PoePatchLauncherDialog {
             $SelectedIndex = 0
             for ($Index = 0; $Index -lt $SeasonCombo.Items.Count; $Index += 1) {
                 $Item = $SeasonCombo.Items[$Index]
-                if ("$($Item.ScoutLeague)|$($Item.PoeNinjaLeague)" -eq $PreviousKey) {
+                if ("$($Item.ScoutLeague)|$($Item.PoeNinjaLeague)|$($Item.PoeCurrencySeason)" -eq $PreviousKey) {
                     $SelectedIndex = $Index
                     break
                 }
@@ -1067,7 +1064,7 @@ function Show-PoePatchLauncherDialog {
                 [string]$Options[0].DiscoveryMessage
             }
             elseif ($IsChina) {
-                "已读取当前赛季；国服数据源不支持历史赛季。"
+                "已读取 poecurrency.top 国服赛季目录（$($SeasonCombo.Items.Count) 个），可选择历史赛季。"
             }
             else {
                 "已读取 $($SeasonCombo.Items.Count) 个软核赛季；默认选择最新。"
@@ -1259,6 +1256,7 @@ function Show-PoePatchLauncherDialog {
                     Poe1League = if ($Candidate.GameVersion -eq "poe1" -and $null -ne $SelectedSeason) { [string]$SelectedSeason.PoeNinjaLeague } else { "" }
                     Poe2League = if ($Candidate.GameVersion -eq "poe2" -and $null -ne $SelectedSeason) { [string]$SelectedSeason.ScoutLeague } else { "" }
                     Poe2NinjaLeague = if ($Candidate.GameVersion -eq "poe2" -and $null -ne $SelectedSeason) { [string]$SelectedSeason.PoeNinjaLeague } else { "" }
+                    PoeCurrencySeason = if ($null -ne $SelectedSeason) { [string]$SelectedSeason.PoeCurrencySeason } else { "" }
                     LeagueIsCurrent = if ($null -ne $SelectedSeason) { [bool]$SelectedSeason.IsCurrent } else { $true }
                     PathMode = $(if ($AutoPathRadio.Checked) { "auto" } else { "manual" })
                     PatchScope = $PatchScope
@@ -1283,16 +1281,17 @@ function Show-PoePatchLauncherDialog {
         return $null
     }
 
-    # Paint the window first, then perform client discovery and season network
-    # requests on the first UI timer tick. This removes the several-second
-    # blank-start delay while retaining the same discovery behavior.
+    # Paint the window first.  The first scan intentionally skips slow registry
+    # and launcher-library probes; those probes are still available from the
+    # explicit Refresh button.  This keeps a double-click responsive even on a
+    # machine with disconnected drives or a slow WeGame/Steam installation.
     $StartupRefreshTimer = New-Object System.Windows.Forms.Timer
     $StartupRefreshTimer.Interval = 50
     $StartupRefreshTimer.Add_Tick({
             $StartupRefreshTimer.Stop()
             $StartupRefreshTimer.Dispose()
             & $SetStatus "正在读取客户端与赛季信息，请稍候…" $false
-            & $RefreshCandidates
+            & $RefreshCandidates $true $true
             & $UpdateScopeForGame
             if ($OperationState.Value -eq "update") { & $RefreshSeasons $true }
         })
@@ -1346,6 +1345,7 @@ if ($Selection.Operation -eq "update" -and $Selection.GameVersion -eq "poe1") {
     $ScriptParameters = @{
         Poe1Dir = [string]$Selection.GameDirectory
         Poe1LanguageMode = [string]$Selection.Poe1LanguageMode
+        PoeCurrencySeason = [string]$Selection.PoeCurrencySeason
     }
 }
 elseif ($Selection.Operation -eq "restore" -and $Selection.GameVersion -eq "poe1") {
@@ -1359,6 +1359,7 @@ elseif ($Selection.Operation -eq "update") {
     $ScriptName = "update_price_patch.ps1"
     $ScriptParameters = @{
         Poe2Dir = [string]$Selection.GameDirectory
+        PoeCurrencySeason = [string]$Selection.PoeCurrencySeason
     }
 }
 else {
@@ -1378,6 +1379,9 @@ if ($Selection.Operation -eq "update") {
         $ScriptParameters["League"] = [string]$Selection.Poe2League
         $ScriptParameters["PoeNinjaLeague"] = [string]$Selection.Poe2NinjaLeague
         $ScriptParameters["LeagueIsCurrent"] = [bool]$Selection.LeagueIsCurrent
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$Selection.PoeCurrencySeason)) {
+        $ScriptParameters["PoeCurrencySeason"] = [string]$Selection.PoeCurrencySeason
     }
     if ($Selection.GameVersion -eq "poe2" -and $Selection.IslandRumourHints) {
         $ScriptParameters["IslandRumourHints"] = $true
@@ -1400,6 +1404,7 @@ if ($Selection.Operation -eq "update" -and $ExitCode -eq 0) {
         poe1_language_mode = [string]$Selection.Poe1LanguageMode
         patch_scope = [string]$Selection.PatchScope
         island_rumour_hints = [bool]$Selection.IslandRumourHints
+        poecurrency_season = [string]$Selection.PoeCurrencySeason
         league = [string]$Selection.Poe1League
         poe_ninja_league = [string]$(if ($Selection.GameVersion -eq "poe2") { $Selection.Poe2NinjaLeague } else { $Selection.Poe1League })
         confirmed = $true

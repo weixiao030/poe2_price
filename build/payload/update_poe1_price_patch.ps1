@@ -8,6 +8,7 @@
     [ValidateSet("", "all", "currency", "uniques", "none")]
     [string]$PatchScope = "",
     [string]$League = "",
+    [string]$PoeCurrencySeason = "",
     [bool]$LeagueIsCurrent = $true
 )
 
@@ -25,7 +26,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.6.6"
+$script:PatchVersion = "v0.6.7"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -407,12 +408,10 @@ try {
     $IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "POE1-CN-*"
     if ($PatchScope -ne "none") {
         $SelectedLeague = Resolve-PoePatchLeagueSelection -GameVersion "poe1" `
-            -League $League -TimeoutSeconds 20
+            -League $League -China:$IsChinaClient -TimeoutSeconds 20
         $League = [string]$SelectedLeague.PoeNinjaLeague
+        $PoeCurrencySeason = if (-not [string]::IsNullOrWhiteSpace([string]$SelectedLeague.PoeCurrencySeason)) { [string]$SelectedLeague.PoeCurrencySeason } else { $League }
         $LeagueIsCurrent = [bool]$SelectedLeague.IsCurrent
-        if ($IsChinaClient -and -not $LeagueIsCurrent) {
-            throw "POE1 国服价格源只支持当前赛季，不能使用历史赛季，已停止以避免混用数据。"
-        }
     }
     $PriceSource = if ($IsChinaClient) {
         "poecurrency-cn"
@@ -535,7 +534,8 @@ try {
             ([string]$InstallInfo.EffectiveLanguageCode -replace '[^A-Za-z0-9_-]+', '_'),
             $PatchScope,
             $PriceSource,
-            $LeagueCacheToken
+            $LeagueCacheToken,
+            ($PoeCurrencySeason -replace '[^A-Za-z0-9._-]+', '_')
         ))
     $CacheDir = Join-Path $RepoRoot ("output\poe1_price_patch_cache\" + $CacheKey)
     $CachedPatchZip = Join-Path $CacheDir "POE1物价补丁.zip"
@@ -576,6 +576,9 @@ try {
                 "--league-is-current", $(if ($LeagueIsCurrent) { "true" } else { "false" }),
                 "--fallback-price-sources", "poe2scout"
             )
+        }
+        if ($PriceSource -eq "poecurrency-cn") {
+            $BuilderArgs += @("--poecurrency-summary-url", $(if ([string]::IsNullOrWhiteSpace($PoeCurrencySeason)) { "https://poecurrency.top/api/summary?version=1" } else { "https://poecurrency.top/api/summary?version=1&season=" + [Uri]::EscapeDataString($PoeCurrencySeason) }))
         }
         $Result = Invoke-Poe2Python -Python $Python -ArgumentList $BuilderArgs
         if ($Result.ExitCode -ne 0) {

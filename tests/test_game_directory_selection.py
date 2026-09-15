@@ -386,7 +386,8 @@ def test_gui_and_update_scripts_forward_explicit_league_without_cross_season_fal
         assert expected in gui
     assert '"--fallback-price-sources", "poe-ninja"' in update
     assert '"--league-is-current"' in update
-    assert "POE2 国服价格源只支持当前赛季" in update
+    assert "PoeCurrencySeason" in update
+    assert "season=" in update
     assert "$UseChinaPriceSource = $IsChinaClient" in update
     assert "Resolve-PoePatchLeagueSelection" in update
     assert "--poe2db-fallback" in update

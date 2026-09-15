@@ -64,6 +64,17 @@ class PoecurrencyPricingTests(unittest.TestCase):
             )
         }
 
+    def test_empty_poecurrency_season_is_rejected_before_matching(self):
+        class EmptyClient:
+            def get_json(self, _url):
+                return []
+
+        with self.assertRaisesRegex(ValueError, "no usable season data"):
+            self.price_patch.fetch_poecurrency_summary(
+                EmptyClient(),
+                "https://poecurrency.top/api/summary?version=2&season=standard",
+            )
+
     def test_international_matching_keeps_all_same_name_metadata_aliases(self):
         pairs = [
             self.price_patch.BaseItemPair(

@@ -1414,6 +1414,12 @@ def main(argv: list[str]) -> int:
     elif fetch_prices and args.price_source == "poecurrency-cn":
         poecurrency_error = poecurrency_error or "poecurrency version=1 returned no data"
 
+    if fetch_prices and args.price_source == "poecurrency-cn" and primary_source_used != "poecurrency-cn":
+        raise ValueError(
+            "poecurrency-cn 主数据源没有返回当前所选国服赛季的可用价格；"
+            "为避免把国际服价格误当国服主价，已拒绝使用国际源替代整个价格集。"
+        )
+
     fallback_candidates = [
         ("poe-ninja", ninja_prices, ninja_divine_chaos),
         ("poe2scout", scout_prices, scout_divine_chaos),

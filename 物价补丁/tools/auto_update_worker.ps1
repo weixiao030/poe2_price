@@ -24,15 +24,15 @@ $running = @(Get-Process -Name $procs -ErrorAction SilentlyContinue | Where-Obje
     } catch { return $true }
 })
 if($running.Count -gt 0){ Result 'skipped' '检测到当前游戏目录正在运行' @{game_directory=$dir} }
-$ver=[string]$sel.game_version; $lang=[string]$sel.poe1_language_mode; if([string]::IsNullOrWhiteSpace($lang)){$lang='auto'}; $scope=[string]$sel.patch_scope; if([string]::IsNullOrWhiteSpace($scope)){$scope='all'}
+$ver=[string]$sel.game_version; $lang=[string]$sel.poe1_language_mode; if([string]::IsNullOrWhiteSpace($lang)){$lang='auto'}; $scope=[string]$sel.patch_scope; if([string]::IsNullOrWhiteSpace($scope)){$scope='all'}; $savedLeague=[string]$sel.league; $savedNinjaLeague=[string]$sel.poe_ninja_league; $savedCnSeason=[string]$sel.poecurrency_season
 try {
   $info = if ($ver -eq 'poe1') { Get-PoePatchInstallInfo -GameVersion $ver -GameDirectory $dir -Poe1LanguageMode $(if([string]::IsNullOrWhiteSpace($lang)){'auto'}else{$lang}) } else { Get-PoePatchInstallInfo -GameVersion $ver -GameDirectory $dir }
   if ($sel.install_kind -and [string]$sel.install_kind -ne [string]$info.InstallKind) { Result 'failed' "客户端类型已变化：记录为 $($sel.install_kind)，当前为 $($info.InstallKind)" @{game_version=$ver;game_directory=$dir} }
   if ($null -ne $sel.is_china -and [bool]$sel.is_china -ne [bool]$info.IsChina) { Result 'failed' '客户端服务器类型已变化，已停止自动更新' @{game_version=$ver;game_directory=$dir} }
   try { $script:GameDirectoryMutex = Enter-Poe2GameDirectoryMutex -Poe2Dir $dir } catch { Result 'skipped' '同一游戏目录已有更新任务，已跳过本轮' @{game_version=$ver;game_directory=$dir} }
   $args=@{}
-  if($ver -eq 'poe1'){$scriptName='update_poe1_price_patch.ps1';$args=@{'Poe1Dir'=$dir;'Poe1LanguageMode'=$lang;'PatchScope'=$scope;'LeagueIsCurrent'=$true;'SkipGameDirectoryMutex'=$true}}
-  else {$scriptName='update_price_patch.ps1';$args=@{'Poe2Dir'=$dir;'PatchScope'=$scope;'LeagueIsCurrent'=$true;'SkipGameDirectoryMutex'=$true}}
+  if($ver -eq 'poe1'){$scriptName='update_poe1_price_patch.ps1';$args=@{'Poe1Dir'=$dir;'Poe1LanguageMode'=$lang;'PatchScope'=$scope;'League'=$savedLeague;'PoeCurrencySeason'=$savedCnSeason;'LeagueIsCurrent'=$true;'SkipGameDirectoryMutex'=$true}}
+  else {$scriptName='update_price_patch.ps1';$args=@{'Poe2Dir'=$dir;'PatchScope'=$scope;'League'=$savedLeague;'PoeNinjaLeague'=$savedNinjaLeague;'PoeCurrencySeason'=$savedCnSeason;'LeagueIsCurrent'=$true;'SkipGameDirectoryMutex'=$true}}
   if($ver -eq 'poe2' -and [bool]$sel.island_rumour_hints){$args['IslandRumourHints']=$true}
   $scriptPath=Join-Path $PSScriptRoot $scriptName
   $logPath=Join-Path $LogDir ((Get-Date).ToString('yyyy-MM-dd') + '-worker.log')
