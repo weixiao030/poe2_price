@@ -12,7 +12,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "poe2_patch_common.ps1")
 . (Join-Path $PSScriptRoot "poe_patch_profiles.ps1")
 
-$script:PatchVersion = "v0.6.4"
+$script:PatchVersion = "v0.6.5"
 $PreferredRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
     Split-Path -Parent (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 }
@@ -275,7 +275,7 @@ function Show-PoePatchLauncherDialog {
         Value = $InitialOperation
         CanChange = ($Operation -eq "select")
     }
-    $Form.ClientSize = New-Object System.Drawing.Size(720, 652)
+    $Form.ClientSize = New-Object System.Drawing.Size(720, 728)
 
     $Accent = [System.Drawing.Color]::FromArgb(30, 105, 92)
     $AccentDark = [System.Drawing.Color]::FromArgb(23, 81, 72)
@@ -512,9 +512,29 @@ function Show-PoePatchLauncherDialog {
     $ScopeStatus.ForeColor = $Muted
     $ScopeGroup.Controls.Add($ScopeStatus)
 
+    $BackgroundGroup = New-Object System.Windows.Forms.GroupBox
+    $BackgroundGroup.Text = "后台运行设置"
+    $BackgroundGroup.Location = New-Object System.Drawing.Point(24, 524)
+    $BackgroundGroup.Size = New-Object System.Drawing.Size(672, 72)
+    $BackgroundGroup.BackColor = $PanelColor
+    $Form.Controls.Add($BackgroundGroup)
+    $AutoStartCheck = New-Object System.Windows.Forms.CheckBox
+    $AutoStartCheck.Text = "开机自动启动（最小化到托盘）"
+    $AutoStartCheck.Location = New-Object System.Drawing.Point(18, 28)
+    $AutoStartCheck.AutoSize = $true
+    $BackgroundGroup.Controls.Add($AutoStartCheck)
+    $AutoUpdateCheck = New-Object System.Windows.Forms.CheckBox
+    $AutoUpdateCheck.Text = "每小时自动更新物价"
+    $AutoUpdateCheck.Location = New-Object System.Drawing.Point(350, 28)
+    $AutoUpdateCheck.AutoSize = $true
+    $BackgroundGroup.Controls.Add($AutoUpdateCheck)
+    $SavedAuto = Get-PoePatchAutoSettings
+    $AutoStartCheck.Checked = $SavedAuto.AutoStart
+    $AutoUpdateCheck.Checked = $SavedAuto.AutoUpdate
+
     $WarningLabel = New-Object System.Windows.Forms.Label
     $WarningLabel.Text = "运行前请关闭游戏和对应启动器；工具会先建立可验证的还原包。"
-    $WarningLabel.Location = New-Object System.Drawing.Point(26, 532)
+    $WarningLabel.Location = New-Object System.Drawing.Point(26, 608)
     $WarningLabel.Size = New-Object System.Drawing.Size(660, 24)
     $WarningLabel.ForeColor = [System.Drawing.Color]::FromArgb(121, 82, 31)
     $Form.Controls.Add($WarningLabel)
@@ -523,7 +543,7 @@ function Show-PoePatchLauncherDialog {
     $RepositoryLink.Text = "GitHub：weixiao030/poe2_price"
     $RepositoryLink.Tag = "https://github.com/weixiao030/poe2_price"
     $RepositoryLink.AutoSize = $true
-    $RepositoryLink.Location = New-Object System.Drawing.Point(26, 568)
+    $RepositoryLink.Location = New-Object System.Drawing.Point(26, 644)
     $RepositoryLink.LinkColor = $Accent
     $Form.Controls.Add($RepositoryLink)
 
@@ -531,13 +551,13 @@ function Show-PoePatchLauncherDialog {
     $CaimoguLink.Text = "踩蘑菇：caimogu.cc/post/2403703.html"
     $CaimoguLink.Tag = "https://www.caimogu.cc/post/2403703.html"
     $CaimoguLink.AutoSize = $true
-    $CaimoguLink.Location = New-Object System.Drawing.Point(286, 568)
+    $CaimoguLink.Location = New-Object System.Drawing.Point(286, 644)
     $CaimoguLink.LinkColor = $Accent
     $Form.Controls.Add($CaimoguLink)
 
     $CancelButton = New-Object System.Windows.Forms.Button
     $CancelButton.Text = "取消"
-    $CancelButton.Location = New-Object System.Drawing.Point(330, 598)
+    $CancelButton.Location = New-Object System.Drawing.Point(330, 678)
     $CancelButton.Size = New-Object System.Drawing.Size(96, 36)
     $CancelButton.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
     $CancelButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
@@ -546,7 +566,7 @@ function Show-PoePatchLauncherDialog {
 
     $RestoreButton = New-Object System.Windows.Forms.Button
     $RestoreButton.Text = "还原物价补丁"
-    $RestoreButton.Location = New-Object System.Drawing.Point(438, 598)
+    $RestoreButton.Location = New-Object System.Drawing.Point(438, 678)
     $RestoreButton.Size = New-Object System.Drawing.Size(96, 36)
     $RestoreButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $RestoreButton.FlatAppearance.BorderColor = $BorderColor
@@ -556,7 +576,7 @@ function Show-PoePatchLauncherDialog {
 
     $StartButton = New-Object System.Windows.Forms.Button
     $StartButton.Text = "开始/更新物价补丁"
-    $StartButton.Location = New-Object System.Drawing.Point(546, 598)
+    $StartButton.Location = New-Object System.Drawing.Point(546, 678)
     $StartButton.Size = New-Object System.Drawing.Size(150, 36)
     $StartButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
     $StartButton.FlatAppearance.BorderSize = 0
@@ -569,13 +589,13 @@ function Show-PoePatchLauncherDialog {
     $SetOperationLayout = {
         $IsUpdate = ($OperationState.Value -eq "update")
         $ScopeGroup.Visible = $IsUpdate
-        $Form.ClientSize = New-Object System.Drawing.Size(720, $(if ($IsUpdate) { 688 } else { 578 }))
-        $BottomY = if ($IsUpdate) { 634 } else { 524 }
+        $Form.ClientSize = New-Object System.Drawing.Size(720, $(if ($IsUpdate) { 764 } else { 654 }))
+        $BottomY = if ($IsUpdate) { 710 } else { 600 }
         $WarningY = if ($IsUpdate) { 568 } else { 460 }
         $LinkY = if ($IsUpdate) { 604 } else { 496 }
-        $WarningLabel.Location = New-Object System.Drawing.Point(26, $WarningY)
-        $RepositoryLink.Location = New-Object System.Drawing.Point(26, $LinkY)
-        $CaimoguLink.Location = New-Object System.Drawing.Point(286, $LinkY)
+        $WarningLabel.Location = New-Object System.Drawing.Point(26, ($WarningY + 76))
+        $RepositoryLink.Location = New-Object System.Drawing.Point(26, ($LinkY + 76))
+        $CaimoguLink.Location = New-Object System.Drawing.Point(286, ($LinkY + 76))
         $CancelButton.Location = New-Object System.Drawing.Point(330, $BottomY)
         $RestoreButton.Location = New-Object System.Drawing.Point(438, $BottomY)
         $StartButton.Location = New-Object System.Drawing.Point(546, $BottomY)
@@ -1234,6 +1254,16 @@ try {
     if ($Selection.GameVersion -eq "poe1") {
         Save-Poe1LanguageMode -LanguageMode $Selection.Poe1LanguageMode | Out-Null
     }
+    Save-PoePatchAutoSettings -AutoStart $AutoStartCheck.Checked -AutoUpdate $AutoUpdateCheck.Checked | Out-Null
+    $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+    if ($AutoStartCheck.Checked) {
+        $LauncherPath = [Environment]::GetEnvironmentVariable("POE2_PATCH_LAUNCHER")
+        if ([string]::IsNullOrWhiteSpace($LauncherPath) -and -not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) { $LauncherPath = Join-Path $env:POE2_PATCH_ROOT "物价补丁.exe" }
+        if (-not [string]::IsNullOrWhiteSpace($LauncherPath) -and (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) {
+            New-Item -Path $RunKey -Force | Out-Null
+            Set-ItemProperty -Path $RunKey -Name "Poe2PricePatch" -Value ('"' + $LauncherPath + '" --background')
+        }
+    } else { Remove-ItemProperty -Path $RunKey -Name "Poe2PricePatch" -ErrorAction SilentlyContinue }
 }
 catch {
     Write-Warning "无法保存最近使用的游戏目录，本次操作仍会继续：$($_.Exception.Message)"
@@ -1288,4 +1318,30 @@ if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
 }
 
 & $ScriptPath @ScriptParameters
-exit $LASTEXITCODE
+$ExitCode = $LASTEXITCODE
+if ($Selection.Operation -eq "update" -and $ExitCode -eq 0) {
+    $LastSelection = [pscustomobject]@{
+        game_version = [string]$Selection.GameVersion
+        game_directory = [string]$Selection.GameDirectory
+        install_kind = [string]$Selection.InstallInfo.InstallKind
+        is_china = [bool]$Selection.InstallInfo.IsChina
+        poe1_language_mode = [string]$Selection.Poe1LanguageMode
+        patch_scope = [string]$Selection.PatchScope
+        island_rumour_hints = [bool]$Selection.IslandRumourHints
+        league = [string]$Selection.Poe1League
+        poe_ninja_league = [string]$(if ($Selection.GameVersion -eq "poe2") { $Selection.Poe2NinjaLeague } else { $Selection.Poe1League })
+        confirmed = $true
+    }
+    try {
+        Save-PoePatchAutoSettings -AutoStart $AutoStartCheck.Checked -AutoUpdate $AutoUpdateCheck.Checked -LastSelection $LastSelection | Out-Null
+        $RunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+        if ($AutoStartCheck.Checked) {
+            $LauncherPath = [Environment]::GetEnvironmentVariable("POE2_PATCH_LAUNCHER")
+            if ([string]::IsNullOrWhiteSpace($LauncherPath) -and -not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) { $LauncherPath = Join-Path $env:POE2_PATCH_ROOT "物价补丁.exe" }
+            if ([string]::IsNullOrWhiteSpace($LauncherPath) -or -not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) { throw "无法定位启动器路径，未写入开机启动。" }
+            New-Item -Path $RunKey -Force | Out-Null
+            Set-ItemProperty -Path $RunKey -Name "Poe2PricePatch" -Value ('"' + $LauncherPath + '" --background')
+        } else { Remove-ItemProperty -Path $RunKey -Name "Poe2PricePatch" -ErrorAction SilentlyContinue }
+    } catch { Write-Warning "无法保存后台运行设置：$($_.Exception.Message)" }
+}
+exit $ExitCode

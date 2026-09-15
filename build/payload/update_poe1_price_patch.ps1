@@ -25,7 +25,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.6.4"
+$script:PatchVersion = "v0.6.5"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -152,8 +152,15 @@ function Test-Poe1Bundles2InstalledStateCurrent {
         [Parameter(Mandatory = $true)][string]$RestoreZip
     )
 
-    try {
-        $RestoreHash = (Get-FileHash -LiteralPath $RestoreZip -Algorithm SHA256 -ErrorAction Stop).Hash
+    try {    $HashFile = {
+        param([string]$Path)
+        $Algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try { $Stream = [System.IO.File]::OpenRead($Path); try { $Bytes = $Algorithm.ComputeHash($Stream) } finally { $Stream.Dispose() } }
+        finally { $Algorithm.Dispose() }
+        return [pscustomobject]@{ Hash = ([BitConverter]::ToString($Bytes) -replace '-', '') }
+    }
+
+        $RestoreHash = (& $HashFile $RestoreZip).Hash
         if (-not $RestoreHash.Equals([string]$State.restore_zip_sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "POE1 上次安装状态绑定的真实还原包与当前候选不同。"
         }
@@ -309,6 +316,13 @@ function New-CleanPoe1LogicalRestoreZipFromPatchedState {
 
 function Ensure-Poe1PhysicalRestoreZip {
     param([Parameter(Mandatory = $true)][bool]$SourceLooksPatched)
+    $HashFile = {
+        param([string]$Path)
+        $Algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try { $Stream = [System.IO.File]::OpenRead($Path); try { $Bytes = $Algorithm.ComputeHash($Stream) } finally { $Stream.Dispose() } }
+        finally { $Algorithm.Dispose() }
+        return [pscustomobject]@{ Hash = ([BitConverter]::ToString($Bytes) -replace '-', '') }
+    }
 
     $Candidates = New-Object System.Collections.Generic.List[object]
     foreach ($Name in $PhysicalRestoreNames) {
@@ -321,7 +335,7 @@ function Ensure-Poe1PhysicalRestoreZip {
                 $Candidates.Add([pscustomobject]@{
                         Path = $Resolved
                         Manifest = $Manifest
-                        Hash = (Get-FileHash -LiteralPath $Resolved -Algorithm SHA256).Hash
+                        Hash = (& $HashFile $Resolved).Hash
                     })
             }
             catch {

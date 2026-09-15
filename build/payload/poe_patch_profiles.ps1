@@ -18,12 +18,18 @@ function Get-PoePatchSettingsState {
     param([string]$SettingsPath = "")
 
     $State = [ordered]@{
-        version = 1
+        version = 2
         poe1_game_directory = ""
         poe2_game_directory = ""
         poe1_language_mode = "auto"
         last_game_version = ""
         saved_at_utc = ""
+        last_selection = $null
+        auto_start = $false
+        auto_update = $false
+        last_auto_update_utc = ""
+        last_auto_update_status = ""
+        last_auto_update_message = ""
     }
     try {
         $StatePath = Get-PoePatchSettingsPath -SettingsPath $SettingsPath
@@ -77,6 +83,47 @@ function Save-PoePatchSettingsState {
     }
 }
 
+function Get-PoePatchAutoSettings {
+    param([string]$SettingsPath = "")
+    $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
+    return [pscustomobject]@{
+        AutoStart = [bool]$State.auto_start
+        AutoUpdate = [bool]$State.auto_update
+        LastSelection = $State.last_selection
+        LastAutoUpdateUtc = [string]$State.last_auto_update_utc
+        LastAutoUpdateStatus = [string]$State.last_auto_update_status
+        LastAutoUpdateMessage = [string]$State.last_auto_update_message
+    }
+}
+
+function Save-PoePatchAutoSettings {
+    param(
+        [bool]$AutoStart,
+        [bool]$AutoUpdate,
+        [object]$LastSelection = $null,
+        [string]$SettingsPath = ""
+    )
+    $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
+    $State["version"] = 2
+    $State["auto_start"] = $AutoStart
+    $State["auto_update"] = $AutoUpdate
+    if ($null -ne $LastSelection) { $State["last_selection"] = $LastSelection }
+    $State["saved_at_utc"] = (Get-Date).ToUniversalTime().ToString("o")
+    Save-PoePatchSettingsState -State $State -SettingsPath $SettingsPath
+}
+
+function Set-PoePatchAutoUpdateResult {
+    param(
+        [ValidateSet("success", "skipped", "failed")][string]$Status,
+        [string]$Message = "",
+        [string]$SettingsPath = ""
+    )
+    $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
+    $State["last_auto_update_utc"] = (Get-Date).ToUniversalTime().ToString("o")
+    $State["last_auto_update_status"] = $Status
+    $State["last_auto_update_message"] = $Message
+    Save-PoePatchSettingsState -State $State -SettingsPath $SettingsPath
+}
 function Get-PoePatchSavedGameDirectory {
     param(
         [ValidateSet("poe1", "poe2")]
@@ -132,7 +179,7 @@ function Save-PoePatchGameDirectory {
     }
 
     $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
-    $State["version"] = 1
+    $State["version"] = 2
     $State["${GameVersion}_game_directory"] = $Resolved
     $State["last_game_version"] = $GameVersion
     $State["saved_at_utc"] = (Get-Date).ToUniversalTime().ToString("o")
@@ -174,7 +221,7 @@ function Save-Poe1LanguageMode {
     )
 
     $State = Get-PoePatchSettingsState -SettingsPath $SettingsPath
-    $State["version"] = 1
+    $State["version"] = 2
     $State["poe1_language_mode"] = Resolve-Poe1LanguageMode -LanguageMode $LanguageMode
     $State["saved_at_utc"] = (Get-Date).ToUniversalTime().ToString("o")
     Save-PoePatchSettingsState -State $State -SettingsPath $SettingsPath

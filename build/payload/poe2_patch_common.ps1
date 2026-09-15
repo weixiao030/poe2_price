@@ -2942,7 +2942,7 @@ function Get-PoePatchLeagueOptions {
     $Realm = if ($GameVersion -eq "poe1") { "pc" } else { "poe2" }
     $DiscoveryUrl = "https://api.poe2scout.com/$Realm/Leagues"
     try {
-        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.4" } `
+        $Response = Invoke-RestMethod -Uri $DiscoveryUrl -Headers @{ "User-Agent" = "poe2-price-patch/0.6.5" } `
             -TimeoutSec ([Math]::Max(5, $TimeoutSeconds))
     }
     catch {
@@ -3099,8 +3099,15 @@ function Resolve-PoePatchLeagueSelection {
     $PoeNinjaLeague = $PoeNinjaLeague.Trim()
     if ([string]::IsNullOrWhiteSpace($League)) {
         $Matches = @($Options | Where-Object { $_.IsCurrent })
-        if ($Matches.Count -ne 1) {
-            throw "赛季目录中必须且只能有一个当前软核赛季，实际找到 $($Matches.Count) 个。"
+        if ($Matches.Count -eq 0) {
+            throw "赛季目录中没有当前软核赛季。"
+        }
+        if ($Matches.Count -gt 1) {
+            # poe2scout may briefly mark the previous and newly published
+            # softcore leagues as current during a league transition.  The
+            # discovery response is ordered newest first; choose that entry
+            # instead of failing the entire update or risking an old league.
+            Write-Warning "赛季目录暂时标记了 $($Matches.Count) 个当前软核赛季，已按服务端顺序选择最新：$($Matches[0].PoeNinjaLeague)。"
         }
         return $Matches[0]
     }
@@ -3120,4 +3127,21 @@ function Resolve-PoePatchLeagueSelection {
         throw "所选赛季不在当前 $GameVersion 赛季目录中，或 provider 标识不匹配；已停止以避免跨赛季混用价格。"
     }
     return $Matches[0]
+}
+if ($null -eq (Get-Command Get-FileHash -ErrorAction SilentlyContinue)) {
+    function Get-FileHash {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory = $true, Position = 0)][string]$LiteralPath,
+            [ValidateSet('SHA1','SHA256','SHA384','SHA512','MD5')][string]$Algorithm = 'SHA256'
+        )
+        $Resolved = [System.IO.Path]::GetFullPath($LiteralPath)
+        $HashAlgorithm = [System.Security.Cryptography.HashAlgorithm]::Create($Algorithm)
+        if ($null -eq $HashAlgorithm) { throw "不支持哈希算法：$Algorithm" }
+        try {
+            $Stream = [System.IO.File]::OpenRead($Resolved)
+            try { $Hash = $HashAlgorithm.ComputeHash($Stream) } finally { $Stream.Dispose() }
+        } finally { $HashAlgorithm.Dispose() }
+        return [pscustomobject]@{ Algorithm = $Algorithm; Hash = ([BitConverter]::ToString($Hash) -replace '-', ''); Path = $Resolved }
+    }
 }

@@ -675,6 +675,7 @@ function Build-Payload {
         "poe2_patch_common.ps1",
         "poe_patch_profiles.ps1",
         "price_patch_gui.ps1",
+        "auto_update_worker.ps1",
         "update_price_patch.ps1",
         "restore_price_patch.ps1",
         "poe1_patch_common.ps1",

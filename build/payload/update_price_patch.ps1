@@ -3,6 +3,7 @@
     [switch]$SkipExtract,
     [switch]$NoOpenTool,
     [switch]$NoInstall,
+    [switch]$SkipGameDirectoryMutex,
     [switch]$NoPoe2dbFallback,
     [switch]$IslandRumourHints,
     [ValidateSet("", "all", "currency", "uniques", "none")]
@@ -29,7 +30,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.6.4"
+$script:PatchVersion = "v0.6.5"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -1082,8 +1083,15 @@ function Test-Bundles2InstalledStateCurrent {
         [Parameter(Mandatory = $true)][string]$RestoreZip
     )
 
-    try {
-        $RestoreHash = (Get-FileHash -LiteralPath $RestoreZip -Algorithm SHA256 -ErrorAction Stop).Hash
+    try {    $HashFile = {
+        param([string]$Path)
+        $Algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try { $Stream = [System.IO.File]::OpenRead($Path); try { $Bytes = $Algorithm.ComputeHash($Stream) } finally { $Stream.Dispose() } }
+        finally { $Algorithm.Dispose() }
+        return [pscustomobject]@{ Hash = ([BitConverter]::ToString($Bytes) -replace '-', '') }
+    }
+
+        $RestoreHash = (& $HashFile $RestoreZip).Hash
         if (-not $RestoreHash.Equals([string]$State.restore_zip_sha256, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "上次安装状态绑定的真实还原包与当前候选不同。"
         }
@@ -2227,6 +2235,13 @@ function Publish-PhysicalRestoreZip {
 
 function Ensure-PhysicalRestoreZip {
     param([bool]$SourceLooksPatched)
+    $HashFile = {
+        param([string]$Path)
+        $Algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try { $Stream = [System.IO.File]::OpenRead($Path); try { $Bytes = $Algorithm.ComputeHash($Stream) } finally { $Stream.Dispose() } }
+        finally { $Algorithm.Dispose() }
+        return [pscustomobject]@{ Hash = ([BitConverter]::ToString($Bytes) -replace '-', '') }
+    }
 
     if ($GameMode -ne "Bundles2") {
         return ""
@@ -2259,7 +2274,7 @@ function Ensure-PhysicalRestoreZip {
         $InstalledState = Get-Bundles2InstalledState
         if ($null -ne $InstalledState) {
             $StateCandidates = @($UsableCandidates | Where-Object {
-                    $CandidateHash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash
+                    $CandidateHash = (& $HashFile $_).Hash
                     $CandidateHash.Equals([string]$InstalledState.restore_zip_sha256, [System.StringComparison]::OrdinalIgnoreCase)
                 })
             if ($StateCandidates.Count -gt 0) {
@@ -2295,7 +2310,7 @@ function Ensure-PhysicalRestoreZip {
             }
         }
         if ($CurrentCandidates.Count -gt 0) {
-            $CandidatesByHash = @($CurrentCandidates | Group-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash })
+            $CandidatesByHash = @($CurrentCandidates | Group-Object { (& $HashFile $_).Hash })
             if ($CandidatesByHash.Count -gt 1) {
                 $CandidateList = [string]::Join("；", $CurrentCandidates.ToArray())
                 throw "找到多个内容不同、但都匹配当前写入前状态的真实还原包，无法安全判断应使用哪一个：$CandidateList"
@@ -2918,7 +2933,10 @@ else {
     $Poe2Dir = Resolve-Poe2GameDirectorySelection -Mode "auto" -PreferredRoot $PreferredPoe2Dir
     $GameDirectorySelectionMode = "auto"
 }
-$script:GameDirectoryMutex = Enter-Poe2GameDirectoryMutex -Poe2Dir $Poe2Dir
+$script:GameDirectoryMutex = $null
+if (-not $SkipGameDirectoryMutex) {
+    $script:GameDirectoryMutex = Enter-Poe2GameDirectoryMutex -Poe2Dir $Poe2Dir
+}
 try {
     Save-Poe2GameDirectory -Poe2Dir $Poe2Dir | Out-Null
 }
@@ -3673,4 +3691,11 @@ Write-Host "完成。" -ForegroundColor Green
 catch {
     Write-FriendlyFailure -ErrorRecord $_
     exit 1
+}
+finally {
+    if ($null -ne $script:GameDirectoryMutex) {
+        try { $script:GameDirectoryMutex.ReleaseMutex() } catch { }
+        $script:GameDirectoryMutex.Dispose()
+        $script:GameDirectoryMutex = $null
+    }
 }

@@ -1,17 +1,33 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Runtime.InteropServices;
 
 internal static class Program
 {
     private static readonly byte[] KeySeed = Encoding.UTF8.GetBytes("poe2-price-patch-launcher-v1");
-    private const string PatchVersion = "0.6.4";
+    private const string PatchVersion = "0.6.5";
+    private static Mutex? UiMutex;
 
-    public static int Main(string[] args)
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+
+    private static int MainInteractive(string[] args)
     {
+        UiMutex = new Mutex(false, "Local\\Poe2PricePatch-InteractiveUI");
+        if (!TryTakeInstanceMutex(UiMutex))
+        {
+            ActivateExistingUi();
+            UiMutex.Dispose();
+            UiMutex = null;
+            return 0;
+        }
         Console.OutputEncoding = Encoding.UTF8;
         PrintStartupMessage();
         try
@@ -90,6 +106,7 @@ internal static class Program
 
                 startInfo.Environment["POE2_PATCH_ROOT"] = patchRoot;
                 startInfo.Environment["POE2_PATCH_RELEASE"] = "1";
+                startInfo.Environment["POE2_PATCH_LAUNCHER"] = Environment.ProcessPath ?? string.Empty;
 
                 Console.WriteLine("正在启动操作界面...");
                 using var process = Process.Start(startInfo);
@@ -126,6 +143,170 @@ internal static class Program
             WaitForEnter();
             return 1;
         }
+    }
+
+    private static void ActivateExistingUi()
+    {
+        try
+        {
+            var current = Environment.ProcessId;
+            foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(Environment.ProcessPath)))
+            {
+                try
+                {
+                    if (process.Id == current || process.MainWindowHandle == IntPtr.Zero) continue;
+                    ShowWindowAsync(process.MainWindowHandle, 9);
+                    SetForegroundWindow(process.MainWindowHandle);
+                    break;
+                }
+                finally { process.Dispose(); }
+            }
+        }
+        catch { }
+    }
+
+    public static int Main(string[] args)
+    {
+        if (args.Any(a => string.Equals(a, "--background", StringComparison.OrdinalIgnoreCase)))
+            return RunBackground();
+        return MainInteractive(args);
+    }
+
+    private static int RunBackground()
+    {
+        ApplicationConfiguration.Initialize();
+        var appDir = Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory));
+        var tempRoot = Path.Combine(Path.GetTempPath(), "poe_price_patch_tray_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            ExtractPayload(tempRoot);
+            using var context = new TrayContext(appDir, tempRoot);
+            Application.Run(context);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            File.AppendAllText(Path.Combine(Path.GetTempPath(), "poe2-price-patch-tray.log"),
+                DateTime.UtcNow.ToString("O") + " " + ex + Environment.NewLine);
+            return 1;
+        }
+        finally { TryDeleteDirectory(tempRoot); }
+    }
+
+    private sealed class TrayContext : ApplicationContext
+    {
+        private readonly string appDir, payloadDir, settingsPath;
+        private readonly NotifyIcon icon;
+        private readonly System.Threading.Timer timer;
+        private readonly Mutex backgroundMutex;
+        private int running;
+        private DateTime lastRun = DateTime.MinValue;
+        private string lastMessage = "尚未执行自动更新";
+        private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        public TrayContext(string appDir, string payloadDir)
+        {
+            this.appDir = appDir; this.payloadDir = payloadDir;
+            backgroundMutex = new Mutex(false, "Local\\Poe2PricePatch-Background");
+            if (!TryTakeInstanceMutex(backgroundMutex))
+            {
+                backgroundMutex.Dispose();
+                throw new InvalidOperationException("后台托盘实例已在运行。");
+            }
+            settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PoePricePatch", "settings.json");
+            RepairAutoStartRegistration();
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("打开主界面", null, (_,__) => OpenUi());
+            menu.Items.Add("立即更新", null, (_,__) => RunWorker());
+            menu.Items.Add("查看最近结果", null, (_,__) => MessageBox.Show(lastMessage, "POE 物价补丁"));
+            menu.Items.Add(new ToolStripSeparator());
+            var autoStart = new ToolStripMenuItem("开机自动启动"); autoStart.Click += (_,__) => ToggleAutoStart(autoStart); menu.Items.Add(autoStart);
+            var autoUpdate = new ToolStripMenuItem("每小时自动更新物价"); autoUpdate.Click += (_,__) => ToggleAutoUpdate(autoUpdate); menu.Items.Add(autoUpdate);
+            menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("退出", null, (_,__) => ExitThread());
+            icon = new NotifyIcon { Text = "POE 物价补丁", Icon = SystemIcons.Application, Visible = true, ContextMenuStrip = menu };
+            icon.DoubleClick += (_,__) => OpenUi();
+            RefreshChecks(autoStart, autoUpdate);
+            timer = new System.Threading.Timer(_ => Tick(), null, TimeSpan.FromSeconds(2), TimeSpan.FromHours(1));
+            if (ReadBool("auto_update"))
+            {
+                if (HasConfirmedSelection()) _ = Task.Run(RunWorker);
+                else OpenUi();
+            }
+        }
+        private Dictionary<string, object?> ReadState()
+        {
+            try { if (File.Exists(settingsPath)) return JsonSerializer.Deserialize<Dictionary<string, object?>>(File.ReadAllText(settingsPath)) ?? new(); } catch { }
+            return new();
+        }
+        private bool ReadBool(string key) => ReadState().TryGetValue(key, out var v) && v is JsonElement e && e.ValueKind == JsonValueKind.True;
+        private bool HasConfirmedSelection()
+        {
+            var d = ReadState();
+            if (!d.TryGetValue("last_selection", out var value) || value is not JsonElement e || e.ValueKind != JsonValueKind.Object) return false;
+            return e.TryGetProperty("confirmed", out var confirmed) && confirmed.ValueKind == JsonValueKind.True;
+        }
+        private void RefreshChecks(ToolStripMenuItem start, ToolStripMenuItem update) { start.Checked = ReadBool("auto_start"); update.Checked = ReadBool("auto_update"); }
+        private void OpenUi() { try { Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true }); } catch { } }
+        private void ToggleAutoStart(ToolStripMenuItem item)
+        {
+            item.Checked = !item.Checked;
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey);
+            if (item.Checked) key?.SetValue("Poe2PricePatch", "\"" + Environment.ProcessPath + "\" --background"); else key?.DeleteValue("Poe2PricePatch", false);
+            UpdateState("auto_start", item.Checked);
+            RepairAutoStartRegistration();
+        }
+        private void ToggleAutoUpdate(ToolStripMenuItem item) { item.Checked = !item.Checked; UpdateState("auto_update", item.Checked); if (item.Checked) _ = Task.Run(RunWorker); }
+        private void UpdateState(string key, bool value)
+        {
+            try
+            {
+                var d = ReadState(); d[key] = value;
+                var dir = Path.GetDirectoryName(settingsPath)!; Directory.CreateDirectory(dir);
+                var temp = Path.Combine(dir, ".settings-" + Guid.NewGuid().ToString("N") + ".tmp");
+                File.WriteAllText(temp, JsonSerializer.Serialize(d, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+                try { File.Move(temp, settingsPath, true); } finally { if (File.Exists(temp)) File.Delete(temp); }
+            }
+            catch { }
+        }
+        private void RepairAutoStartRegistration()
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey);
+                if (ReadBool("auto_start"))
+                    key?.SetValue("Poe2PricePatch", "\"" + Environment.ProcessPath + "\" --background");
+                else
+                    key?.DeleteValue("Poe2PricePatch", false);
+            }
+            catch { }
+        }
+        private void Tick() { if (ReadBool("auto_update") && HasConfirmedSelection()) _ = Task.Run(RunWorker); }
+        private void RunWorker()
+        {
+            if (Interlocked.Exchange(ref running, 1) != 0) return;
+            try
+            {
+                var script = Path.Combine(payloadDir, "auto_update_worker.ps1");
+                var psi = new ProcessStartInfo("powershell.exe") { UseShellExecute=false, CreateNoWindow=true, WindowStyle=ProcessWindowStyle.Hidden, WorkingDirectory=appDir };
+                psi.ArgumentList.Add("-NoProfile"); psi.ArgumentList.Add("-NonInteractive"); psi.ArgumentList.Add("-ExecutionPolicy"); psi.ArgumentList.Add("Bypass"); psi.ArgumentList.Add("-File"); psi.ArgumentList.Add(script);
+                psi.Environment["POE2_PATCH_ROOT"] = appDir;
+                using var p = Process.Start(psi);
+                if (p == null) { lastMessage = "无法启动自动更新"; icon.ShowBalloonTip(5000, "POE 物价补丁", lastMessage, ToolTipIcon.Error); return; }
+                if (!p.WaitForExit(3_600_000))
+                {
+                    try { p.Kill(entireProcessTree: true); } catch { }
+                    p.WaitForExit(5000);
+                    lastMessage = "自动更新超时，已终止后台进程";
+                    icon.ShowBalloonTip(5000, "POE 物价补丁", lastMessage, ToolTipIcon.Error);
+                    return;
+                }
+                lastRun = DateTime.Now; lastMessage = "最近一次自动更新退出码：" + p.ExitCode;
+                if (p.ExitCode == 1) icon.ShowBalloonTip(5000, "POE 物价补丁", lastMessage, ToolTipIcon.Warning);
+            }
+            catch (Exception ex) { lastMessage = ex.Message; icon.ShowBalloonTip(5000, "POE 物价补丁", "自动更新失败：" + ex.Message, ToolTipIcon.Error); }
+            finally { Volatile.Write(ref running, 0); }
+        }
+        protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); icon.Visible=false; icon.Dispose(); try { backgroundMutex.ReleaseMutex(); } catch { } backgroundMutex.Dispose(); } base.Dispose(disposing); }
     }
 
     private static void PrintStartupMessage()
