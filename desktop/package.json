@@ -13,7 +13,7 @@
     "test": "tsx --test tests/*.test.ts",
     "build": "npm run typecheck && electron-vite build",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
-    "dist": "npm run prepare:runtime && npm run build && electron-builder",
+    "dist": "npm run prepare:runtime && npm run build && electron-builder --publish never",
     "test:desktop": "node scripts/verify-desktop.mjs",
     "preview": "electron-vite preview",
     "test:runtime": "node scripts/verify-runtime.mjs",
