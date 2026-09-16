@@ -25,6 +25,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
       - uses: actions/cache@v4
         with:
           path: build/downloads
@@ -45,13 +48,18 @@ jobs:
         run: |
           npm --prefix desktop test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm --prefix desktop run test:world-map
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node desktop/scripts/verify-auto-lock.mjs
       - name: Build desktop and packages
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm --prefix desktop run dist
       - name: Verify packaged application
-        run: node desktop/scripts/verify-package.mjs --ci
+        run: |
+          node desktop/scripts/verify-package.mjs --ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node desktop/scripts/verify-world-map-ui.mjs --packaged
       - name: Check version tag and generate hashes
         shell: pwsh
         run: |

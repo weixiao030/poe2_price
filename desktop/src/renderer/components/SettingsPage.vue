@@ -2,6 +2,8 @@
 import { useAppStore } from '../stores/app'
 import { useMessage } from 'naive-ui'
 import { Icon } from '@iconify/vue'
+import { ref } from 'vue'
+import '../world-map.css'
 const app = useAppStore(),
   message = useMessage(),
   desktop = window.desktop
@@ -18,6 +20,18 @@ async function save(patch: Partial<AppSettings>) {
   await attempt(() => app.save(patch))
 }
 const localeDate = (date: string) => new Date(date).toLocaleString('zh-CN', { hour12: false })
+const cleaning = ref(false)
+const cleanupResult = ref('')
+async function cleanup(kind: 'cache' | 'logs') {
+  cleaning.value = true
+  await attempt(async () => {
+    const result = await desktop.cleanupFiles(kind, true)
+    if (result.cancelled) return
+    cleanupResult.value = `已清理 ${result.files} 个文件，释放 ${(result.bytes / 1024 / 1024).toFixed(2)} MB${result.skipped ? `，${result.skipped} 项受保护或被占用，已跳过` : ''}。`
+    message.success(cleanupResult.value)
+  })
+  cleaning.value = false
+}
 </script>
 <template>
   <section class="panel settings-panel">
@@ -159,6 +173,37 @@ const localeDate = (date: string) => new Date(date).toLocaleString('zh-CN', { ho
       </div>
       <n-button @click="attempt(() => desktop.openFolder('output'))">查看输出</n-button>
     </div>
+    <div class="settings-row">
+      <div>
+        <b>清理旧文件</b>
+        <p>清理 7 天前的缓存与日志，保留最近文件、当前日志和游戏还原备份。</p>
+      </div>
+      <div class="cleanup-actions">
+        <n-button :disabled="app.running || cleaning" :loading="cleaning" @click="cleanup('cache')"
+          ><template #icon><Icon icon="ph:trash" /></template>清理旧缓存</n-button
+        >
+        <n-button :disabled="app.running || cleaning" @click="cleanup('logs')"
+          ><template #icon><Icon icon="ph:trash" /></template>清理旧日志</n-button
+        >
+      </div>
+    </div>
+    <p v-if="cleanupResult" class="cleanup-result" role="status">{{ cleanupResult }}</p>
+  </section>
+  <section class="settings-panel open-source-section">
+    <div class="panel-heading">
+      <h2>本软件完全免费开源</h2>
+      <Icon icon="ph:github-logo" />
+    </div>
+    <a
+      href="https://github.com/weixiao030/poe2_price"
+      @click.prevent="attempt(() => desktop.openCommunity('source'))"
+      >https://github.com/weixiao030/poe2_price <Icon icon="ph:arrow-square-out"
+    /></a>
+    <a
+      href="https://www.caimogu.cc/post/2403703.html"
+      @click.prevent="attempt(() => desktop.openCommunity('community'))"
+      >https://www.caimogu.cc/post/2403703.html <Icon icon="ph:arrow-square-out"
+    /></a>
   </section>
   <p class="about-line">
     POE 物价补丁 {{ app.state.version }} · 本地配置保存在当前 Windows 用户目录 · 禁止商业使用

@@ -1,0 +1,2888 @@
+{
+  "100": {
+    "name": "Powerful Map Boss",
+    "icon": "AtlasIconContentMapBoss",
+    "desc": "Area contains a Powerful Map Boss",
+    "translates": {
+      "french": {
+        "name": "Boss de Carte puissant",
+        "desc": "La zone contient un Boss de Carte puissant"
+      },
+      "german": {
+        "name": "Mächtiger Kartenboss",
+        "desc": "Gebiet enthält einen mächtigen Kartenboss"
+      },
+      "japanese": {
+        "name": "強力なマップボス",
+        "desc": "エリアに強力なマップボスが出現する"
+      },
+      "korean": {
+        "name": "강한 지도 보스",
+        "desc": "지역에 강한 지도 보스 등장"
+      },
+      "portuguese": {
+        "name": "Chefe de Mapa Poderoso",
+        "desc": "Área contém um chefe de mapa poderoso"
+      },
+      "russian": {
+        "name": "Могучий босс карты",
+        "desc": "В области можно встретить могучего босса карты"
+      },
+      "spanish": {
+        "name": "Jefe de mapa poderoso",
+        "desc": "Esta área contiene un jefe de mapa poderoso"
+      },
+      "thai": {
+        "name": "บอสประจำแผนที่ที่ทรงพลัง",
+        "desc": "ด่านมี บอสประจำแผนที่ที่ทรงพลัง"
+      },
+      "traditional chinese": {
+        "name": "強大地圖頭目",
+        "desc": "區域含有一個強大地圖頭目"
+      }
+    }
+  },
+  "101": {
+    "name": "Breach",
+    "icon": "AtlasIconContentBreach",
+    "desc": "Area contains an Otherworldly Breach",
+    "translates": {
+      "french": {
+        "name": "Brèche",
+        "desc": "La zone contient une Brèche d'un autre monde"
+      },
+      "german": {
+        "name": "Riss",
+        "desc": "Gebiet enthält einen andersweltlichen Riss"
+      },
+      "japanese": {
+        "name": "ブリーチ",
+        "desc": "エリアに異世界のブリーチが出現する"
+      },
+      "korean": {
+        "name": "균열",
+        "desc": "지역에 이계의 균열 1개 등장"
+      },
+      "portuguese": {
+        "name": "Fenda",
+        "desc": "Área contém uma Fenda de Outro Mundo"
+      },
+      "russian": {
+        "name": "Разлом",
+        "desc": "В области можно найти потусторонний Разлом"
+      },
+      "spanish": {
+        "name": "Fisura",
+        "desc": "Esta área contiene una fisura de otro mundo"
+      },
+      "thai": {
+        "name": "บรีช",
+        "desc": "ด่านมี บรีชเหนือโลก"
+      },
+      "traditional chinese": {
+        "name": "裂痕",
+        "desc": "區域含有一個異界的裂痕"
+      }
+    }
+  },
+  "102": {
+    "name": "Expedition",
+    "icon": "AtlasIconContentExpedition",
+    "desc": "Area contains a Kalguuran Expedition",
+    "translates": {
+      "french": {
+        "name": "Expédition",
+        "desc": "La zone contient une Expédition kalguurienne"
+      },
+      "german": {
+        "name": "Expedition",
+        "desc": "Gebiet enthält eine Expedition der Kalguur"
+      },
+      "japanese": {
+        "name": "エクスペディション",
+        "desc": "エリアにカルグールのエクスペディションが出現する"
+      },
+      "korean": {
+        "name": "탐험",
+        "desc": "지역에 칼구르 탐험 등장"
+      },
+      "portuguese": {
+        "name": "Expedição",
+        "desc": "Área contém uma Expedição Kalguurana"
+      },
+      "russian": {
+        "name": "Экспедиция",
+        "desc": "В области можно встретить калгууранскую экспедицию"
+      },
+      "spanish": {
+        "name": "Expedición",
+        "desc": "Esta área contiene una expedición kalgurana"
+      },
+      "thai": {
+        "name": "กองสำรวจ",
+        "desc": "ด่านมี กองสำรวจคาลเกอร์"
+      },
+      "traditional chinese": {
+        "name": "死境探險",
+        "desc": "區域含有一個卡爾葛探險"
+      }
+    }
+  },
+  "103": {
+    "name": "Delirium",
+    "icon": "AtlasIconContentDelirium",
+    "desc": "Area contains a Delirium Mirror",
+    "translates": {
+      "french": {
+        "name": "Délire",
+        "desc": "La zone contient un Miroir du Délire"
+      },
+      "german": {
+        "name": "Delirium",
+        "desc": "Gebiet enthält einen Spiegel des Deliriums"
+      },
+      "japanese": {
+        "name": "デリリウム",
+        "desc": "エリアにデリリウムの鏡が出現する"
+      },
+      "korean": {
+        "name": "환영",
+        "desc": "지역에 환영 거울 등장"
+      },
+      "portuguese": {
+        "name": "Delírio",
+        "desc": "Área contém um Espelho de Delírio"
+      },
+      "russian": {
+        "name": "Делириум",
+        "desc": "В области можно найти Зеркало Делириума"
+      },
+      "spanish": {
+        "name": "Delirio",
+        "desc": "Esta área contiene un espejo de delirio"
+      },
+      "thai": {
+        "name": "เดลิเรียม",
+        "desc": "ด่านมี กระจกเดลิเรียม"
+      },
+      "traditional chinese": {
+        "name": "譫妄",
+        "desc": "區域含有一面ContainsDelirium譫妄之鏡"
+      }
+    }
+  },
+  "104": {
+    "name": "Ritual",
+    "icon": "AtlasIconContentRitual",
+    "desc": "Area contains Ritual Altars",
+    "translates": {
+      "french": {
+        "name": "Rituel",
+        "desc": "La zone contient des Autels de Rituel"
+      },
+      "german": {
+        "name": "Ritual",
+        "desc": "Gebiet enthält Ritualaltäre"
+      },
+      "japanese": {
+        "name": "リチュアル",
+        "desc": "エリアにリチュアルの祭壇が出現する"
+      },
+      "korean": {
+        "name": "의식",
+        "desc": "지역에 의식 제단 등장"
+      },
+      "portuguese": {
+        "name": "Ritual",
+        "desc": "Área contém Altares Ritualísticos"
+      },
+      "russian": {
+        "name": "Ритуал",
+        "desc": "В области можно найти ритуальные алтари"
+      },
+      "spanish": {
+        "name": "Ritual",
+        "desc": "Esta área contiene altares de ritual"
+      },
+      "thai": {
+        "name": "พิธีกรรม",
+        "desc": "ด่านมี แท่นพิธีกรรม"
+      },
+      "traditional chinese": {
+        "name": "祭祀",
+        "desc": "區域含有祭祀神壇"
+      }
+    }
+  },
+  "105": {
+    "name": "Irradiated",
+    "icon": "AtlasIconContentIrradiated",
+    "desc": "Area has +1 to Monster Level",
+    "translates": {
+      "french": {
+        "name": "Irradiée",
+        "desc": "La zone a +1 au Niveau des monstres"
+      },
+      "german": {
+        "name": "Bestrahlt",
+        "desc": "Gebiet hat +1 zur Monsterstufe"
+      },
+      "japanese": {
+        "name": "照射状態",
+        "desc": "エリアのモンスターレベル +1"
+      },
+      "korean": {
+        "name": "방사능 노출",
+        "desc": "지역 몬스터 레벨 +1"
+      },
+      "portuguese": {
+        "name": "Irradiada",
+        "desc": "Área tem +1 ao nível dos monstros"
+      },
+      "russian": {
+        "name": "Заражение",
+        "desc": "+1 к уровню монстров в области"
+      },
+      "spanish": {
+        "name": "Irradiada",
+        "desc": "Esta área tiene +1 al nivel de los monstruos"
+      },
+      "thai": {
+        "name": "อาบรังสี",
+        "desc": "ด่านมี มอนสเตอร์เลเวล +1"
+      },
+      "traditional chinese": {
+        "name": "照耀",
+        "desc": "區域怪物等級 +1"
+      }
+    }
+  },
+  "106": {
+    "name": "Overrun by the Abyssal",
+    "icon": "AtlasIconContentAbyssOverrun",
+    "desc": "Area contains many extra Abysses",
+    "translates": {
+      "french": {
+        "name": "Envahie par les Abyssaux",
+        "desc": "La zone contient de nombreux Abysses supplémentaires"
+      },
+      "german": {
+        "name": "Überrant von den Abgründigen",
+        "desc": "Gebiet enthält viele zusätzliche Abgründe"
+      },
+      "japanese": {
+        "name": "アビスに蹂躙されている",
+        "desc": "エリアはアビスが追加で大量に出現する"
+      },
+      "korean": {
+        "name": "심연의 존재로 뒤덮임",
+        "desc": "지역에 다수의 추가 심연 등장"
+      },
+      "portuguese": {
+        "name": "Invadido pelos Abissais",
+        "desc": "Área contém muitos Abismos adicionais"
+      },
+      "russian": {
+        "name": "Заполонение Бездной",
+        "desc": "В области можно найти много дополнительных Бездн"
+      },
+      "spanish": {
+        "name": "Invadida por los abisales",
+        "desc": "El área contiene muchos abismos adicionales"
+      },
+      "thai": {
+        "name": "ถูกรุกล้ำไปด้วยพวกอะบิส",
+        "desc": "ด่านมี อะบิส เพิ่มเติม หลายแห่ง"
+      },
+      "traditional chinese": {
+        "name": "深淵蔓延",
+        "desc": "區域含有許多額外深淵"
+      }
+    }
+  },
+  "107": {
+    "name": "Vaal Beacons",
+    "icon": "AtlasIconContentIncursion",
+    "desc": "Area contains Vaal Beacons",
+    "translates": {
+      "french": {
+        "name": "Vaal Beacons",
+        "desc": "Area contains Vaal Beacons"
+      },
+      "german": {
+        "name": "Vaal-Leuchtfeuer",
+        "desc": "Gebiet enthält Vaal-Leuchtfeuer"
+      },
+      "japanese": {
+        "name": "ヴァールビーコン",
+        "desc": "エリアにヴァールビーコンが出現する"
+      },
+      "korean": {
+        "name": "바알 등대",
+        "desc": "지역에 바알 등대 등장"
+      },
+      "portuguese": {
+        "name": "Sinalizadores Vaal",
+        "desc": "Área contém Sinalizadores Vaal"
+      },
+      "russian": {
+        "name": "Маяки ваал",
+        "desc": "В области можно найти маяки ваал"
+      },
+      "spanish": {
+        "name": "Focos vaal",
+        "desc": "El área contiene focos vaal"
+      },
+      "thai": {
+        "name": "สัญญาณไฟวาล์",
+        "desc": "ด่านมี สัญญาณไฟวาล์"
+      },
+      "traditional chinese": {
+        "name": "瓦爾烽塔",
+        "desc": "區域含有瓦爾烽塔"
+      }
+    }
+  },
+  "108": {
+    "name": "Abyss",
+    "icon": "AtlasIconContentAbyss",
+    "desc": "Area contains Abysses",
+    "translates": {
+      "french": {
+        "name": "Abyss",
+        "desc": "Area contains Abysses"
+      },
+      "german": {
+        "name": "Abgrund",
+        "desc": "Gebiet enthält Abgründe"
+      },
+      "japanese": {
+        "name": "アビス",
+        "desc": "エリアにアビスが出現する"
+      },
+      "korean": {
+        "name": "심연",
+        "desc": "지역에 심연 등장"
+      },
+      "portuguese": {
+        "name": "Abismo",
+        "desc": "Área contém Abismos"
+      },
+      "russian": {
+        "name": "Бездна",
+        "desc": "В области можно найти Бездны"
+      },
+      "spanish": {
+        "name": "Abismo",
+        "desc": "El área contiene abismos"
+      },
+      "thai": {
+        "name": "อะบิส",
+        "desc": "ด่านมี อะบิส"
+      },
+      "traditional chinese": {
+        "name": "深淵",
+        "desc": "區域含有深淵"
+      }
+    }
+  },
+  "109": {
+    "name": "Notable Location",
+    "icon": "AtlasMasteryBiome",
+    "desc": "Area contains an important objective",
+    "translates": {
+      "french": {
+        "name": "Notable Location",
+        "desc": "Area contains an important objective"
+      },
+      "german": {
+        "name": "Bedeutender Ort",
+        "desc": "Gebiet enthält ein wichtiges Ziel"
+      },
+      "japanese": {
+        "name": "注目すべきロケーション",
+        "desc": "エリアに重要な目標が出現する"
+      },
+      "korean": {
+        "name": "주요 위치",
+        "desc": "지역에 중요한 목표 1개 등장"
+      },
+      "portuguese": {
+        "name": "Local Importante",
+        "desc": "Área contém um objetivo importante"
+      },
+      "russian": {
+        "name": "Примечательное место",
+        "desc": "В области находится важная цель"
+      },
+      "spanish": {
+        "name": "Ubicación destacada",
+        "desc": "El área contiene un objetivo importante"
+      },
+      "thai": {
+        "name": "สถานที่สำคัญ",
+        "desc": "ด่านมี เป้าหมายที่สำคัญ 1 อย่าง"
+      },
+      "traditional chinese": {
+        "name": "任務區域",
+        "desc": "區域含有任務目標"
+      }
+    }
+  },
+  "110": {
+    "name": "[DNT] Breach City - Not Shown to Players",
+    "icon": "",
+    "desc": "DNT No visual identity = not shown",
+    "translates": {
+      "french": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "german": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "japanese": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "korean": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "portuguese": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "russian": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "spanish": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "thai": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      },
+      "traditional chinese": {
+        "name": "[DNT] Breach City - Not Shown to Players",
+        "desc": "DNT No visual identity = not shown"
+      }
+    }
+  },
+  "111": {
+    "name": "Great Beast",
+    "icon": "CompanionsNotable1",
+    "desc": "Slay the Great Beast to earn Hilda's Favour",
+    "translates": {
+      "french": {
+        "name": "Great Beast",
+        "desc": "Slay the Great Beast to earn Hilda's Favour"
+      },
+      "german": {
+        "name": "Große Bestie",
+        "desc": "Tötet die Große Bestie für Hildas Gunst"
+      },
+      "japanese": {
+        "name": "偉大なる獣",
+        "desc": "偉大な獣を倒してヒルダの好意を獲得しよう"
+      },
+      "korean": {
+        "name": "거대 야수",
+        "desc": "거대 야수 처치 시 힐다의 호의 획득"
+      },
+      "portuguese": {
+        "name": "Grande Fera",
+        "desc": "Abata a grande fera para ganhar o Obséquio de Hilda"
+      },
+      "russian": {
+        "name": "Великий зверь",
+        "desc": "Убейте Великого зверя, чтобы заслужить расположение Хильды"
+      },
+      "spanish": {
+        "name": "Gran bestia",
+        "desc": "Mata a la Gran bestia para ganarte el favor de Hilda"
+      },
+      "thai": {
+        "name": "สัตว์ร้ายผู้ยิ่งใหญ่",
+        "desc": "สังหารสัตว์ร้ายผู้ยิ่งใหญ่ เพื่อรับความชอบจากฮิลด้า"
+      },
+      "traditional chinese": {
+        "name": "巨型野獸",
+        "desc": "擊殺猛獸以獲得希爾妲的好感"
+      }
+    }
+  },
+  "112": {
+    "name": "Essence Trove",
+    "icon": "AtlasIconContentEssence",
+    "desc": "All Rare monsters are Essence monsters",
+    "translates": {
+      "french": {
+        "name": "Essence Trove",
+        "desc": "All Rare monsters are Essence monsters"
+      },
+      "german": {
+        "name": "Essenzschatz",
+        "desc": "Alle seltenen Monsters sind Essenz-Monster"
+      },
+      "japanese": {
+        "name": "エッセンスの貯蔵庫",
+        "desc": "全てのレアモンスターがエッセンスモンスターになる"
+      },
+      "korean": {
+        "name": "에센스 발견물",
+        "desc": "모든 희귀 몬스터가 에센스 몬스터"
+      },
+      "portuguese": {
+        "name": "Repositório de Essências",
+        "desc": "Todos os monstros raros são monstros de essência"
+      },
+      "russian": {
+        "name": "Кладезь Сущностей",
+        "desc": "Все редкие монстры имеют Сущность"
+      },
+      "spanish": {
+        "name": "Tesoro de esencias",
+        "desc": "Todos los monstruos raros son monstruos de esencias"
+      },
+      "thai": {
+        "name": "ขุมเอสเซนส์",
+        "desc": "มอนสเตอร์แรร์ ทุกตัวเป็น มอนสเตอร์เอสเซนส์"
+      },
+      "traditional chinese": {
+        "name": "精髓寶藏",
+        "desc": "所有稀有怪物皆為精髓怪物"
+      }
+    }
+  },
+  "113": {
+    "name": "Monstrous Treasure",
+    "icon": "AtlasIconContentStrongBox",
+    "desc": "Contains many extra Strongboxes with monsters waiting in ambush",
+    "translates": {
+      "french": {
+        "name": "Monstrous Treasure",
+        "desc": "Contains many extra Strongboxes with monsters waiting in ambush"
+      },
+      "german": {
+        "name": "Monströser Schatz",
+        "desc": "Enthält viele zusätzliche Tresore, in denen Monster im Hinterhalt lauern"
+      },
+      "japanese": {
+        "name": "モンストラストレジャー",
+        "desc": "モンスターが奇襲しようと中に潜んでいるストロングボックスが追加で大量に出現する"
+      },
+      "korean": {
+        "name": "무시무시한 보물",
+        "desc": "다수의 추가 금고가 매복하여 기다리는 몬스터들과 함께 등장"
+      },
+      "portuguese": {
+        "name": "Tesouro Monstruoso",
+        "desc": "Contém muitas caixas-forte adicionais com monstros à espreita"
+      },
+      "russian": {
+        "name": "Чудовищное сокровище",
+        "desc": "В области можно найти много дополнительных ларцов со ждущими в засаде монстрами"
+      },
+      "spanish": {
+        "name": "Tesoro monstruoso",
+        "desc": "Contiene muchas cajas fuertes adicionales con monstruos que tienden emboscadas"
+      },
+      "thai": {
+        "name": "สมบัติมหึมา",
+        "desc": "มีกล่องนิรภัย เพิ่มเติมหลายใบ ที่มีมอนสเตอร์ดักซุ่มอยู่"
+      },
+      "traditional chinese": {
+        "name": "巨大的寶物",
+        "desc": "含有許多額外保險箱和伏擊中的怪物"
+      }
+    }
+  },
+  "114": {
+    "name": "Spirit Guide",
+    "icon": "AtlasIconContentAzmeriSpirit",
+    "desc": "Contains an Azmeri Spirit that will be released when Possessed Monsters are slain",
+    "translates": {
+      "french": {
+        "name": "Spirit Guide",
+        "desc": "Contains an Azmeri Spirit that will be released when Possessed Monsters are slain"
+      },
+      "german": {
+        "name": "Geistführer",
+        "desc": "Enthält einen Azmeri-Geist, der bei Tötung von besessenen Monstern freigelassen wird"
+      },
+      "japanese": {
+        "name": "精霊の導き",
+        "desc": "憑依しているモンスターが倒された時に解放されるアズメリの精霊が出現する"
+      },
+      "korean": {
+        "name": "혼백 인도자",
+        "desc": "사로잡힌 몬스터를 처치하면 방출되는 아즈메리 혼백 등장"
+      },
+      "portuguese": {
+        "name": "Guia Espiritual",
+        "desc": "Contém um Espírito Azmeri que será liberado quando monstros possuídos forem mortos"
+      },
+      "russian": {
+        "name": "Духовный проводник",
+        "desc": "В области можно встретить духа азмири, который будет освобождён при убийстве одержимых монстров"
+      },
+      "spanish": {
+        "name": "Guía espiritual",
+        "desc": "Contiene un espíritu azmeri que se libera cuando derrotas a los monstruos poseídos"
+      },
+      "thai": {
+        "name": "วิญญาณนำทาง",
+        "desc": "มีวิญญาณแอสเมรี ที่จะถูกปลดปล่อยเมื่อ มอนสเตอร์ที่ถูกเข้าสิง ถูกสังหาร"
+      },
+      "traditional chinese": {
+        "name": "魂靈指引",
+        "desc": "含有一個會於被附身的怪物被擊殺時釋放的阿茲莫里魂靈"
+      }
+    }
+  },
+  "115": {
+    "name": "Arcane Hordes",
+    "icon": "ItemQuantityandRarity",
+    "desc": "All Monsters are at least Magic",
+    "translates": {
+      "french": {
+        "name": "Arcane Hordes",
+        "desc": "All Monsters are at least Magic"
+      },
+      "german": {
+        "name": "Arkane Horden",
+        "desc": "Alle Monster sind mindestens magisch"
+      },
+      "japanese": {
+        "name": "アーケインの軍勢",
+        "desc": "全てのモンスターは最低でもマジックモンスターになる"
+      },
+      "korean": {
+        "name": "비전 떼",
+        "desc": "모든 몬스터가 마법 이상으로 등장"
+      },
+      "portuguese": {
+        "name": "Hordas Arcanas",
+        "desc": "Todos os monstros são, no mínimo, mágicos"
+      },
+      "russian": {
+        "name": "Колдовские орды",
+        "desc": "Все монстры как минимум волшебные"
+      },
+      "spanish": {
+        "name": "Hordas arcanas",
+        "desc": "Todos los monstruos son al menos mágicos"
+      },
+      "thai": {
+        "name": "ฝูงอาคม",
+        "desc": "มอนสเตอร์ทุกตัว มีระดับความหายากอย่างน้อย เมจิก"
+      },
+      "traditional chinese": {
+        "name": "祕法群集",
+        "desc": "所有怪物至少為魔法"
+      }
+    }
+  },
+  "116": {
+    "name": "Hunting Grounds",
+    "icon": "Hunter",
+    "desc": "Contains 2 additional Rogue Exiles and 5 additional Rare Beasts",
+    "translates": {
+      "french": {
+        "name": "Hunting Grounds",
+        "desc": "Contains 2 additional Rogue Exiles and 5 additional Rare Beasts"
+      },
+      "german": {
+        "name": "Jagdgründe",
+        "desc": "Enthält 2 zusätzliche Abtrünnige Verbannte und 5 zusätzliche seltene Bestien"
+      },
+      "japanese": {
+        "name": "狩猟場",
+        "desc": "ローグエグザイルが追加で2体およびレアの獣が追加で5体出現する"
+      },
+      "korean": {
+        "name": "사냥터",
+        "desc": "탈주 유배자 2명과 희귀 야수 5마리가 추가로 등장"
+      },
+      "portuguese": {
+        "name": "Campos de Caça",
+        "desc": "Contêm 2 Exilados Renegados adicionais e 5 feras raras adicionais"
+      },
+      "russian": {
+        "name": "Охотничьи угодья",
+        "desc": "В области можно встретить 2 дополнительных бродячих изгнанников и 5 дополнительных редких зверей"
+      },
+      "spanish": {
+        "name": "Terrenos de caza",
+        "desc": "Contiene 2 exiliados renegados adicionales y 5 bestias raras adicionales"
+      },
+      "thai": {
+        "name": "พื้นที่ออกล่า",
+        "desc": "มีเอ็กไซล์อันธพาล เพิ่มเติม 2 ตัว และ สัตว์ร้ายแรร์ เพิ่มเติม 5 ตัว"
+      },
+      "traditional chinese": {
+        "name": "獵場",
+        "desc": "含有額外2名盜賊流亡者和5隻稀有野獸"
+      }
+    }
+  },
+  "117": {
+    "name": "Nature Shrines",
+    "icon": "HybridShrineAzmeriSpirit",
+    "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated",
+    "translates": {
+      "french": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      },
+      "german": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      },
+      "japanese": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      },
+      "korean": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      },
+      "portuguese": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      },
+      "russian": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      },
+      "spanish": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      },
+      "thai": {
+        "name": "แท่นบูชาธรรมชาติ",
+        "desc": "มีแท่นบูชา เพิ่มเติม 2 แท่น\nแท่นบูชา ปลดปล่อย วิญญาณแอสเมรี 1 ตน เมื่อใช้งาน"
+      },
+      "traditional chinese": {
+        "name": "Nature Shrines",
+        "desc": "Contains 2 additional Shrines\nShrines release an Azmeri Spirit when activated"
+      }
+    }
+  },
+  "118": {
+    "name": "Crystalised Twinning",
+    "icon": "EssenceNotable1",
+    "desc": "Contains 3 additional Essence Packs\nEssence Packs have an additional Rare Monster",
+    "translates": {
+      "french": {
+        "name": "Crystalised Twinning",
+        "desc": "Contains 3 additional Essence Packs\nEssence Packs have an additional Rare Monster"
+      },
+      "german": {
+        "name": "Kristallisierter Zwilling",
+        "desc": "Enthält 3 zusätzliche Essenzen\nEssenz-Gruppen im Gebiet enthalten ein zusätzliches seltenes Monster"
+      },
+      "japanese": {
+        "name": "結晶化した双子",
+        "desc": "エッセンスが追加で3パック出現する\nエリアのエッセンスパックにレアモンスターが追加で1体出現する"
+      },
+      "korean": {
+        "name": "결정화된 결연",
+        "desc": "에센스 무리 3개 추가 등장\n에센스 무리에 추가 희귀 몬스터 생성"
+      },
+      "portuguese": {
+        "name": "Geminação Cristalizada",
+        "desc": "Contém 3 grupos de essência adicionais\nGrupos de essência contêm um monstro raro adicional"
+      },
+      "russian": {
+        "name": "Кристальный двойник",
+        "desc": "В области можно встретить 3 дополнительные группы монстров с Сущностью\nГруппы монстров с Сущностью в области включают дополнительного редкого монстра"
+      },
+      "spanish": {
+        "name": "Duplicación cristalizada",
+        "desc": "Contiene 3 grupos de esencias adicionales\nLos grupos de esencias del área contienen un monstruo raro adicional"
+      },
+      "thai": {
+        "name": "คริสตัลแฝด",
+        "desc": "มีกองมอนสเตอร์เอสเซนส์ เพิ่มเติม 3 กอง\nกองมอนสเตอร์เอสเซนส์ ในด่านมี มอนสเตอร์แรร์ เพิ่มเติม 1 ตัว"
+      },
+      "traditional chinese": {
+        "name": "晶化雙生",
+        "desc": "含有額外3個精髓怪物群\n精髓怪物群含有一名額外稀有怪物"
+      }
+    }
+  },
+  "119": {
+    "name": "Indomitable Essence",
+    "icon": "EssenceNotable2",
+    "desc": "Contains 3 additional Essence\nEssences transfer to a random Unique Monster on death",
+    "translates": {
+      "french": {
+        "name": "Indomitable Essence",
+        "desc": "Contains 3 additional Essence\nEssences transfer to a random Unique Monster on death"
+      },
+      "german": {
+        "name": "Unbezwingbare Essenz",
+        "desc": "Enthält 3 zusätzliche Essenzen\nEssenzen werden bei Tod auf ein zufälliges einzigartiges Monster übertragen"
+      },
+      "japanese": {
+        "name": "不屈のエッセンス",
+        "desc": "エッセンスが追加で3個出現する\nエッセンスは死亡時にランダムなユニークモンスターに転移する"
+      },
+      "korean": {
+        "name": "불굴의 에센스",
+        "desc": "에센스 3개 추가 등장\n죽으면 에센스가 무작위 고유 몬스터에게 옮겨 감"
+      },
+      "portuguese": {
+        "name": "Essência Indomável",
+        "desc": "Contém 3 essências adicionais\nEssências são transferidas para um monstro único aleatório ao morrer"
+      },
+      "russian": {
+        "name": "Неукротимая сущность",
+        "desc": "В области можно найти 3 дополнительные Сущности\nСущности при смерти переходят в случайного уникального монстра"
+      },
+      "spanish": {
+        "name": "Esencia indómita",
+        "desc": "Contiene 3 esencias adicionales\nLas esencias se transfieren a un monstruo único aleatorio al morir"
+      },
+      "thai": {
+        "name": "เอสเซนส์ไร้พ่าย",
+        "desc": "มีกองมอนสเตอร์เอสเซนส์ เพิ่มเติม 3 กอง\nเอสเซนส์ ย้ายไปยัง มอนสเตอร์ยูนิคแบบสุ่ม 1 ตัว เมื่อตาย"
+      },
+      "traditional chinese": {
+        "name": "不屈精髓",
+        "desc": "含有額外3個精髓怪物群\n精髓會於死亡時轉移至一名隨機傳奇怪物"
+      }
+    }
+  },
+  "120": {
+    "name": "Azmeri Energisation",
+    "icon": "MoreWildWisps",
+    "desc": "Contains 2 additional Azmeri Spirits\nAzmeri Spirits have 1000% increased maximum Empowerment",
+    "translates": {
+      "french": {
+        "name": "Azmeri Energisation",
+        "desc": "Contains 2 additional Azmeri Spirits\nAzmeri Spirits have 1000% increased maximum Empowerment"
+      },
+      "german": {
+        "name": "Azmerische Energie",
+        "desc": "Enthält 2 zusätzliche Azmeri-Geister\nAzmeri-Geister haben 1000% erhöhte maximale Ermächtigung"
+      },
+      "japanese": {
+        "name": "アズメリの活性化",
+        "desc": "アズメリの精霊が追加で2体出現する\nアズメリの精霊は最大強化量が1000%増加する"
+      },
+      "korean": {
+        "name": "아즈메리 에너지 공급",
+        "desc": "아즈메리 혼백 2개 추가 등장\n아즈메리 혼백의 강화 최대치 1000% 증가"
+      },
+      "portuguese": {
+        "name": "Energização Azmeri",
+        "desc": "Contém 2 Espíritos Azmeri adicionais\nEspíritos Azmeri têm o fortalecimento máximo aumentado em 1.000%"
+      },
+      "russian": {
+        "name": "Энергичность азмири",
+        "desc": "В области можно встретить 2 дополнительных духов азмири\nМаксимальное усиление духами азмири увеличивается на 1000%"
+      },
+      "spanish": {
+        "name": "Energización azmeri",
+        "desc": "Contiene 2 espíritus azmeri adicionales\nLos espíritus azmeri tienen la potenciación máxima aumentada un 1000%"
+      },
+      "thai": {
+        "name": "พลังงานจากแอสเมรี",
+        "desc": "มีวิญญาณแอสเมรี เพิ่มเติม 2 ตน\nวิญญาณแอสเมรี มีการเสริมฤทธิ์สูงสุด เพิ่มขึ้น 1000%"
+      },
+      "traditional chinese": {
+        "name": "阿茲莫里充能",
+        "desc": "含有額外2個阿茲莫里魂靈\n阿茲莫里魂靈增加1000%最大強化值"
+      }
+    }
+  },
+  "121": {
+    "name": "Spirit Migration",
+    "icon": "VividPrimalWildWisps",
+    "desc": "An Azmeri Spirit moves to a nearby map on completion, eventually ascending to a Sacred Spirit",
+    "translates": {
+      "french": {
+        "name": "Spirit Migration",
+        "desc": "An Azmeri Spirit moves to a nearby map on completion, eventually ascending to a Sacred Spirit"
+      },
+      "german": {
+        "name": "Geistwanderung",
+        "desc": "Ein Azmeri-Geist wandert nach Abschluss in eine umliegende Karte und wird schließlich zum Heiligen Geist"
+      },
+      "japanese": {
+        "name": "精霊の移動",
+        "desc": "マップを完了するとアズメリの精霊は近くのマップに移動し、結果として神聖な精霊に昇華する"
+      },
+      "korean": {
+        "name": "혼백 이동",
+        "desc": "완료 시 아즈메리 혼백이 주변의 지도로 옮겨 가, 결국 성스러운 혼백으로 승격됨"
+      },
+      "portuguese": {
+        "name": "Migração de Espírito",
+        "desc": "Ao ser concluído, um Espírito Azmeri se move para um mapa próximo e acaba ascendendo a um Espírito Sagrado"
+      },
+      "russian": {
+        "name": "Миграция духа",
+        "desc": "Дух азмири перемещается на ближайшую карту по завершении, со временем превращаясь в священный дух"
+      },
+      "spanish": {
+        "name": "Migración de espíritu",
+        "desc": "Un espíritu azmeri se trasladará a un mapa cercano al completar el área y, al final, ascenderá a espíritu sagrado"
+      },
+      "thai": {
+        "name": "วิญญาณย้ายถิ่น",
+        "desc": "วิญญาณแอสเมรี 1 ตน เคลื่อนไปยังแผนที่ที่อยู่ใกล้เมื่อผ่านได้สำเร็จ และจะตั้งตนเป็น วิญญาณศักดิ์สิทธิ์ ในท้ายที่สุด"
+      },
+      "traditional chinese": {
+        "name": "魂靈遷徙",
+        "desc": "阿茲莫里魂靈會於完成後移動至相鄰地圖，並最終晉升為聖潔魂靈"
+      }
+    }
+  },
+  "122": {
+    "name": "Sacred Spirit",
+    "icon": "MoreSacredWisps",
+    "desc": "The Azmeri Spirit has ascended to a Sacred Spirit",
+    "translates": {
+      "french": {
+        "name": "Sacred Spirit",
+        "desc": "The Azmeri Spirit has ascended to a Sacred Spirit"
+      },
+      "german": {
+        "name": "Heiliger Geist",
+        "desc": "Der Azmeri-Geist ist zu einem Heiligen Geist geworden"
+      },
+      "japanese": {
+        "name": "神聖な精霊",
+        "desc": "アズメリの精霊が神聖な精霊に昇華している"
+      },
+      "korean": {
+        "name": "성스러운 혼백",
+        "desc": "아즈메리 혼백이 성스러운 혼백으로 승격되었습니다."
+      },
+      "portuguese": {
+        "name": "Espírito Sagrado",
+        "desc": "O Espírito Azmeri ascendeu a um Espírito Sagrado"
+      },
+      "russian": {
+        "name": "Священный дух",
+        "desc": "Дух азмири возвысился до священного духа"
+      },
+      "spanish": {
+        "name": "Espíritu sagrado",
+        "desc": "El espíritu azmeri ha ascendido a espíritu sagrado"
+      },
+      "thai": {
+        "name": "วิญญาณศักดิ์สิทธิ์",
+        "desc": "วิญญาณแอสเมรี ได้ตั้งตนเป็น วิญญาณศักดิ์สิทธิ์ แล้ว"
+      },
+      "traditional chinese": {
+        "name": "聖潔魂靈",
+        "desc": "阿茲莫里魂靈已晉升為聖潔魂靈"
+      }
+    }
+  },
+  "123": {
+    "name": "Ancient Trove",
+    "icon": "StrongboxNotable2",
+    "desc": "Contains a Unique Strongbox",
+    "translates": {
+      "french": {
+        "name": "Ancient Trove",
+        "desc": "Contains a Unique Strongbox"
+      },
+      "german": {
+        "name": "Uralter Schatz",
+        "desc": "Enthält einen einzigartigen Tresor"
+      },
+      "japanese": {
+        "name": "古代の秘宝",
+        "desc": "ユニークストロングボックスが出現する"
+      },
+      "korean": {
+        "name": "고대 발견물",
+        "desc": "고유 금고 등장"
+      },
+      "portuguese": {
+        "name": "Repositório Antigo",
+        "desc": "Contém 1 caixa-forte única"
+      },
+      "russian": {
+        "name": "Древний клад",
+        "desc": "В области можно найти уникальный ларец"
+      },
+      "spanish": {
+        "name": "Tesoro antiguo",
+        "desc": "Contiene una caja fuerte única"
+      },
+      "thai": {
+        "name": "ขุมทรัพย์โบราณ",
+        "desc": "มีกล่องนิรภัยยูนิค 1 ใบ"
+      },
+      "traditional chinese": {
+        "name": "遠古寶庫",
+        "desc": "含有一個傳奇保險箱"
+      }
+    }
+  },
+  "124": {
+    "name": "Twice-Locked Boxes",
+    "icon": "StrongboxNotable1",
+    "desc": "Contains 3 additional Strongboxes\nStrongboxes are openable twice",
+    "translates": {
+      "french": {
+        "name": "Twice-Locked Boxes",
+        "desc": "Contains 3 additional Strongboxes\nStrongboxes are openable twice"
+      },
+      "german": {
+        "name": "Doppelt gesicherte Tresore",
+        "desc": "Enthält 3 zusätzliche Tresore\nTresore können zweimal geöffnet werden"
+      },
+      "japanese": {
+        "name": "二重に施錠された箱",
+        "desc": "ストロングボックスが追加で3個出現する\nストロングボックスは二回開けられる"
+      },
+      "korean": {
+        "name": "두 번 잠긴 상자",
+        "desc": "금고 3개 추가 등장\n금고를 두 번 열 수 있음"
+      },
+      "portuguese": {
+        "name": "Caixas com Dupla Fechadura",
+        "desc": "Contém 3 caixas-forte adicionais\nCaixas-forte são abertas duas vezes"
+      },
+      "russian": {
+        "name": "Двойные засовы",
+        "desc": "В области можно найти 3 дополнительных ларца\nЛарцы можно открыть дважды"
+      },
+      "spanish": {
+        "name": "Cajas doblemente cerradas",
+        "desc": "Contiene 3 cajas fuertes adicionales\nLas cajas fuertes se pueden abrir dos veces"
+      },
+      "thai": {
+        "name": "กล่องล็อกสองชั้น",
+        "desc": "มีกล่องนิรภัย เพิ่มเติม 3 ใบ\nกล่องนิรภัย เปิดได้สองครั้ง"
+      },
+      "traditional chinese": {
+        "name": "雙鎖密櫃",
+        "desc": "含有額外3個保險箱\n保險箱可以被開啟兩次"
+      }
+    }
+  },
+  "125": {
+    "name": "Power of Faith",
+    "icon": "Shrines",
+    "desc": "Contains 3 additional Shrines",
+    "translates": {
+      "french": {
+        "name": "Power of Faith",
+        "desc": "Contains 3 additional Shrines"
+      },
+      "german": {
+        "name": "Kraft des Glaubens",
+        "desc": "Enthält 3 zusätzliche Schreine"
+      },
+      "japanese": {
+        "name": "信仰の力",
+        "desc": "シュラインが追加で3個出現する"
+      },
+      "korean": {
+        "name": "믿음의 힘",
+        "desc": "성소 3개 추가 등장"
+      },
+      "portuguese": {
+        "name": "Poder da Fé",
+        "desc": "Contém 3 Altares"
+      },
+      "russian": {
+        "name": "Сила веры",
+        "desc": "В области можно найти 3 дополнительных алтаря"
+      },
+      "spanish": {
+        "name": "Poder de la fe",
+        "desc": "Contiene 3 santuarios adicionales"
+      },
+      "thai": {
+        "name": "พลังศรัทธา",
+        "desc": "มีแท่นบูชา เพิ่มเติม 3 แท่น"
+      },
+      "traditional chinese": {
+        "name": "信仰之力",
+        "desc": "區域含有 3 座額外神殿"
+      }
+    }
+  },
+  "126": {
+    "name": "Large Congregation",
+    "icon": "ShrinesNode",
+    "desc": "Contains 3 additional Shrines\nShrines have 2 additional packs of Worshippers",
+    "translates": {
+      "french": {
+        "name": "Large Congregation",
+        "desc": "Contains 3 additional Shrines\nShrines have 2 additional packs of Worshippers"
+      },
+      "german": {
+        "name": "Große Versammlung",
+        "desc": "Enthält 3 zusätzliche Schreine\nSchreine haben 2 zusätzliche Gruppen von Anbetern"
+      },
+      "japanese": {
+        "name": "大規模な集会",
+        "desc": "シュラインが追加で3個出現する\nシュラインは崇拝者追加で2パックに守られている"
+      },
+      "korean": {
+        "name": "대형 집회",
+        "desc": "성소 3개 추가 등장\n성소에 숭배자 무리 2개 추가 등장"
+      },
+      "portuguese": {
+        "name": "Grande Congregação",
+        "desc": "Contém 3 altares adicionais\nAltares têm 2 grupos de monstros adoradores adicionais"
+      },
+      "russian": {
+        "name": "Большая паства",
+        "desc": "В области можно найти 3 дополнительных алтаря\nАлтарям поклоняются 2 дополнительные группы монстров"
+      },
+      "spanish": {
+        "name": "Congregación grande",
+        "desc": "Contiene 3 santuarios adicionales\nLos santuarios tienen 2 grupos adicionales de monstruos adoradores"
+      },
+      "thai": {
+        "name": "คณะชุมนุมใหญ่",
+        "desc": "มีแท่นบูชา เพิ่มเติม 3 แท่น\nแท่นบูชา มีกองมอนสเตอร์ที่สักการะ เพิ่มเติม 2 กอง"
+      },
+      "traditional chinese": {
+        "name": "信眾雲集",
+        "desc": "含有額外2座神殿\n神殿含有額外2群膜拜者"
+      }
+    }
+  },
+  "127": {
+    "name": "Zealous Reverence",
+    "icon": "BossNotableSpawnAdditionalShrine",
+    "desc": "Contains 2 additional Shrines\nElemental Shrines do not appear in area\nShrine Duration increased by 1000%",
+    "translates": {
+      "french": {
+        "name": "Zealous Reverence",
+        "desc": "Contains 2 additional Shrines\nElemental Shrines do not appear in area\nShrine Duration increased by 1000%"
+      },
+      "german": {
+        "name": "Eifrige Ehrfurcht",
+        "desc": "Enthält 2 zusätzliche Schreine\nElementar-Schreine erscheinen nicht in diesem Gebiet\nSchreindauer ist um 1000% verlängert"
+      },
+      "japanese": {
+        "name": "熱心な崇敬",
+        "desc": "シュラインが追加で2個出現する\n元素のシュラインはエリアに出現しない\nシュラインの持続時間が1000%増加する"
+      },
+      "korean": {
+        "name": "열띤 숭배",
+        "desc": "성소 2개 추가 등장\n지역에 원소 성소가 등장하지 않음\n성소 지속시간 1000% 증가"
+      },
+      "portuguese": {
+        "name": "Reverência |elosa",
+        "desc": "Contém 2 altares adicionais\nAltares elementais não aparecem na área\nDuração do altar aumentada em 1.000%"
+      },
+      "russian": {
+        "name": "Ревностное почитание",
+        "desc": "В области можно найти 2 дополнительных алтаря\nВ области не встречаются стихийные алтари\nДлительность алтарей увеличена на 1000%"
+      },
+      "spanish": {
+        "name": "Reverencia ferviente",
+        "desc": "Contiene 2 santuarios adicionales\nLos santuarios elementales no aparecen en el área\nLa duración de los santuarios está aumentada un 1000%"
+      },
+      "thai": {
+        "name": "คลั่งศรัทธา",
+        "desc": "มีแท่นบูชา เพิ่มเติม 2 แท่น\nแท่นบูชาธาตุ ไม่ปรากฏในด่าน\nผู้เล่น นำความเสียหาย 50% ไปเสริมเป็น ธาตุแบบสุ่ม เมื่อได้รับผลจากบัฟแท่นบูชา\nเพิ่มระยะเวลาของ แท่นบูชา 1000%"
+      },
+      "traditional chinese": {
+        "name": "崇敬熱忱",
+        "desc": "含有額外2座神殿\n區域內不會出現元素神殿\n玩家被神殿增加1000%持續時間"
+      }
+    }
+  },
+  "128": {
+    "name": "Persistent Devotion",
+    "icon": "GreedShrinenoteble",
+    "desc": "Shrine Buffs are reapplied when entering the Map Boss Arena",
+    "translates": {
+      "french": {
+        "name": "Persistent Devotion",
+        "desc": "Shrine Buffs are reapplied when entering the Map Boss Arena"
+      },
+      "german": {
+        "name": "Beharrliche Hingabe",
+        "desc": "Schreinstärkungen werden beim Betreten einer Kartenboss-Arena erneut angewendet"
+      },
+      "japanese": {
+        "name": "持続する献身",
+        "desc": "シュラインバフはマップボスアリーナに入った時に再適用される"
+      },
+      "korean": {
+        "name": "유지되는 헌신",
+        "desc": "지도 보스 전투 구역에 진입할 때 성소 버프가 다시 적용됨"
+      },
+      "portuguese": {
+        "name": "Devoção Persistente",
+        "desc": "Bônus de altar são reaplicados ao entrar na arena do chefe do mapa"
+      },
+      "russian": {
+        "name": "Упорное служение",
+        "desc": "Положительные эффекты алтарей накладываются повторно при входе на арену босса карты"
+      },
+      "spanish": {
+        "name": "Devoción persistente",
+        "desc": "Los efectos beneficiosos de los santuarios vuelven a aplicarse al entrar en la arena del jefe del mapa"
+      },
+      "thai": {
+        "name": "ศรัทธายืนยาว",
+        "desc": "บัฟแท่นบูชา ส่งผลอีกครั้งเมื่อเข้าไปใน สังเวียนบอสประจำแผนที่"
+      },
+      "traditional chinese": {
+        "name": "矢志不渝",
+        "desc": "進入地圖頭目競技場時，將重新套用神殿增益效果"
+      }
+    }
+  },
+  "129": {
+    "name": "Rites of the Rogues",
+    "icon": "Anarchy5",
+    "desc": "Contains 2 additional Shrines\nShrines are Worshipped by a Rogue Exile",
+    "translates": {
+      "french": {
+        "name": "Rites of the Rogues",
+        "desc": "Contains 2 additional Shrines\nShrines are Worshipped by a Rogue Exile"
+      },
+      "german": {
+        "name": "Riten der Schurken",
+        "desc": "Enthält 2 zusätzliche Schreine\nSchreine werden von einem Abtrünnigen Verbannten angebetet"
+      },
+      "japanese": {
+        "name": "ローグの儀式",
+        "desc": "シュラインが追加で2個出現する\nシュラインはローグエグザイル1体により崇拝されている"
+      },
+      "korean": {
+        "name": "탈주자의 의례",
+        "desc": "성소 2개 추가 등장\n성소를 탈주 유배자가 숭배함"
+      },
+      "portuguese": {
+        "name": "Rituais dos Renegados",
+        "desc": "Contém 2 altares adicionais\nAltares são adorados por um Exilado Renegado"
+      },
+      "russian": {
+        "name": "Ритуалы бродяг",
+        "desc": "В области можно найти 2 дополнительных алтаря\nАлтарям поклоняется бродячий изгнанник"
+      },
+      "spanish": {
+        "name": "Ritos de los renegados",
+        "desc": "Contiene 2 santuarios adicionales\nLos santuarios están siendo adorados por un exiliado renegado"
+      },
+      "thai": {
+        "name": "พิธีอันธพาล",
+        "desc": "มีแท่นบูชา เพิ่มเติม 2 แท่น\nแท่นบูชา ถูกสักการะโดย เอ็กไซล์อันธพาล 1 คน"
+      },
+      "traditional chinese": {
+        "name": "盜賊儀式",
+        "desc": "含有額外2座神殿\n神殿會被一名盜賊流亡者膜拜"
+      }
+    }
+  },
+  "130": {
+    "name": "Surprising Alliances",
+    "icon": "AnarchyNode1",
+    "desc": "Contains 2 additional Rogue Exiles\nRogue Exiles appear in Pairs",
+    "translates": {
+      "french": {
+        "name": "Surprising Alliances",
+        "desc": "Contains 2 additional Rogue Exiles\nRogue Exiles appear in Pairs"
+      },
+      "german": {
+        "name": "Überraschende Allianzen",
+        "desc": "Enthält 2 zusätzliche Abtrünnige Verbannte\nAbtrünnige Verbannte erscheinen paarweise"
+      },
+      "japanese": {
+        "name": "意外な同盟",
+        "desc": "ローグエグザイルが追加で2体出現する\nローグエグザイルはペアで出現する"
+      },
+      "korean": {
+        "name": "의외의 동맹",
+        "desc": "탈주 유배자 2명 추가 등장\n탈주 유배자가 쌍으로 등장"
+      },
+      "portuguese": {
+        "name": "Alianças Surpreendentes",
+        "desc": "Contém 2 Exilados Renegados adicionais\nExilados Renegados aparecem em pares"
+      },
+      "russian": {
+        "name": "Неожиданные союзы",
+        "desc": "В области можно встретить 2 дополнительных бродячих изгнанников\nБродячие изгнанники появляются парами"
+      },
+      "spanish": {
+        "name": "Alianzas sorprendentes",
+        "desc": "Contiene 2 exiliados renegados adicionales\nLos exiliados renegados aparecen en parejas"
+      },
+      "thai": {
+        "name": "พันธมิตรแสนฉงน",
+        "desc": "มีเอ็กไซล์อันธพาล เพิ่มเติม 2 คน\nเอ็กไซล์อันธพาล ปรากฏตัวเป็นคู่"
+      },
+      "traditional chinese": {
+        "name": "意外盟友",
+        "desc": "含有額外2名盜賊流亡者\n盜賊流亡者成對出現"
+      }
+    }
+  },
+  "131": {
+    "name": "Azmeri Bloodline",
+    "icon": "Anarchy4",
+    "desc": "Contains an additional Rogue Exile and 2 additional Azmeri Spirits\nRogue Exiles are Possessed when a Possessed Monster is killed in Area",
+    "translates": {
+      "french": {
+        "name": "Azmeri Bloodline",
+        "desc": "Contains an additional Rogue Exile and 2 additional Azmeri Spirits\nRogue Exiles are Possessed when a Possessed Monster is killed in Area"
+      },
+      "german": {
+        "name": "Azmeri-Blutlinie",
+        "desc": "Enthält 1 zusätzlichen Abtrünnigen Verbannten und 2 zusätzliche Azmeri-Geister\nAbtrünnige Verbannte sind besessen, wenn ein besessenes Monster im Gebiet getötet wird"
+      },
+      "japanese": {
+        "name": "アズメリの血統",
+        "desc": "ローグエグザイルが追加で1体およびアズメリの精霊が追加で2体出現する\nエリアの憑依されたモンスターを倒した時にローグエグザイルは憑依される"
+      },
+      "korean": {
+        "name": "아즈메리 혈맹",
+        "desc": "탈주 유배자 1명 및 아즈메리 혼백 2개 추가 등장\n지역 내에서 사로잡힌 몬스터가 처치되면 탈주 유배자가 사로잡힘"
+      },
+      "portuguese": {
+        "name": "Linhagem Azmeri",
+        "desc": "Contém 1 Exilado Renegado adicional e 2 Espíritos Azmeri adicionais\nExilados Renegados são possuídos quando um monstro possuído é morto na área"
+      },
+      "russian": {
+        "name": "Родословная азмири",
+        "desc": "В области можно встретить дополнительного бродячего изгнанника и 2 дополнительных духов азмири\nБродячие изгнанники становятся одержимыми, когда в области убивают одержимого монстра"
+      },
+      "spanish": {
+        "name": "Linaje azmeri",
+        "desc": "Contiene un exiliado renegado y 2 espíritus azmeri adicionales\nLos exiliados renegados quedan poseídos cuando alguien mata a un monstruo poseído en el área"
+      },
+      "thai": {
+        "name": "สายเลือดแอสเมรี",
+        "desc": "มีเอ็กไซล์อันธพาล เพิ่มเติม 1 คน และมี วิญญาณแอสเมรี เพิ่มเติม 2 ตน\nเอ็กไซล์อันธพาล ถูกเข้าสิง เมื่อมอนสเตอร์ที่ถูกเข้าสิงถูกสังหารในด่าน"
+      },
+      "traditional chinese": {
+        "name": "阿茲莫里血脈",
+        "desc": "含有額外1名盜賊流亡者和2個阿茲莫里魂靈\n盜賊流亡者在區域內有被附身怪物被擊殺時會被附身"
+      }
+    }
+  },
+  "132": {
+    "name": "Twinned Terrors",
+    "icon": "StoneCircles",
+    "desc": "Contains an additional Summoning Circles\nSummoning Circles always summon an additional Boss",
+    "translates": {
+      "french": {
+        "name": "Twinned Terrors",
+        "desc": "Contains an additional Summoning Circles\nSummoning Circles always summon an additional Boss"
+      },
+      "german": {
+        "name": "Zwillingsschrecken",
+        "desc": "Enthält 1 zusätzlichen Beschwörungskreis\nBeschwörungskreise beschwören immer einen zusätzlichen Boss"
+      },
+      "japanese": {
+        "name": "双子の恐怖",
+        "desc": "サモニングサークルが追加で1個出現するサモニングサークルは常にボスを追加で1体召喚する"
+      },
+      "korean": {
+        "name": "이중 공포",
+        "desc": "소환의 원 1개 추가 등장\n소환의 원이 항상 보스 1마리를 추가로 소환"
+      },
+      "portuguese": {
+        "name": "Terrores Pareados",
+        "desc": "Contém 1 círculo de invocação adicional\nCírculos de invocação sempre invocam 1 chefe adicional"
+      },
+      "russian": {
+        "name": "Ужасная пара",
+        "desc": "В области можно найти дополнительный круг призыва\nКруги призыва всегда призывают дополнительного босса"
+      },
+      "spanish": {
+        "name": "Terrores gemelos",
+        "desc": "Contiene un círculo de invocación adicional\nLos círculos de invocación siempre invocan un jefe adicional"
+      },
+      "thai": {
+        "name": "คู่แฝดสยอง",
+        "desc": "มีวงศิลาอัญเชิญ เพิ่มเติม 1 วง\nวงศิลาอัญเชิญ อัญเชิญ บอส เพิ่มเติม 1 ตัว เสมอ"
+      },
+      "traditional chinese": {
+        "name": "雙生恐懼",
+        "desc": "含有額外1座召喚法陣\n召喚法陣總是召喚一名額外頭目"
+      }
+    }
+  },
+  "133": {
+    "name": "Scattered Stones",
+    "icon": "StoneCirclesNode",
+    "desc": "Contains 3 additional Summoning Circles",
+    "translates": {
+      "french": {
+        "name": "Scattered Stones",
+        "desc": "Contains 3 additional Summoning Circles"
+      },
+      "german": {
+        "name": "Verstreute Steine",
+        "desc": "Enthält 3 zusätzliche Beschwörungskreise"
+      },
+      "japanese": {
+        "name": "散らばった石",
+        "desc": "サモニングサークルが追加で3個出現する"
+      },
+      "korean": {
+        "name": "흩어진 돌",
+        "desc": "소환의 원 3개 추가 등장"
+      },
+      "portuguese": {
+        "name": "Pedras Espalhadas",
+        "desc": "Contém 3 círculos de invocação adicionais"
+      },
+      "russian": {
+        "name": "Рассыпанные камни",
+        "desc": "В области можно найти 3 дополнительных круга призыва"
+      },
+      "spanish": {
+        "name": "Piedras dispersas",
+        "desc": "Contiene 3 círculos de invocación adicionales"
+      },
+      "thai": {
+        "name": "ศิลากระจัดกระจาย",
+        "desc": "มีวงศิลาอัญเชิญ เพิ่มเติม 3 วง"
+      },
+      "traditional chinese": {
+        "name": "散落石陣",
+        "desc": "含有額外3座召喚法陣"
+      }
+    }
+  },
+  "134": {
+    "name": "Map Area Modified",
+    "icon": "Mapnode",
+    "desc": "World Area has been manipulated and cannot be manipulated again",
+    "translates": {
+      "french": {
+        "name": "Map Area Modified",
+        "desc": "World Area has been manipulated and cannot be manipulated again"
+      },
+      "german": {
+        "name": "Modifiziertes Kartengebiet",
+        "desc": "Weltgebiet wurde bereits manipuliert und kann nicht erneut manipuliert werden"
+      },
+      "japanese": {
+        "name": "マップエリア変更済み",
+        "desc": "ワールドエリアは操作され再び操作することができない"
+      },
+      "korean": {
+        "name": "지도 지역 변경됨",
+        "desc": "세계 지역이 조작되었으며, 다시 조작될 수 없음"
+      },
+      "portuguese": {
+        "name": "Área do Mapa Modificada",
+        "desc": "A área do mundo foi manipulada e não pode ser alterada novamente"
+      },
+      "russian": {
+        "name": "Область карты изменена",
+        "desc": "Область мира претерпела изменения и не может быть изменена снова"
+      },
+      "spanish": {
+        "name": "Área de mapa modificada",
+        "desc": "El área del mundo se ha manipulado y no se puede volver a manipular"
+      },
+      "thai": {
+        "name": "ด่านแผนที่ถูกเปลี่ยนแปลง",
+        "desc": "ด่านของโลกถูกเปลี่ยนแปลงไป และจะไม่สามารถเปลี่ยนแปลงได้อีก"
+      },
+      "traditional chinese": {
+        "name": "地圖區域受影響",
+        "desc": "世界區域已被影響且無法被再次影響"
+      }
+    }
+  },
+  "135": {
+    "name": "Fleeing Exile",
+    "icon": "AnarchyNotable2",
+    "desc": "",
+    "translates": {
+      "french": {
+        "name": "Fleeing Exile",
+        "desc": ""
+      },
+      "german": {
+        "name": "Verbannter auf der Flucht",
+        "desc": ""
+      },
+      "japanese": {
+        "name": "逃走するエグザイル",
+        "desc": ""
+      },
+      "korean": {
+        "name": "도망치는 유배자",
+        "desc": ""
+      },
+      "portuguese": {
+        "name": "Exilado Fujão",
+        "desc": ""
+      },
+      "russian": {
+        "name": "Бегущий изгнанник",
+        "desc": ""
+      },
+      "spanish": {
+        "name": "Exiliado huyendo",
+        "desc": ""
+      },
+      "thai": {
+        "name": "เอ็กไซล์หลบหนี",
+        "desc": ""
+      },
+      "traditional chinese": {
+        "name": "逃亡流亡者",
+        "desc": ""
+      }
+    }
+  },
+  "136": {
+    "name": "Breach Hive",
+    "icon": "BreachNotable4",
+    "desc": "Contains a Breach Hive",
+    "translates": {
+      "french": {
+        "name": "Breach Hive",
+        "desc": "Contains a Breach Hive"
+      },
+      "german": {
+        "name": "Riss-Schwarm",
+        "desc": "Enthält einen Riss-Schwarm"
+      },
+      "japanese": {
+        "name": "ブリーチハイヴ",
+        "desc": "ブリーチハイヴが出現する"
+      },
+      "korean": {
+        "name": "균열 벌레집",
+        "desc": "균열 벌레집 등장"
+      },
+      "portuguese": {
+        "name": "Colmeia da Fenda",
+        "desc": "Contém 1 Colmeia da Fenda"
+      },
+      "russian": {
+        "name": "Улей Разлома",
+        "desc": "В области можно найти улей Разлома"
+      },
+      "spanish": {
+        "name": "Colmena de fisura",
+        "desc": "Contiene una colmena de fisura"
+      },
+      "thai": {
+        "name": "รวงรังบรีช",
+        "desc": "มีรวงรังบรีช 1 แห่ง"
+      },
+      "traditional chinese": {
+        "name": "裂痕巢穴",
+        "desc": "含有一座裂痕巢穴"
+      }
+    }
+  },
+  "137": {
+    "name": "Simulacrum",
+    "icon": "DeliriumNotable7",
+    "desc": "Contains a manifestation of Delirium that requires 100% Delirousness to enter",
+    "translates": {
+      "french": {
+        "name": "Simulacrum",
+        "desc": "Contains a manifestation of Delirium that requires 100% Delirousness to enter"
+      },
+      "german": {
+        "name": "Simulacrum",
+        "desc": "Enthält eine Manifestation von Delirium"
+      },
+      "japanese": {
+        "name": "シミュラクラム",
+        "desc": "デリリウムの具現化が出現する"
+      },
+      "korean": {
+        "name": "복제된 영토",
+        "desc": "환영의 발현 등장"
+      },
+      "portuguese": {
+        "name": "Simulacrum",
+        "desc": "Contém uma manifestação de Delírio"
+      },
+      "russian": {
+        "name": "Симулякр",
+        "desc": "В области можно встретить воплощение Делириума"
+      },
+      "spanish": {
+        "name": "Simulacro",
+        "desc": "Contiene una manifestación del delirio"
+      },
+      "thai": {
+        "name": "เมืองจำแลง",
+        "desc": "มีเดลิเรียม ที่สำแดงอยู่\nที่ต้องการระดับเดลิเรียม 100% ในการเข้า"
+      },
+      "traditional chinese": {
+        "name": "幻像異界",
+        "desc": "含有一個具現化的譫妄"
+      }
+    }
+  },
+  "138": {
+    "name": "Chaotic Cacophony",
+    "icon": "ElderShaperNotable1",
+    "desc": "Contains an extra of each type of content",
+    "translates": {
+      "french": {
+        "name": "Chaotic Cacophony",
+        "desc": "Contains an extra of each type of content"
+      },
+      "german": {
+        "name": "Chaotische Kakophonie",
+        "desc": "Enthält jeweils jeden Inhaltstyp ein Mal zusätzlich"
+      },
+      "japanese": {
+        "name": "混沌の不協和音",
+        "desc": "それぞれのコンテンツが追加で出現する"
+      },
+      "korean": {
+        "name": "혼돈의 불협화음",
+        "desc": "지역에 유형별 콘텐츠가 1개 추가로 등장"
+      },
+      "portuguese": {
+        "name": "Cacofonia Caótica",
+        "desc": "Contém um exemplar adicional de cada tipo de conteúdo"
+      },
+      "russian": {
+        "name": "Хаотичная какофония",
+        "desc": "В области можно найти по дополнительной единице каждого вида контента"
+      },
+      "spanish": {
+        "name": "Cacofonía caótica",
+        "desc": "Contiene un contenido adicional de cada tipo"
+      },
+      "thai": {
+        "name": "เคออสอลหม่าน",
+        "desc": "มีเนื้อหาเสริม แต่ละชนิด เพิ่มเติม 1 อย่าง"
+      },
+      "traditional chinese": {
+        "name": "混沌嘈雜",
+        "desc": "含有額外每種內容類型"
+      }
+    }
+  },
+  "139": {
+    "name": "Affluent Armies",
+    "icon": "BossMapDrops",
+    "desc": "50% increased Rarity of items found in area",
+    "translates": {
+      "french": {
+        "name": "Affluent Armies",
+        "desc": "50% increased Rarity of items found in area"
+      },
+      "german": {
+        "name": "Mächtige Heere",
+        "desc": "50% erhöhte Seltenheit im Gebiet gefundener Gegenstände"
+      },
+      "japanese": {
+        "name": "富める軍勢",
+        "desc": "エリアで見つかるアイテムのレアリティが50%増加する"
+      },
+      "korean": {
+        "name": "부유한 군대",
+        "desc": "지역에서 발견하는 아이템 희귀도 50% 증가"
+      },
+      "portuguese": {
+        "name": "Exércitos Enriquecidos",
+        "desc": "Raridade de itens encontrados na área aumentada em 50%"
+      },
+      "russian": {
+        "name": "Богатые армии",
+        "desc": "50% повышение редкости найденных в области предметов"
+      },
+      "spanish": {
+        "name": "Ejércitos adinerados",
+        "desc": "Rareza de los objetos que caen en el área aumentada un 50%"
+      },
+      "thai": {
+        "name": "กองทัพมั่งคั่ง",
+        "desc": "เพิ่มระดับความหายากของ ไอเทม ที่พบในด่าน"
+      },
+      "traditional chinese": {
+        "name": "富裕軍隊",
+        "desc": "區域內找到的物品稀有度提高 50%"
+      }
+    }
+  },
+  "140": {
+    "name": "Monstrous Treasure",
+    "icon": "ExceptionalItemsWeaponsShields",
+    "desc": "Map Boss drops a Unique item",
+    "translates": {
+      "french": {
+        "name": "Monstrous Treasure",
+        "desc": "Map Boss drops a Unique item"
+      },
+      "german": {
+        "name": "Kolossale Beute",
+        "desc": "Kartenboss lässt einen einzigartigen Gegenstand fallen"
+      },
+      "japanese": {
+        "name": "ベヒモスの報酬",
+        "desc": "マップボスはユニークアイテムを1個ドロップする"
+      },
+      "korean": {
+        "name": "거대괴수의 하사품",
+        "desc": "지도 보스가 고유 아이템을 1개 떨어뜨림"
+      },
+      "portuguese": {
+        "name": "Recompensa Monstruosa",
+        "desc": "Chefe do mapa larga um item único"
+      },
+      "russian": {
+        "name": "Трофей великана",
+        "desc": "Из босса карты выпадает уникальный предмет"
+      },
+      "spanish": {
+        "name": "Botín del behemot",
+        "desc": "El jefe de mapa arroja un objeto único"
+      },
+      "thai": {
+        "name": "สมบัติมหึมา",
+        "desc": "บอสประจำแผนที่ ดรอป ไอเทมยูนิค 1 ชิ้น"
+      },
+      "traditional chinese": {
+        "name": "巨大的寶物",
+        "desc": "地圖頭目掉落一件傳奇物品"
+      }
+    }
+  },
+  "141": {
+    "name": "Trialmaster's Trainee",
+    "icon": "VaalNotable1",
+    "desc": "Map Boss drops an Inscribed Ultimatum",
+    "translates": {
+      "french": {
+        "name": "Trialmaster's Trainee",
+        "desc": "Map Boss drops an Inscribed Ultimatum"
+      },
+      "german": {
+        "name": "Schüler des Prüfungsmeisters",
+        "desc": "Kartenboss lässt eine Inschrift des Ultimatums fallen"
+      },
+      "japanese": {
+        "name": "トライアルマスターの訓練生",
+        "desc": "マップボスはアルティメイタムの刻印を1個ドロップする"
+      },
+      "korean": {
+        "name": "시련의 대가의 훈련생",
+        "desc": "지도 보스가 새겨진 결전을 1개 떨어뜨림"
+      },
+      "portuguese": {
+        "name": "Aprendiz do Mestre das Provações",
+        "desc": "Chefe do mapa larga um Ultimato Inscrito"
+      },
+      "russian": {
+        "name": "Практикант Мастера испытаний",
+        "desc": "Из босса карты выпадает начертанный Ультиматум"
+      },
+      "spanish": {
+        "name": "Aprendiz del Maestro de pruebas",
+        "desc": "El jefe de mapa arroja un ultimátum inscrito"
+      },
+      "thai": {
+        "name": "ผู้ฝึกฝนกับผู้คุมบททดสอบ",
+        "desc": "บอสประจำแผนที่ ดรอป คำขาดจารึก 1 ชิ้น"
+      },
+      "traditional chinese": {
+        "name": "試煉大師的學員",
+        "desc": "地圖頭目掉落一張最後通牒雕刻"
+      }
+    }
+  },
+  "142": {
+    "name": "Sekhema's Student",
+    "icon": "SorceressSandDjinnCorpseBeetles",
+    "desc": "Map Boss drops a Djinn Barya",
+    "translates": {
+      "french": {
+        "name": "Sekhema's Student",
+        "desc": "Map Boss drops a Djinn Barya"
+      },
+      "german": {
+        "name": "Schüler der Sekhema",
+        "desc": "Kartenboss lässt eine Djinn-Barya fallen"
+      },
+      "japanese": {
+        "name": "セケマの弟子",
+        "desc": "マップボスはジンのバリャを1個ドロップする"
+      },
+      "korean": {
+        "name": "세케마의 학생",
+        "desc": "지도 보스가 진 바리야를 1개 떨어뜨림"
+      },
+      "portuguese": {
+        "name": "Estudante da Sekhema",
+        "desc": "Chefe do mapa larga um Barya de Djinn"
+      },
+      "russian": {
+        "name": "Ученик Сехемы",
+        "desc": "Из босса карты выпадает бария джинна"
+      },
+      "spanish": {
+        "name": "Estudiante de la sekhema",
+        "desc": "El jefe de mapa arroja una barya de genio"
+      },
+      "thai": {
+        "name": "ผู้ศึกษาเซ็คเคมา",
+        "desc": "บอสประจำแผนที่ ดรอป บาร์ย่าจินน์ 1 เหรียญ"
+      },
+      "traditional chinese": {
+        "name": "絲克瑪的學生",
+        "desc": "地圖頭目掉落一枚巨靈之幣"
+      }
+    }
+  },
+  "143": {
+    "name": "Azmeri Champion",
+    "icon": "BossNotableAzmeriSpirit",
+    "desc": "Map Boss is Possessed",
+    "translates": {
+      "french": {
+        "name": "Azmeri Champion",
+        "desc": "Map Boss is Possessed"
+      },
+      "german": {
+        "name": "Azmerischer Streiter",
+        "desc": "Kartenboss ist besessen"
+      },
+      "japanese": {
+        "name": "アズメリの勇者",
+        "desc": "マップボスは憑依されている"
+      },
+      "korean": {
+        "name": "아즈메리 용사",
+        "desc": "지도 보스가 사로잡힘"
+      },
+      "portuguese": {
+        "name": "Campeão Azmeri",
+        "desc": "Chefe do mapa está possuído"
+      },
+      "russian": {
+        "name": "Заступник азмири",
+        "desc": "Босс карты одержим"
+      },
+      "spanish": {
+        "name": "Campeón azmeri",
+        "desc": "El jefe de mapa está poseído"
+      },
+      "thai": {
+        "name": "วีรชนแอสเมรี",
+        "desc": "บอสประจำแผนที่ ถูกเข้าสิง"
+      },
+      "traditional chinese": {
+        "name": "阿茲莫里冠軍",
+        "desc": "地圖頭目已附身"
+      }
+    }
+  },
+  "144": {
+    "name": "Gigantic Uprising",
+    "icon": "MinionsandManaNotable",
+    "desc": "Monsters are Gigantic, have 50% reduced pack size and drop 50% increased items",
+    "translates": {
+      "french": {
+        "name": "Gigantic Uprising",
+        "desc": "Monsters are Gigantic, have 50% reduced pack size and drop 50% increased items"
+      },
+      "german": {
+        "name": "Gigantischer Aufstand",
+        "desc": "Monster sind gigantisch, haben 50% verringerte Gruppengröße und lassen 50% erhöhte Gegenstände fallen"
+      },
+      "japanese": {
+        "name": "巨大なる蜂起",
+        "desc": "モンスターは巨大になり、パックサイズが50%減少し、ドロップするアイテムが50%増加する"
+      },
+      "korean": {
+        "name": "방대한 반란",
+        "desc": "몬스터가 방대하며, 무리 규모가 50% 감소하고 떨어뜨리는 아이템이 50% 증가"
+      },
+      "portuguese": {
+        "name": "Revolta dos Gigantes",
+        "desc": "Os monstros são gigantescos, têm o tamanho dos grupos reduzido em 50% e largam 50% mais itens"
+      },
+      "russian": {
+        "name": "Восстание гигантов",
+        "desc": "Монстры гигантские\n50% уменьшение размера групп монстров на карте\n50% увеличение количества выпадающих из монстров предметов"
+      },
+      "spanish": {
+        "name": "Levantamiento gigantesco",
+        "desc": "Los monstruos son gigantes, tienen el tamaño de los grupos de monstruos reducido un 50% y arrojan la cantidad de objetos aumentada un 50%"
+      },
+      "thai": {
+        "name": "มหึมาจลาจล",
+        "desc": "มอนสเตอร์ มหึมา, มีขนาดกองมอนสเตอร์ ลดลง 50% และดรอป ไอเทม เพิ่มขึ้น 50%"
+      },
+      "traditional chinese": {
+        "name": "極大暴動",
+        "desc": "怪物極大化，減少50%怪物群大小，增加50%掉落物品數量提高"
+      }
+    }
+  },
+  "145": {
+    "name": "Glimmering Mutation",
+    "icon": "CurrencyNode",
+    "desc": "Currency found is replaced with rarer varieties",
+    "translates": {
+      "french": {
+        "name": "Glimmering Mutation",
+        "desc": "Currency found is replaced with rarer varieties"
+      },
+      "german": {
+        "name": "Schimmernde Mutation",
+        "desc": "Gefundene Währung wird durch seltenere Varianten ersetzt"
+      },
+      "japanese": {
+        "name": "きらめく変異",
+        "desc": "見つかるカレンシーはより珍しい種類になる"
+      },
+      "korean": {
+        "name": "깜박이는 재물",
+        "desc": "발견하는 화폐가 더 희귀한 종류로 교체됨"
+      },
+      "portuguese": {
+        "name": "Mutação Cintilante",
+        "desc": "As moedas encontradas são substituídas por variedades mais raras"
+      },
+      "russian": {
+        "name": "Сверкающая мутация",
+        "desc": "Найденная валюта заменяется более редкими разновидностями"
+      },
+      "spanish": {
+        "name": "Mutación resplandeciente",
+        "desc": "Los objetos monetarios que caen se reemplazan por variedades más raras"
+      },
+      "thai": {
+        "name": "กลายพันธุ์ระยิบระยับ",
+        "desc": "เงินตรา ที่พบ ถูกเปลี่ยนเป็น รูปแบบที่พบได้ยากกว่าเดิม"
+      },
+      "traditional chinese": {
+        "name": "閃爍異變",
+        "desc": "找到的通貨將替換為更高稀有度的種類"
+      }
+    }
+  },
+  "146": {
+    "name": "Stolen Power",
+    "icon": "ScorchTheEarth",
+    "desc": "Contains an additional Summoning Circle\nSummoning Circle Bosses have increased difficulty and reward per power of enemy slain",
+    "translates": {
+      "french": {
+        "name": "Stolen Power",
+        "desc": "Contains an additional Summoning Circle\nSummoning Circle Bosses have increased difficulty and reward per power of enemy slain"
+      },
+      "german": {
+        "name": "Gestohlene Macht",
+        "desc": "Enthält einen zusätzlichen Beschwörungskreis\nBosse aus Beschwörungskreisen haben erhöhten Schwierigkeitsgrad und Belohnung pro Stärkegrad getöteter Monster"
+      },
+      "japanese": {
+        "name": "奪われた力",
+        "desc": "サモニングサークルが追加で1個出現する\nサモニングサークルのボスは倒した敵のパワーごとに難易度と報酬が増加する"
+      },
+      "korean": {
+        "name": "훔쳐온 힘",
+        "desc": "소환의 원 1개 추가 등장\n처치한 적의 위세당 소환의 원 보스의 난이도 및 보상 증가"
+      },
+      "portuguese": {
+        "name": "Poder Roubado",
+        "desc": "Contém 1 círculo de invocação adicional\nOs chefes do círculo de invocação apresentam maior dificuldade e recompensas proporcionais ao poder dos inimigos derrotados"
+      },
+      "russian": {
+        "name": "Украденная сила",
+        "desc": "В области можно найти дополнительный круг призыва\nСложность и награды боссов кругов призыва повышаются за каждую единицу уровня угрозы убитых врагов"
+      },
+      "spanish": {
+        "name": "Poder robado",
+        "desc": "Contiene un círculo de invocación adicional\nLos jefes de los círculos de invocación tienen la dificultad y las recompensas aumentadas por cada poder del enemigo derrotado"
+      },
+      "thai": {
+        "name": "ฉกฉวยพลัง",
+        "desc": "มีวงศิลาอัญเชิญ เพิ่มเติม 1 วง\nบอสวงศิลาอัญเชิญ มีระดับความยากและของรางวัล เพิ่มขึ้น ตามจำนวนพลังของศัตรูที่ถูกสังหาร"
+      },
+      "traditional chinese": {
+        "name": "竊取之力",
+        "desc": "含有額外1座召喚法陣\n召喚法陣頭目會依擊殺敵人的強度，提高難度及獎勵"
+      }
+    }
+  },
+  "147": {
+    "name": "Headhunters",
+    "icon": "skullcracking",
+    "desc": "When Players Kill a Rare Monster they will gain 1 of its Modifiers for 20 seconds",
+    "translates": {
+      "french": {
+        "name": "Headhunters",
+        "desc": "When Players Kill a Rare Monster they will gain 1 of its Modifiers for 20 seconds"
+      },
+      "german": {
+        "name": "Kopfjäger",
+        "desc": "Wenn Spieler ein seltenes Monster töten, erhalten sie für 20 Sekunden einen seiner Modifikatoren"
+      },
+      "japanese": {
+        "name": "ヘッドハンターたち",
+        "desc": "プレイヤーがレアモンスターを倒した時に、そのモッドの1個を20秒間獲得する"
+      },
+      "korean": {
+        "name": "헤드헌터",
+        "desc": "플레이어가 희귀 몬스터 처치 시 20초 동안 해당 몬스터의 속성 중 1개 획득"
+      },
+      "portuguese": {
+        "name": "Caça-cabeças",
+        "desc": "Jogadores ganham 1 modificador de um monstro raro por 20 segundos ao matá-lo"
+      },
+      "russian": {
+        "name": "Охотники за головами",
+        "desc": "При убийстве игроками редкого монстра они получают одно из его свойств на 20 секунд"
+      },
+      "spanish": {
+        "name": "Cazadores de cabezas",
+        "desc": "Cuando los jugadores matan a un monstruo raro, ganan 1 de sus modificadores durante 20 segundos"
+      },
+      "thai": {
+        "name": "ล่าหัว",
+        "desc": "เมื่อผู้เล่นสังหาร มอนสเตอร์แรร์ เขาจะได้รับ ม็อดของมัน 1 อย่าง 20 วินาที"
+      },
+      "traditional chinese": {
+        "name": "獵頭者",
+        "desc": "當玩家擊殺一隻稀有怪物時，將獲得其 1 個詞綴，持續 20 秒"
+      }
+    }
+  },
+  "148": {
+    "name": "Swarming Spirits",
+    "icon": "EnduranceFrenzyPowerChargeNode",
+    "desc": "Contains 5 additional Azmeri Spirits",
+    "translates": {
+      "french": {
+        "name": "Swarming Spirits",
+        "desc": "Contains 5 additional Azmeri Spirits"
+      },
+      "german": {
+        "name": "Schwirrende Geister",
+        "desc": "Enthält 5 zusätzliche Azmeri-Geister"
+      },
+      "japanese": {
+        "name": "群がる精霊",
+        "desc": "エリアに5体のアズメリの精霊が出現する"
+      },
+      "korean": {
+        "name": "몰려드는 혼백",
+        "desc": "아즈메리 혼백 5개 추가 등장"
+      },
+      "portuguese": {
+        "name": "Espíritos Enxameantes",
+        "desc": "Contém 5 Espíritos Azmeri adicionais"
+      },
+      "russian": {
+        "name": "Наводняющие духи",
+        "desc": "В области можно встретить 5 дополнительных духов азмири"
+      },
+      "spanish": {
+        "name": "Congregación de espíritus",
+        "desc": "Contiene 5 espíritus azmeri adicionales"
+      },
+      "thai": {
+        "name": "รวมฝูงวิญญาณ",
+        "desc": "ด่านมี วิญญาณแอสเมรี เพิ่มเติม 5 ตน"
+      },
+      "traditional chinese": {
+        "name": "魂靈蜂擁",
+        "desc": "區域含有5個阿茲莫里魂靈"
+      }
+    }
+  },
+  "149": {
+    "name": "Power Struggle",
+    "icon": "BossNotableSpawnBeyondMonsters",
+    "desc": "Contains 3 additional Map Bosses throughout the area",
+    "translates": {
+      "french": {
+        "name": "Power Struggle",
+        "desc": "Contains 3 additional Map Bosses throughout the area"
+      },
+      "german": {
+        "name": "Machtkampf",
+        "desc": "Enthält 3 zusätzliche Kartenbosse im gesamten Gebiet"
+      },
+      "japanese": {
+        "name": "権力闘争",
+        "desc": "エリア全体にマップボスが追加で3体出現する"
+      },
+      "korean": {
+        "name": "힘 싸움",
+        "desc": "지역 전체에 아즈메리 혼백 3개 추가 등장"
+      },
+      "portuguese": {
+        "name": "Luta pelo Poder",
+        "desc": "Contém 3 chefes de mapa adicionais espalhados pela área"
+      },
+      "russian": {
+        "name": "Борьба за власть",
+        "desc": "В области можно встретить 3 дополнительных боссов карт по всей области"
+      },
+      "spanish": {
+        "name": "Lucha de poder",
+        "desc": "Contiene 3 jefes del mapa adicionales en el área"
+      },
+      "thai": {
+        "name": "ช่วงชิงอำนาจ",
+        "desc": "มีบอสประจำแผนที่ เพิ่มเติม 3 ตัว ทั่วทั้งด่าน"
+      },
+      "traditional chinese": {
+        "name": "力量爭奪",
+        "desc": "區域內含有3名地圖頭目"
+      }
+    }
+  },
+  "150": {
+    "name": "Corrupted Mirage",
+    "icon": "CorruptedDefences",
+    "desc": "Area has 2 additional random Waystone Modifiers",
+    "translates": {
+      "french": {
+        "name": "Corrupted Mirage",
+        "desc": "Area has 2 additional random Waystone Modifiers"
+      },
+      "german": {
+        "name": "Verderbtes Trugbild",
+        "desc": "Gebiet hat 2 zusätzliche zufällige Wegstein-Modifikatoren"
+      },
+      "japanese": {
+        "name": "穢れた蜃気楼",
+        "desc": "エリアはランダムなウェイストーンモッドを追加で2個持つ"
+      },
+      "korean": {
+        "name": "타락한 신기루",
+        "desc": "지역에 무작위 경로석 속성 2개 추가"
+      },
+      "portuguese": {
+        "name": "Miragem Corrompida",
+        "desc": "Área tem 2 modificadores de Pedra-guia adicionais aleatórios"
+      },
+      "russian": {
+        "name": "Осквернённый мираж",
+        "desc": "На область действуют 2 дополнительных случайных свойства путевых камней"
+      },
+      "spanish": {
+        "name": "Espejismo corrupto",
+        "desc": "El área tiene 2 modificadores de piedras guía aleatorios adicionales"
+      },
+      "thai": {
+        "name": "มิราจมลทิน",
+        "desc": "ด่านมี ม็อดศิลานำทางแบบสุ่ม เพิ่มเติม 2 อย่าง"
+      },
+      "traditional chinese": {
+        "name": "腐化幻象",
+        "desc": "區域有 2 個額外的隨機換界石詞綴"
+      }
+    }
+  },
+  "151": {
+    "name": "Energized Ley Lines",
+    "icon": "CaptivatedInterestKeystone",
+    "desc": "Doubles Effect of Tablets used on Area",
+    "translates": {
+      "french": {
+        "name": "Energized Ley Lines",
+        "desc": "Doubles Effect of Tablets used on Area"
+      },
+      "german": {
+        "name": "Energetisierte Ley-Linien",
+        "desc": "Verdoppelt die Wirkung von Tafeln, die auf das Gebiet angewendet werden"
+      },
+      "japanese": {
+        "name": "活性化したレイライン",
+        "desc": "エリアに使用された石板の効果が2倍になる"
+      },
+      "korean": {
+        "name": "에너지를 띤 지맥",
+        "desc": "지역에 사용된 서판의 효과 2배"
+      },
+      "portuguese": {
+        "name": "Fluxos Energéticos Energizados",
+        "desc": "Dobra o efeito das tábuas usadas na área"
+      },
+      "russian": {
+        "name": "Напитанные энергетические линии",
+        "desc": "Удваивает эффект использованных на области плиток"
+      },
+      "spanish": {
+        "name": "Líneas ley energizadas",
+        "desc": "Duplica el efecto de las tablillas que se usan en el área"
+      },
+      "thai": {
+        "name": "เส้นพลังงานแรงกล้า",
+        "desc": "เพิ่มผลของ แผ่นหิน ที่ใช้ในด่าน เป็นสองเท่า"
+      },
+      "traditional chinese": {
+        "name": "能量地脈",
+        "desc": "區域上使用的碑牌效果加倍"
+      }
+    }
+  },
+  "152": {
+    "name": "Exceptional Find",
+    "icon": "ExceptionalItemsBodyArmour",
+    "desc": "1000% increased Exceptional Items found in Area\nMonster may drop anyExceptional Items",
+    "translates": {
+      "french": {
+        "name": "Exceptional Find",
+        "desc": "1000% increased Exceptional Items found in Area\nMonster may drop anyExceptional Items"
+      },
+      "german": {
+        "name": "Außergewöhnlicher Fund",
+        "desc": "1000% erhöhte außergewöhnliche Gegenstände, die im Gebiet gefunden werden\nMonster können beliebige außergewöhnliche Gegenstände fallen lassen"
+      },
+      "japanese": {
+        "name": "規格外の発見",
+        "desc": "エリアで見つかる規格外アイテムの数が1000%増加する\nモンスターは規格外アイテムをドロップすることがある"
+      },
+      "korean": {
+        "name": "특출난 발견",
+        "desc": "지역에서 발견하는 특출난 아이템 1000% 증가\n몬스터가 아무 특출난 아이템이나 떨어뜨릴 수 있음"
+      },
+      "portuguese": {
+        "name": "Achado Excepcional",
+        "desc": "1.000% mais itens excepcionais encontrados na área\nOs monstros podem largar qualquer item excepcional"
+      },
+      "russian": {
+        "name": "Исключительная находка",
+        "desc": "1000% увеличение количества найденных в области исключительных предметов\nИз монстров могут выпадать любые исключительные предметы"
+      },
+      "spanish": {
+        "name": "Descubrimiento excepcional",
+        "desc": "Cantidad de objetos excepcionales encontrados en el área aumentada un 1000%\nEl monstruo puede arrojar cualquier objeto excepcional"
+      },
+      "thai": {
+        "name": "พบเจอของดี",
+        "desc": "เพิ่ม ไอเทมดีเด่น ที่พบในด่าน 1000%\nมอนสเตอร์อาจดรอป ไอเทมดีเด่น ใดก็ได้"
+      },
+      "traditional chinese": {
+        "name": "卓越發現",
+        "desc": "增加1000%區域內找到的卓越物品\n怪物可以掉落任意卓越物品"
+      }
+    }
+  },
+  "153": {
+    "name": "Water Influence",
+    "icon": "WaterBiome",
+    "desc": "Also counts as a Water Area",
+    "translates": {
+      "french": {
+        "name": "Water Influence",
+        "desc": "Also counts as a Water Area"
+      },
+      "german": {
+        "name": "Wassereinfluss",
+        "desc": "Zählt auch als Wassergebiet"
+      },
+      "japanese": {
+        "name": "水の影響",
+        "desc": "水バイオームエリアとしても見なされる"
+      },
+      "korean": {
+        "name": "물 영향력",
+        "desc": "물 지역으로도 간주됨"
+      },
+      "portuguese": {
+        "name": "Influência da Água",
+        "desc": "Também conta como uma área de água"
+      },
+      "russian": {
+        "name": "Влияние воды",
+        "desc": "Также считается водной областью"
+      },
+      "spanish": {
+        "name": "Influencia de agua",
+        "desc": "También cuenta como un área de agua"
+      },
+      "thai": {
+        "name": "อิทธิพลสายน้ำ",
+        "desc": "นับว่าเป็น ด่านสายน้ำ เช่นกัน"
+      },
+      "traditional chinese": {
+        "name": "水域影響",
+        "desc": "同時計算為水域區域"
+      }
+    }
+  },
+  "154": {
+    "name": "Mountain Influence",
+    "icon": "MountainBiome",
+    "desc": "Also counts as a Mountain Area",
+    "translates": {
+      "french": {
+        "name": "Mountain Influence",
+        "desc": "Also counts as a Mountain Area"
+      },
+      "german": {
+        "name": "Bergeinfluss",
+        "desc": "Zählt auch als Berggebiet"
+      },
+      "japanese": {
+        "name": "山の影響",
+        "desc": "山バイオームエリアとしても見なされる"
+      },
+      "korean": {
+        "name": "산 영향력",
+        "desc": "산 지역으로도 간주됨"
+      },
+      "portuguese": {
+        "name": "Influência da Montanha",
+        "desc": "Também conta como uma área de montanha"
+      },
+      "russian": {
+        "name": "Влияние горы",
+        "desc": "Также считается горной областью"
+      },
+      "spanish": {
+        "name": "Influencia de montaña",
+        "desc": "También cuenta como un área de montaña"
+      },
+      "thai": {
+        "name": "อิทธิพลภูเขา",
+        "desc": "นับว่าเป็น ด่านภูเขา เช่นกัน"
+      },
+      "traditional chinese": {
+        "name": "山地影響",
+        "desc": "同時計算為山地區域"
+      }
+    }
+  },
+  "155": {
+    "name": "Grass Influence",
+    "icon": "GrassBiome",
+    "desc": "Also counts as a Grass Area",
+    "translates": {
+      "french": {
+        "name": "Grass Influence",
+        "desc": "Also counts as a Grass Area"
+      },
+      "german": {
+        "name": "Graseinfluss",
+        "desc": "Zählt auch als Grasgebiet"
+      },
+      "japanese": {
+        "name": "草原の影響",
+        "desc": "草原バイオームエリアとしても見なされる"
+      },
+      "korean": {
+        "name": "풀 영향력",
+        "desc": "풀 지역으로도 간주됨"
+      },
+      "portuguese": {
+        "name": "Influência da Relva",
+        "desc": "Também conta como uma área de relva"
+      },
+      "russian": {
+        "name": "Влияние травы",
+        "desc": "Также считается травянистой областью"
+      },
+      "spanish": {
+        "name": "Influencia de hierba",
+        "desc": "También cuenta como un área de hierba"
+      },
+      "thai": {
+        "name": "อิทธิพลหญ้า",
+        "desc": "นับว่าเป็น ด่านหญ้า เช่นกัน"
+      },
+      "traditional chinese": {
+        "name": "草地影響",
+        "desc": "同時計算為草地區域"
+      }
+    }
+  },
+  "156": {
+    "name": "Forest Influence",
+    "icon": "ForestBiome",
+    "desc": "Also counts as a Forest Area",
+    "translates": {
+      "french": {
+        "name": "Forest Influence",
+        "desc": "Also counts as a Forest Area"
+      },
+      "german": {
+        "name": "Waldeinfluss",
+        "desc": "Zählt auch als Waldgebiet"
+      },
+      "japanese": {
+        "name": "森の影響",
+        "desc": "森バイオームエリアとしても見なされる"
+      },
+      "korean": {
+        "name": "숲 영향력",
+        "desc": "숲 지역으로도 간주됨"
+      },
+      "portuguese": {
+        "name": "Influência da Floresta",
+        "desc": "Também conta como uma área de floresta"
+      },
+      "russian": {
+        "name": "Влияние леса",
+        "desc": "Также считается лесной областью"
+      },
+      "spanish": {
+        "name": "Influencia de bosque",
+        "desc": "También cuenta como un área de bosque"
+      },
+      "thai": {
+        "name": "อิทธิพลป่า",
+        "desc": "นับว่าเป็น ด่านป่า เช่นกัน"
+      },
+      "traditional chinese": {
+        "name": "森林影響",
+        "desc": "同時計算為森林區域"
+      }
+    }
+  },
+  "157": {
+    "name": "Swamp Influence",
+    "icon": "SwampBiome",
+    "desc": "Also counts as a Swamp Area",
+    "translates": {
+      "french": {
+        "name": "Swamp Influence",
+        "desc": "Also counts as a Swamp Area"
+      },
+      "german": {
+        "name": "Sumpfeinfluss",
+        "desc": "Zählt auch als Sumpfgebiet"
+      },
+      "japanese": {
+        "name": "沼の影響",
+        "desc": "沼バイオームエリアとしても見なされる"
+      },
+      "korean": {
+        "name": "늪 영향력",
+        "desc": "늪 지역으로도 간주됨"
+      },
+      "portuguese": {
+        "name": "Influência do Pântano",
+        "desc": "Também conta como uma área de pântano"
+      },
+      "russian": {
+        "name": "Влияние болота",
+        "desc": "Также считается болотистой областью"
+      },
+      "spanish": {
+        "name": "Influencia de pantano",
+        "desc": "También cuenta como un área de pantano"
+      },
+      "thai": {
+        "name": "อิทธิพลหนองน้ำ",
+        "desc": "นับว่าเป็น ด่านหนองน้ำ เช่นกัน"
+      },
+      "traditional chinese": {
+        "name": "沼澤影響",
+        "desc": "同時計算為沼澤區域"
+      }
+    }
+  },
+  "158": {
+    "name": "Desert Influence",
+    "icon": "DesertBiome",
+    "desc": "Also counts as a Desert Area",
+    "translates": {
+      "french": {
+        "name": "Desert Influence",
+        "desc": "Also counts as a Desert Area"
+      },
+      "german": {
+        "name": "Wüsteneinfluss",
+        "desc": "Zählt auch als Wüstengebiet"
+      },
+      "japanese": {
+        "name": "砂漠の影響",
+        "desc": "砂漠バイオームエリアとしても見なされる"
+      },
+      "korean": {
+        "name": "사막 영향력",
+        "desc": "사막 지역으로도 간주됨"
+      },
+      "portuguese": {
+        "name": "Influência do Deserto",
+        "desc": "Também conta como uma área de deserto"
+      },
+      "russian": {
+        "name": "Влияние пустыни",
+        "desc": "Также считается пустынной областью"
+      },
+      "spanish": {
+        "name": "Influencia de desierto",
+        "desc": "También cuenta como un área de desierto"
+      },
+      "thai": {
+        "name": "อิทธิพลทะเลทราย",
+        "desc": "นับว่าเป็น ด่านทะเลทราย เช่นกัน"
+      },
+      "traditional chinese": {
+        "name": "沙漠影響",
+        "desc": "同時計算為沙漠區域"
+      }
+    }
+  },
+  "159": {
+    "name": "Immured Fury",
+    "icon": "AtlasIconContentSanctificationBoss",
+    "desc": "Doryani has spotted The Immured Fury in this Area",
+    "translates": {
+      "french": {
+        "name": "Immured Fury",
+        "desc": "Doryani has spotted The Immured Fury in this Area"
+      },
+      "german": {
+        "name": "Fleischgewordener Zorn",
+        "desc": "Doryani hat Den fleischgewordenen Zorn in diesem Gebiet gesichtet"
+      },
+      "japanese": {
+        "name": "幽閉された憤怒",
+        "desc": "ドリヤニがエリアで幽閉された憤怒を発見した"
+      },
+      "korean": {
+        "name": "유폐된 광분",
+        "desc": "도리아니가 이 지역에서 유폐된 광분을 포착함"
+      },
+      "portuguese": {
+        "name": "Furor Confinado",
+        "desc": "Doryani avistou o Furor Confinado nessa área"
+      },
+      "russian": {
+        "name": "Замурованная ярость",
+        "desc": "Дориани обнаружил Замурованную ярость в этой области"
+      },
+      "spanish": {
+        "name": "Furia encarcelada",
+        "desc": "Doryani ha avistado a la Furia encarcelada en esta área"
+      },
+      "thai": {
+        "name": "โทสะใต้พันธนาการ",
+        "desc": "ดอร์ยานีได้พบกับ โทสะใต้พันธนาการ ในด่าน"
+      },
+      "traditional chinese": {
+        "name": "禁錮之怒",
+        "desc": "多里亞尼在此區域發現了禁錮之怒"
+      }
+    }
+  },
+  "160": {
+    "name": "Mirage of Riches",
+    "icon": "Currency2",
+    "desc": "Equipment dropped by monsters is replaced with other items",
+    "translates": {
+      "french": {
+        "name": "Mirage of Riches",
+        "desc": "Equipment dropped by monsters is replaced with other items"
+      },
+      "german": {
+        "name": "Illusion des Reichtums",
+        "desc": "Ausrüstung, die von Monstern fallen gelassen wird, wird durch andere Gegenstände ersetzt"
+      },
+      "japanese": {
+        "name": "富の蜃気楼",
+        "desc": "モンスターがドロップする装備品は他のアイテムに置き換えられる"
+      },
+      "korean": {
+        "name": "재물의 신기루",
+        "desc": "몬스터들이 떨어뜨리는 장비가 다른 아이템으로 교체됨"
+      },
+      "portuguese": {
+        "name": "Miragem das Riquezas",
+        "desc": "Equipamentos largados por monstros são substituídos por outros itens"
+      },
+      "russian": {
+        "name": "Мираж богатства",
+        "desc": "Выпавшее из монстров снаряжение заменяется другими предметами"
+      },
+      "spanish": {
+        "name": "Espejismo de riquezas",
+        "desc": "El equipamiento que arrojan los monstruos se reemplaza por otros objetos"
+      },
+      "thai": {
+        "name": "มิราจนำทรัพย์",
+        "desc": "ไอเทมสวมใส่ ที่ดรอปจากมอนสเตอร์ ถูกแทนที่ด้วย ไอเทมชนิดอื่น"
+      },
+      "traditional chinese": {
+        "name": "財富幻象",
+        "desc": "怪物掉落的裝備會被其他物品替換"
+      }
+    }
+  },
+  "161": {
+    "name": "Wisdom's Teachings",
+    "icon": "BossNotableGrantMoreExperience",
+    "desc": "Monsters grant 100% increased Experience",
+    "translates": {
+      "french": {
+        "name": "Wisdom's Teachings",
+        "desc": "Monsters grant 100% increased Experience"
+      },
+      "german": {
+        "name": "Lehren der Weisheit",
+        "desc": "Monster gewähren 100% erhöhte Erfahrungspunkte"
+      },
+      "japanese": {
+        "name": "知恵の教え",
+        "desc": "モンスターが付与する経験値は100%増加する"
+      },
+      "korean": {
+        "name": "지혜의 가르침",
+        "desc": "몬스터가 주는 경험치 100% 증가"
+      },
+      "portuguese": {
+        "name": "Ensinamentos de Sabedoria",
+        "desc": "Monstros concedem experiência aumentada em 100%"
+      },
+      "russian": {
+        "name": "Учения мудрости",
+        "desc": "Монстры дают увеличенный на 100% опыт"
+      },
+      "spanish": {
+        "name": "Enseñanzas sabias",
+        "desc": "Los monstruos otorgan la experiencia aumentada un 100%"
+      },
+      "thai": {
+        "name": "ภูมิปัญญาพร่ำสอน",
+        "desc": "มอนสเตอร์ ให้ค่าประสบการณ์ เพิ่มขึ้น 100%"
+      },
+      "traditional chinese": {
+        "name": "智慧傳授",
+        "desc": "怪物增加100%經驗"
+      }
+    }
+  },
+  "162": {
+    "name": "Tight Pockets",
+    "icon": "BossNotableDropMoreItems",
+    "desc": "Gold dropped by monsters is replaced with other items",
+    "translates": {
+      "french": {
+        "name": "Tight Pockets",
+        "desc": "Gold dropped by monsters is replaced with other items"
+      },
+      "german": {
+        "name": "Leere Taschen",
+        "desc": "Das von Monstern fallengelassene Gold wird durch andere Gegenstände ersetzt"
+      },
+      "japanese": {
+        "name": "小さなポケット",
+        "desc": "モンスターがドロップするゴールドは他のアイテムに置き換えられる"
+      },
+      "korean": {
+        "name": "가벼운 주머니",
+        "desc": "몬스터들이 떨어뜨리는 금화가 다른 아이템으로 교체됨"
+      },
+      "portuguese": {
+        "name": "Unha de Fome",
+        "desc": "Ouro largado por monstros é substituído por outros itens"
+      },
+      "russian": {
+        "name": "Тугие карманы",
+        "desc": "Выпавшее из монстров золото заменяется другими предметами"
+      },
+      "spanish": {
+        "name": "Cortos de dinero",
+        "desc": "El oro que arrojan los monstruos se reemplaza por otros objetos"
+      },
+      "thai": {
+        "name": "กระเป๋าแบน",
+        "desc": "ทอง ที่ดรอปจากมอนสเตอร์ ถูกแทนที่ด้วย ไอเทมชนิดอื่น"
+      },
+      "traditional chinese": {
+        "name": "緊縮口袋",
+        "desc": "怪物掉落的金幣會被其他物品替換"
+      }
+    }
+  },
+  "163": {
+    "name": "Fragment of Immortality",
+    "icon": "IncreaseMinionLifeNode",
+    "desc": "Players have unlimited Revivals in area\nMonsters have 100% increased Effectiveness",
+    "translates": {
+      "french": {
+        "name": "Fragment of Immortality",
+        "desc": "Players have unlimited Revivals in area\nMonsters have 100% increased Effectiveness"
+      },
+      "german": {
+        "name": "Fragment der Unsterblichkeit",
+        "desc": "Spieler haben in diesem Gebiet unbegrenzte Wiederbelebungen\nMonster haben 100% erhöhte Schlagkraft"
+      },
+      "japanese": {
+        "name": "不死のかけら",
+        "desc": "エリアでのプレイヤーの復活試行回数が無限になる\nモンスターのエフェクティブが100%増加する"
+      },
+      "korean": {
+        "name": "불멸의 조각",
+        "desc": "지역 내 플레이어들이 무한히 부활할 수 있음\n몬스터의 효율 100% 증가"
+      },
+      "portuguese": {
+        "name": "Fragmento da Imortalidade",
+        "desc": "Jogadores têm renascimentos ilimitados na área\nMonstros têm a eficiência aumentada em 100%"
+      },
+      "russian": {
+        "name": "Осколок бессмертия",
+        "desc": "У игроков в области неограниченные возрождения\n100% повышение эффективности монстров"
+      },
+      "spanish": {
+        "name": "Fragmento de inmortalidad",
+        "desc": "Los jugadores tienen resurrecciones ilimitadas en el área\nLos monstruos tienen la efectividad aumentada un 100%"
+      },
+      "thai": {
+        "name": "เศษพลังคงกระพัน",
+        "desc": "ผู้เล่น มีสิทธิ์คืนชีพในด่าน ไม่จำกัด\nมอนเตอร์ มีประสิทธิภาพ เพิ่มขึ้น 100%"
+      },
+      "traditional chinese": {
+        "name": "永生碎片",
+        "desc": "區域中的玩家沒有的復活次數限制\n怪物增加100%效用"
+      }
+    }
+  },
+  "164": {
+    "name": "Prosperous Populous",
+    "icon": "ItemQuantity",
+    "desc": "100% increased Rarity of items found in area",
+    "translates": {
+      "french": {
+        "name": "Prosperous Populous",
+        "desc": "100% increased Rarity of items found in area"
+      },
+      "german": {
+        "name": "Blühendes Volk",
+        "desc": "100% höhere Seltenheit der in diesem Gebiet gefundenen Gegenstände"
+      },
+      "japanese": {
+        "name": "繫栄する民衆",
+        "desc": "エリアで見つかるアイテムのレアリティが100%増加する"
+      },
+      "korean": {
+        "name": "번영하는 인구",
+        "desc": "지역에서 발견하는 아이템 희귀도 100% 증가"
+      },
+      "portuguese": {
+        "name": "População Próspera",
+        "desc": "Raridade de itens encontrados na área aumentada em 100%"
+      },
+      "russian": {
+        "name": "Процветающая популяция",
+        "desc": "100% повышение редкости найденных в области предметов"
+      },
+      "spanish": {
+        "name": "Abundancia y prosperidad",
+        "desc": "Rareza de los objetos encontrados en el área aumentada un 100%"
+      },
+      "thai": {
+        "name": "กลุ่มชนรุ่งเรือง",
+        "desc": "เพิ่มระดับความหายากของ ไอเทม ที่พบในด่าน 100%"
+      },
+      "traditional chinese": {
+        "name": "富裕繁榮",
+        "desc": "增加100%區域中找到的物品稀有度"
+      }
+    }
+  },
+  "165": {
+    "name": "Echoes of Power",
+    "icon": "GenericMinionNotable",
+    "desc": "5 Rare Monsters are Duplicated",
+    "translates": {
+      "french": {
+        "name": "Echoes of Power",
+        "desc": "5 Rare Monsters are Duplicated"
+      },
+      "german": {
+        "name": "Echos der Macht",
+        "desc": "5 seltene Monster werden dupliziert"
+      },
+      "japanese": {
+        "name": "力の反響",
+        "desc": "5体のレアモンスターが複製される"
+      },
+      "korean": {
+        "name": "힘의 메아리",
+        "desc": "희귀 몬스터 5마리가 복제됨"
+      },
+      "portuguese": {
+        "name": "Ecos de Poder",
+        "desc": "5 monstros raros são duplicados"
+      },
+      "russian": {
+        "name": "Отголоски силы",
+        "desc": "5 редких монстров продублированы"
+      },
+      "spanish": {
+        "name": "Ecos de poder",
+        "desc": "5 monstruos raros están duplicados"
+      },
+      "thai": {
+        "name": "ภาพสะท้อนของพลัง",
+        "desc": "มอนสเตอร์แรร์ 5 ตัว ถูกสร้างซ้ำ"
+      },
+      "traditional chinese": {
+        "name": "力量回聲",
+        "desc": "5名稀有怪物會被複製"
+      }
+    }
+  },
+  "1001": {
+    "name": "Grand Expedition",
+    "icon": "AtlasIconContentExpedition",
+    "desc": "Area contains a Grand Expedition",
+    "translates": {
+      "french": {
+        "name": "Grand Expedition",
+        "desc": "Area contains a Grand Expedition"
+      },
+      "german": {
+        "name": "Große Expedition",
+        "desc": "Gebiet enthält eine Große Expedition"
+      },
+      "japanese": {
+        "name": "グランドエクスペディション",
+        "desc": "エリアにグランドエクスペディションが出現する"
+      },
+      "korean": {
+        "name": "대탐험",
+        "desc": "지역에 대탐험 등장"
+      },
+      "portuguese": {
+        "name": "Grande Expedição",
+        "desc": "Área contém uma Grande Expedição"
+      },
+      "russian": {
+        "name": "Большая экспедиция",
+        "desc": "В области можно встретить большую экспедицию"
+      },
+      "spanish": {
+        "name": "Expedición grande",
+        "desc": "El área contiene una expedición grande"
+      },
+      "thai": {
+        "name": "กองสำรวจยิ่งใหญ่",
+        "desc": "ด่านมี กองสำรวจยิ่งใหญ่ 1 แห่ง"
+      },
+      "traditional chinese": {
+        "name": "大型探險",
+        "desc": "區域含有一個大型探險"
+      }
+    }
+  },
+  "1000": {
+    "name": "Corruption",
+    "icon": "AtlasIconContentCorruption",
+    "desc": "This map is Corrupted."
+  }
+}

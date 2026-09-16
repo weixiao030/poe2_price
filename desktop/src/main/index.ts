@@ -30,6 +30,19 @@ import {
 import { query, stopTree, worker, workers } from './engine'
 import { dataRoot } from './runtime'
 import { getBackground, chooseBackground, clearBackground } from './background'
+import { WorldMapWorker } from './world-map'
+import {
+  assertMapClient,
+  mapDirectory,
+  mapRoute,
+  overlayPatch,
+  MAP_CONSENT_VERSION,
+  shouldResumeMap
+} from './world-map-policy'
+import { WorldMapOverlay } from './world-map-overlay'
+import { cleanupOldFiles } from './maintenance'
+import type { AtlasRoute, AtlasSnapshot, MapPreferences, MapStatus } from '../shared/world-map'
+import { overlayDefaults } from '../shared/world-map'
 import type {
   AppSettings,
   AppSnapshot,
@@ -40,7 +53,7 @@ import type {
 } from '../shared/types'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-// This utility has no 3D/canvas workload; software rendering avoids a large GPU allocation.
+// Keep the utility and its 2D overlay off the game's GPU allocation.
 app.disableHardwareAcceleration()
 if (process.env.POE_DESKTOP_DATA) app.setPath('userData', process.env.POE_DESKTOP_DATA)
 let window: BrowserWindow | null = null
@@ -51,12 +64,62 @@ let processChild: ChildProcessWithoutNullStreams | null = null
 let cancellationRequested = false
 let timer: NodeJS.Timeout | undefined
 let nextUpdate: string | null = null
+const worldMap = new WorldMapWorker()
+const mapOverlay = new WorldMapOverlay()
+let mapSample: AtlasSnapshot | null = null
+let mapTimer: NodeJS.Timeout | undefined
+let sampleGeneration = 0
+let mapGeneration = 0
+let mapChanging = false
+let pendingMapConsent: { token: string; expires: number; generation: number } | null = null
+let maintenanceRunning = false
 let store: Store<{
   settings: AppSettings
   history: OperationResult[]
   confirmed: { request: PatchRequest; installKind: string } | null
+  worldMap: MapPreferences
 }>
 const pendingQueries = new Map<string, Promise<unknown>>()
+
+function stopMap() {
+  pendingMapConsent = null
+  sampleGeneration++
+  clearTimeout(mapTimer)
+  mapSample = null
+  mapOverlay.stop()
+  worldMap.stop()
+}
+function overlayOptions() {
+  return { ...overlayDefaults, ...store.get('worldMap').overlay }
+}
+function startMapSampling(initial: AtlasSnapshot) {
+  mapSample = initial
+  const generation = ++sampleGeneration
+  const tick = async () => {
+    if (generation !== sampleGeneration) return
+    if (!worldMap.enabled) {
+      stopMap()
+      return
+    }
+    try {
+      if (!worldMap.busy) {
+        const sample = await worldMap.request<AtlasSnapshot>('read')
+        if (generation !== sampleGeneration) return
+        mapSample = sample
+        mapOverlay.update(sample, overlayOptions())
+      }
+    } catch (error) {
+      if (generation === sampleGeneration) {
+        log.warn('世界地图读取停止', error)
+        stopMap()
+      }
+      return
+    }
+    if (generation === sampleGeneration)
+      mapTimer = setTimeout(tick, mapSample?.gameWindow?.foreground ? 100 : 350)
+  }
+  void tick()
+}
 
 function snapshot(): AppSnapshot {
   return {
@@ -75,6 +138,7 @@ function refresh() {
   updateTray()
 }
 function queryOnce<T>(payload: Record<string, unknown>): Promise<T> {
+  if (maintenanceRunning) throw new Error('正在清理旧文件，请稍后重试')
   const key = JSON.stringify(payload)
   if (!pendingQueries.has(key)) {
     if (pendingQueries.size >= 4) throw new Error('后台正在处理其他查询，请稍后重试')
@@ -87,6 +151,7 @@ function queryOnce<T>(payload: Record<string, unknown>): Promise<T> {
 }
 async function runOperation(input: unknown, automatic = false): Promise<OperationResult> {
   if (active) throw new Error('已有任务正在执行，请等待完成')
+  if (maintenanceRunning) throw new Error('请等待文件清理完成')
   const request = validateRequest(input)
   const runId = crypto.randomUUID(),
     startedAt = new Date().toISOString(),
@@ -179,10 +244,15 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
       ...nextState.history
     ].slice(0, 50)
     if (exitCode === 0 && !cancellationRequested) {
-      if (request.gameVersion === 'poe1' &&
-          (request.operation === 'localize' || /^__POE_LANGUAGE_MODE__localization\r?$/m.test(stdout))) {
-        if (nextState.settings.gameVersion === 'poe1' &&
-            path.resolve(nextState.settings.directories.poe1 || '.') === path.resolve(request.gameDirectory))
+      if (
+        request.gameVersion === 'poe1' &&
+        (request.operation === 'localize' || /^__POE_LANGUAGE_MODE__localization\r?$/m.test(stdout))
+      ) {
+        if (
+          nextState.settings.gameVersion === 'poe1' &&
+          path.resolve(nextState.settings.directories.poe1 || '.') ===
+            path.resolve(request.gameDirectory)
+        )
           nextState.settings = { ...nextState.settings, languageMode: 'localization' }
       }
       if (request.operation === 'update') nextState.confirmed = { request, installKind: kind }
@@ -215,7 +285,7 @@ function schedule() {
     timer = undefined
     nextUpdate = null
     const confirmed = store.get('confirmed')
-    if (active || !confirmed || !store.get('settings').autoUpdate) {
+    if (active || maintenanceRunning || !confirmed || !store.get('settings').autoUpdate) {
       schedule()
       refresh()
       return
@@ -315,7 +385,11 @@ function createWindow() {
     }
   })
   window.on('closed', () => {
+    mapGeneration++
+    pendingMapConsent = null
+    if (mapChanging) stopMap()
     window = null
+    if (!quitting && !active && !store.get('settings').closeToTray) app.quit()
   })
   window.once('ready-to-show', () => {
     if (!process.argv.includes('--hidden')) window?.show()
@@ -353,7 +427,8 @@ else {
         defaults: {
           settings: defaults,
           history: [] as OperationResult[],
-          confirmed: null as { request: PatchRequest; installKind: string } | null
+          confirmed: null as { request: PatchRequest; installKind: string } | null,
+          worldMap: { directory: '', consentVersion: 0, enabled: false } as MapPreferences
         },
         clearInvalidConfig: true
       })
@@ -372,6 +447,174 @@ else {
       handle('background:get', getBackground)
       handle('background:choose', () => chooseBackground(window!))
       handle('background:clear', clearBackground)
+      const mapStatus = (): MapStatus => ({
+        enabled: worldMap.enabled,
+        authorized: store.get('worldMap').consentVersion === MAP_CONSENT_VERSION,
+        directory: store.get('worldMap').directory,
+        overlay: overlayOptions()
+      })
+      handle('map:status', mapStatus)
+      handle('map:directory', async (input: unknown) => {
+        if (maintenanceRunning || mapChanging || worldMap.enabled)
+          throw new Error('请先停止地图读取并等待当前任务完成')
+        mapChanging = true
+        pendingMapConsent = null
+        const generation = ++mapGeneration
+        try {
+          const directory = mapDirectory(input)
+          const client = await queryOnce<GameClient>({
+            action: 'inspect',
+            gameVersion: 'poe2',
+            directory,
+            language: 'auto'
+          })
+          assertMapClient(client)
+          if (generation !== mapGeneration) throw new Error('目录选择已取消')
+          store.set('worldMap', {
+            ...store.get('worldMap'),
+            directory: client.path,
+            enabled: false
+          })
+          return mapStatus()
+        } finally {
+          mapChanging = false
+        }
+      })
+      const setMapEnabled = async (input: unknown): Promise<MapStatus> => {
+        const enabled = boolean(input)
+        if (!enabled) {
+          mapGeneration++
+          store.set('worldMap', { ...store.get('worldMap'), enabled: false })
+          stopMap()
+          return mapStatus()
+        }
+        if (worldMap.enabled) return mapStatus()
+        if (maintenanceRunning || mapChanging) throw new Error('其他任务进行中，请稍后重试')
+        const generation = ++mapGeneration
+        mapChanging = true
+        try {
+          const directory = mapDirectory(store.get('worldMap').directory)
+          const client = await queryOnce<GameClient>({
+            action: 'inspect',
+            gameVersion: 'poe2',
+            directory,
+            language: 'auto'
+          })
+          assertMapClient(client)
+          if (generation !== mapGeneration || !window || window.isDestroyed()) return mapStatus()
+          if (!mapStatus().authorized) {
+            pendingMapConsent = {
+              token: crypto.randomUUID(),
+              expires: Date.now() + 120_000,
+              generation
+            }
+            return { ...mapStatus(), consentToken: pendingMapConsent.token }
+          }
+          if (generation !== mapGeneration) return mapStatus()
+          worldMap.start(directory)
+          const initial = await worldMap.request<AtlasSnapshot>('read')
+          if (generation !== mapGeneration) {
+            stopMap()
+            return mapStatus()
+          }
+          startMapSampling(initial)
+          store.set('worldMap', { ...store.get('worldMap'), enabled: true })
+          return mapStatus()
+        } catch (error) {
+          stopMap()
+          throw error
+        } finally {
+          mapChanging = false
+        }
+      }
+      handle('map:enabled', setMapEnabled)
+      handle('map:consent', async (input: unknown) => {
+        const token = text(input, 80),
+          pending = pendingMapConsent
+        if (
+          !pending ||
+          pending.token !== token ||
+          pending.expires < Date.now() ||
+          pending.generation !== mapGeneration ||
+          mapChanging
+        )
+          throw new Error('风险确认已失效，请重新开启世界地图')
+        pendingMapConsent = null
+        store.set('worldMap', { ...store.get('worldMap'), consentVersion: MAP_CONSENT_VERSION })
+        return setMapEnabled(true)
+      })
+      handle('map:read', async (reset: unknown) => {
+        const fresh = boolean(reset)
+        if (!worldMap.enabled) throw new Error('世界地图规划尚未开启')
+        if (!fresh && mapSample && Date.now() - Date.parse(mapSample.capturedAt) < 1500)
+          return mapSample
+        return worldMap.request(fresh ? 'reset' : 'read')
+      })
+      handle('map:search', (query: unknown) =>
+        worldMap.request('search', { query: text(query, 80) })
+      )
+      handle('map:route', async (request: unknown) => {
+        const generation = sampleGeneration
+        const route = await worldMap.request<AtlasRoute>('route', { ...mapRoute(request) })
+        if (generation !== sampleGeneration) throw new Error('地图读取状态已变化，请重新规划')
+        mapOverlay.setRoute(route)
+        return route
+      })
+      handle('map:route-clear', () => {
+        mapOverlay.setRoute(null)
+      })
+      handle('map:overlay-options', (input: unknown) => {
+        const overlay = { ...overlayOptions(), ...overlayPatch(input) }
+        store.set('worldMap', { ...store.get('worldMap'), overlay })
+        if (mapSample) mapOverlay.update(mapSample, overlay)
+        return mapStatus()
+      })
+      handle('app:community', (kind: unknown) => {
+        const links = {
+          source: 'https://github.com/weixiao030/poe2_price',
+          community: 'https://www.caimogu.cc/post/2403703.html',
+          'world-map': 'https://github.com/weixiao030/poe_Plugin'
+        }
+        return shell.openExternal(links[choice(kind, ['source', 'community', 'world-map'])])
+      })
+      handle('app:cleanup', async (input: unknown, apply: unknown) => {
+        const kind = choice(input, ['cache', 'logs']),
+          remove = boolean(apply)
+        if (
+          active ||
+          worldMap.enabled ||
+          mapChanging ||
+          pendingQueries.size ||
+          workers.size ||
+          maintenanceRunning
+        )
+          throw new Error('后台任务进行中，请停止地图读取并等待查询或补丁任务完成')
+        maintenanceRunning = true
+        try {
+          if (remove) {
+            const result = await dialog.showMessageBox(window!, {
+              type: 'question',
+              title: '清理旧文件',
+              message: `清理 7 天前的${kind === 'logs' ? '旧日志' : '补丁缓存'}？`,
+              detail: '保留最近文件、当前日志、应用配置和所有游戏还原备份。此操作不能撤销。',
+              buttons: ['取消', '确认清理'],
+              defaultId: 0,
+              cancelId: 0
+            })
+            if (result.response !== 1)
+              return { files: 0, bytes: 0, skipped: 0, olderThanDays: 7, cancelled: true }
+          }
+          return await cleanupOldFiles(
+            app.getPath('userData'),
+            app.getPath('logs'),
+            kind,
+            log.transports.file.getFile().path,
+            remove
+          )
+        } finally {
+          maintenanceRunning = false
+        }
+      })
       handle('settings:save', (input: unknown) => {
         const patch = settingsPatch(input)
         if (active && Object.keys(patch).some((key) => key !== 'autoUpdate'))
@@ -449,6 +692,9 @@ else {
       schedule()
       createWindow()
       app.on('activate', showWindow)
+      if (shouldResumeMap(store.get('worldMap'))) {
+        void setMapEnabled(true).catch((error) => log.warn('恢复世界地图失败，未开始读取', error))
+      }
     })
     .catch((error) => {
       log.error(error)
@@ -457,6 +703,8 @@ else {
     })
 }
 app.on('before-quit', (event) => {
+  mapGeneration++
+  stopMap()
   if (active) {
     event.preventDefault()
     showWindow()

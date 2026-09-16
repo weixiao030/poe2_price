@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PoeWorldMap</AssemblyName>
+    <RootNamespace>PoeWorldMap</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Upstream/Game/*.json" />
+    <Content Include="licenses/*.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

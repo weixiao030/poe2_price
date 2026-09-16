@@ -6,6 +6,17 @@ function subscribe<T>(channel: string, callback: (event: T) => void) {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 const api: DesktopApi = {
+  getMapStatus: () => ipcRenderer.invoke('map:status'),
+  setMapDirectory: (directory) => ipcRenderer.invoke('map:directory', directory),
+  setMapEnabled: (enabled) => ipcRenderer.invoke('map:enabled', enabled),
+  confirmMapConsent: (token) => ipcRenderer.invoke('map:consent', token),
+  readMap: (reset) => ipcRenderer.invoke('map:read', reset ?? false),
+  searchMap: (query) => ipcRenderer.invoke('map:search', query),
+  planMapRoute: (request) => ipcRenderer.invoke('map:route', request),
+  clearMapRoute: () => ipcRenderer.invoke('map:route-clear'),
+  setMapOverlay: (options) => ipcRenderer.invoke('map:overlay-options', options),
+  cleanupFiles: (kind, remove) => ipcRenderer.invoke('app:cleanup', kind, remove),
+  openCommunity: (kind) => ipcRenderer.invoke('app:community', kind),
   getSnapshot: () => ipcRenderer.invoke('app:snapshot'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
   pickGameDirectory: () => ipcRenderer.invoke('game:pick'),

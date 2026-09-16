@@ -29,6 +29,9 @@ async function waitSnapshot(page, predicate, timeout = 30000) {
 async function launch() {
   app = await electron.launch({ args: [root], env, timeout: 30_000 })
   const page = await app.firstWindow()
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].setPosition(-20000, -20000)
+  )
   page.on('pageerror', (error) => evidence.errors.push(error.message))
   await page.getByRole('heading', { name: '物价补丁', exact: true }).waitFor()
   return page
@@ -97,13 +100,28 @@ try {
   evidence.checks.push('错误目录失败可见，任务锁释放，保存失败记录')
   // Only replace a disposable user-data engine script; production sources remain intact.
   const fixtureScript =
-    '\ufeffparam([string]$Poe2Dir,[string]$PatchScope,[string]$League,[string]$PoeNinjaLeague,[string]$PoeCurrencySeason,[bool]$LeagueIsCurrent,[switch]$IslandRumourHints)\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\nWrite-Output "中文开始：$League|$LeagueIsCurrent|$IslandRumourHints"\nStart-Sleep -Seconds 2\nWrite-Output "中文完成"\nexit 0\n'
+    '\ufeffparam([string]$Poe2Dir,[string]$PatchScope,[string]$League,[string]$PoeNinjaLeague,[string]$PoeCurrencySeason,[bool]$LeagueIsCurrent,[switch]$IslandRumourHints,[switch]$SkipGameDirectoryMutex)\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\nWrite-Output "中文开始：$League|$LeagueIsCurrent|$IslandRumourHints"\nStart-Sleep -Seconds 2\nWrite-Output "中文完成"\nexit 0\n'
   await fs.writeFile(path.join(userData, 'engine/tools/update_price_patch.ps1'), fixtureScript)
   request.gameDirectory = game
+  await app.evaluate(({ dialog }) => {
+    dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false })
+  })
+  await page.evaluate((dir) => window.desktop.setMapDirectory(dir), game)
+  await page.evaluate(async () => {
+    const status = await window.desktop.setMapEnabled(true)
+    if (status.consentToken) await window.desktop.confirmMapConsent(status.consentToken)
+  })
   await page.evaluate((r) => {
     window.__qaTask = window.desktop.runOperation(r)
   }, request)
   await page.waitForFunction(() => document.body.innerText.includes('任务执行中'))
+  const concurrentMap = await page.evaluate(() => window.desktop.readMap())
+  assert.equal(
+    concurrentMap.available,
+    false,
+    'fixture has no game process; map worker still responds'
+  )
+  assert.equal((await page.evaluate(() => window.desktop.getMapStatus())).enabled, true)
   const duplicate = await page.evaluate(async (r) => {
     try {
       await window.desktop.runOperation(r)
@@ -127,7 +145,25 @@ try {
   evidence.checks.push(
     '隔离脚本成功执行、历史赛季 false 保留、中文日志完整、连续任务与互斥验证通过'
   )
+  await app.evaluate(() => {
+    const original = globalThis.setTimeout
+    globalThis.setTimeout = (callback, delay, ...args) => {
+      if (delay === 3_600_000) {
+        globalThis.__qaHourly = callback
+        globalThis.setTimeout = original
+      }
+      return original(callback, delay, ...args)
+    }
+  })
   await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: true }))
+  await app.evaluate(() => globalThis.__qaHourly())
+  const autoResult = (await page.evaluate(() => window.desktop.getSnapshot())).history[0]
+  assert.equal(autoResult.automatic, true)
+  assert.equal(autoResult.exitCode, 0)
+  assert.equal((await page.evaluate(() => window.desktop.getMapStatus())).enabled, true)
+  evidence.checks.push(
+    '地图独立子进程与补丁并行响应；触发真实每小时回调执行自动补丁成功，地图未停止'
+  )
   const due = (await page.evaluate(() => window.desktop.getSnapshot())).nextUpdate
   assert.ok(due)
   await page.evaluate(() => window.desktop.saveSettings({ backgroundOpacity: 25 }))
@@ -137,7 +173,14 @@ try {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] })
   }, game)
   await page.getByRole('button', { name: '选择目录', exact: true }).click()
-  await page.getByText('目录已识别', { exact: true }).waitFor()
+  await page
+    .getByText('目录已识别', { exact: true })
+    .waitFor()
+    .catch(async (error) => {
+      await page.screenshot({ path: path.join(reportDir, 'directory-failure.png'), fullPage: true })
+      console.error(await page.locator('body').innerText())
+      throw error
+    })
   await page.waitForFunction(
     () => !document.querySelector('.persistent-actions .n-button--primary-type').disabled,
     null,
@@ -220,6 +263,8 @@ try {
   await app.evaluate(({ app }) => app.emit('activate'))
   page = await app.firstWindow()
   await page.getByRole('heading', { name: '物价补丁', exact: true }).waitFor()
+  assert.equal((await page.evaluate(() => window.desktop.getMapStatus())).enabled, true)
+  evidence.checks.push('地图会话在关闭到托盘并重新打开后仍保持开启')
   await page.evaluate(() => window.desktop.saveSettings({ closeToTray: false }))
   evidence.checks.push('关闭到托盘释放窗口；托盘重新打开成功，任务历史保留')
   await page.screenshot({ path: path.join(reportDir, 'execution-fixture.png'), fullPage: true })
@@ -239,7 +284,10 @@ try {
     false
   )
   await page.getByRole('button', { name: '应用设置', exact: true }).click()
-  assert.equal(await page.getByRole('switch', { name: '每小时自动更新' }).getAttribute('aria-checked'), 'true')
+  assert.equal(
+    await page.getByRole('switch', { name: '每小时自动更新' }).getAttribute('aria-checked'),
+    'true'
+  )
   await page.getByRole('switch', { name: '每小时自动更新' }).click()
   await app.close()
   app = null
@@ -252,6 +300,16 @@ try {
   evidence.checks.push('所有页面无未捕获 JavaScript 错误')
   console.log(JSON.stringify(evidence, null, 2))
 } finally {
+  if (app && evidence.checks.length < 12) {
+    const page = app.windows()[0]
+    if (page && !page.isClosed())
+      console.error(
+        await page
+          .locator('body')
+          .innerText()
+          .catch(() => '')
+      )
+  }
   await fs.writeFile(
     path.join(reportDir, 'desktop-evidence.json'),
     JSON.stringify(evidence, null, 2)

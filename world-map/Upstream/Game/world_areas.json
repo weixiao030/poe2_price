@@ -1,0 +1,3082 @@
+﻿{
+    "P1_Town":  {
+                    "waypoint":  true,
+                    "town":  true,
+                    "name":  "The Refuge",
+                    "act":  6,
+                    "level":  64
+                },
+    "HideoutBlankDesert":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Endless Sands Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "MapRavine":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Ravine",
+                      "act":  10,
+                      "level":  65
+                  },
+    "MapMonument":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "The Monument",
+                        "act":  10,
+                        "level":  65
+                    },
+    "G4_5_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Abandoned Prison",
+                   "act":  4,
+                   "level":  46
+               },
+    "MapSinterRift":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Sinter Rift",
+                          "act":  10,
+                          "level":  65
+                      },
+    "MapUniqueWildwood":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "The Viridian Wildwood",
+                              "act":  10,
+                              "level":  65
+                          },
+    "ExpeditionSubArea_Kalguur_Act2":  {
+                                           "waypoint":  true,
+                                           "town":  false,
+                                           "name":  "Skull of the Titan",
+                                           "act":  2,
+                                           "level":  28
+                                       },
+    "MapBloomingField":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Blooming Field",
+                             "act":  10,
+                             "level":  65
+                         },
+    "MapUniqueLake":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "The Fractured Lake",
+                          "act":  10,
+                          "level":  65
+                      },
+    "MapVaalVillage":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Vaal Village",
+                           "act":  10,
+                           "level":  65
+                       },
+    "MapPort":  {
+                    "waypoint":  false,
+                    "town":  false,
+                    "name":  "Port",
+                    "act":  10,
+                    "level":  65
+                },
+    "G2_10_1":  {
+                    "waypoint":  true,
+                    "town":  false,
+                    "name":  "Mawdun Quarry",
+                    "act":  2,
+                    "level":  17
+                },
+    "MapSlash":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Slash",
+                     "act":  10,
+                     "level":  65
+                 },
+    "HideoutInnocenceArena":  {
+                                  "waypoint":  false,
+                                  "town":  false,
+                                  "name":  "Innocent Hideout",
+                                  "act":  1,
+                                  "level":  20
+                              },
+    "MapSnowfall":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Snowfall",
+                        "act":  10,
+                        "level":  65
+                    },
+    "P3_3":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Glacial Tarn",
+                 "act":  6,
+                 "level":  55
+             },
+    "P2_7":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Qimah Reservoir",
+                 "act":  6,
+                 "level":  56
+             },
+    "HideoutAzuriteCave":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Azurite Cavern Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "G4_10":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "The Excavation",
+                  "act":  4,
+                  "level":  52
+              },
+    "MapPrecipice":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Precipice",
+                         "act":  10,
+                         "level":  65
+                     },
+    "HideoutCanal":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Canal Hideout",
+                         "act":  1,
+                         "level":  65
+                     },
+    "MapUniqueInitialTower":  {
+                                  "waypoint":  false,
+                                  "town":  false,
+                                  "name":  "Precursor Tower",
+                                  "act":  10,
+                                  "level":  65
+                              },
+    "MapNecropolis":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Necropolis",
+                          "act":  10,
+                          "level":  65
+                      },
+    "MapUniqueMerchant01_Oasis":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Jado\u0027s Campsite",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "G3_6_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Jiquani\u0027s Machinarium",
+                   "act":  3,
+                   "level":  37
+               },
+    "Sanctum_1_Foyer_2":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "MapUberBoss_CopperCitadel_Quest":  {
+                                            "waypoint":  false,
+                                            "town":  false,
+                                            "name":  "The Copper Citadel",
+                                            "act":  10,
+                                            "level":  75
+                                        },
+    "MapChannel":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Channel",
+                       "act":  10,
+                       "level":  65
+                   },
+    "ExpeditionSubArea_Volcano":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Sulphur Mines",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "HideoutHumanoidPet":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Humanoid Pet Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "Sanctum_2_Foyer_1":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "G4_1_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Volcanic Warrens",
+                   "act":  4,
+                   "level":  47
+               },
+    "HideoutCosmicAtlas":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Atlas Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "MapBackwash":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Backwash",
+                        "act":  10,
+                        "level":  65
+                    },
+    "HideoutKaomArena":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Furious Hideout",
+                             "act":  1,
+                             "level":  20
+                         },
+    "ExpeditionLogBook_Wastes":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "Scorched Cay",
+                                     "act":  10,
+                                     "level":  65
+                                 },
+    "G4_4_3":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Trial of the Ancestors",
+                   "act":  4,
+                   "level":  51
+               },
+    "HideoutSpace":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Celestial Nebula Hideout",
+                         "act":  1,
+                         "level":  65
+                     },
+    "HideoutLunarisSolarisArena":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Eclipsed Hideout",
+                                       "act":  1,
+                                       "level":  20
+                                   },
+    "MapSpring_":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Spring",
+                       "act":  10,
+                       "level":  65
+                   },
+    "G4_ship":  {
+                    "waypoint":  false,
+                    "town":  false,
+                    "name":  "[DNT] Ship",
+                    "act":  4,
+                    "level":  1
+                },
+    "HideoutYaochi":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Yaochi Hideout",
+                          "act":  1,
+                          "level":  65
+                      },
+    "BossRush_Area1":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Boss Rush Area 1",
+                           "act":  10,
+                           "level":  35
+                       },
+    "HideoutArenaEaterOfWorlds":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Tangled Hideout",
+                                      "act":  1,
+                                      "level":  65
+                                  },
+    "G3_WorldMap":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Act 3",
+                        "act":  3,
+                        "level":  0
+                    },
+    "Sanctum_1_Foyer_1":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "HideoutShaperArena":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Shaped Hideout",
+                               "act":  1,
+                               "level":  20
+                           },
+    "ExpeditionSubArea_Kalguur":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Runic Catacombs",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "MapSpiderWoods":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Spider Woods",
+                           "act":  10,
+                           "level":  65
+                       },
+    "ExpeditionSubArea_Siren":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Hidden Aquifer",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "Sanctum_2_Foyer_2":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "P2_4":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "[DNT] River Barrens",
+                 "act":  6,
+                 "level":  55
+             },
+    "Design_Lite":  {
+                        "waypoint":  true,
+                        "town":  false,
+                        "name":  "Design (Lite)",
+                        "act":  3,
+                        "level":  80
+                    },
+    "G1_6":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Grim Tangle",
+                 "act":  1,
+                 "level":  6
+             },
+    "ExpeditionSubArea_Kalguur_Act3":  {
+                                           "waypoint":  true,
+                                           "town":  false,
+                                           "name":  "Mystic Refuge",
+                                           "act":  3,
+                                           "level":  35
+                                       },
+    "MapHeadland":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Headland",
+                        "act":  10,
+                        "level":  65
+                    },
+    "ExpeditionLogBook_Digsite":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Exhumed Ruins",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "IncursionHub":  {
+                         "waypoint":  true,
+                         "town":  false,
+                         "name":  "Vaal Ruins",
+                         "act":  3,
+                         "level":  2
+                     },
+    "ExpeditionLogBook_Heath":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Moor of Fallen Skies",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "G1_14":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "The Manor Ramparts",
+                  "act":  1,
+                  "level":  14
+              },
+    "G4_11_1b":  {
+                     "waypoint":  true,
+                     "town":  false,
+                     "name":  "Ngakanu",
+                     "act":  4,
+                     "level":  53
+                 },
+    "MapCreek":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Creek",
+                     "act":  10,
+                     "level":  65
+                 },
+    "G1_12":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Freythorn",
+                  "act":  1,
+                  "level":  11
+              },
+    "P1_4":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Holten",
+                 "act":  6,
+                 "level":  55
+             },
+    "MapUniqueMerchant01_Chimeral":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Merchant\u0027s Campsite",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "MapRugosa":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Rugosa",
+                      "act":  10,
+                      "level":  65
+                  },
+    "Programming_Lite":  {
+                             "waypoint":  true,
+                             "town":  false,
+                             "name":  "Programming World (Lite)",
+                             "act":  3,
+                             "level":  80
+                         },
+    "G_login":  {
+                    "waypoint":  false,
+                    "town":  true,
+                    "name":  "Login Scene",
+                    "act":  1,
+                    "level":  0
+                },
+    "Abyss_Depths1":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Abyssal Depths",
+                          "act":  2,
+                          "level":  22
+                      },
+    "MapBazaar":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Bazaar",
+                      "act":  10,
+                      "level":  65
+                  },
+    "MapVaalFoundry":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Molten Vault",
+                           "act":  10,
+                           "level":  65
+                       },
+    "ExpeditionSubArea_OlrothBoss":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Obscure Island",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "HideoutArenaSearingExarch":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Searing Hideout",
+                                      "act":  1,
+                                      "level":  65
+                                  },
+    "MapFortress":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Fortress",
+                        "act":  10,
+                        "level":  65
+                    },
+    "HideoutVeritaniaArena":  {
+                                  "waypoint":  false,
+                                  "town":  false,
+                                  "name":  "Redeemer\u0027s Hideout",
+                                  "act":  1,
+                                  "level":  65
+                              },
+    "MapFrozenFalls":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Frozen Falls",
+                           "act":  10,
+                           "level":  65
+                       },
+    "G1_5":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Red Vale",
+                 "act":  1,
+                 "level":  5
+             },
+    "MapUniqueMerchant03_Beach":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Moment of Zen",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "HideoutCave":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Submerged Hideout",
+                        "act":  1,
+                        "level":  20
+                    },
+    "HideoutTwisted":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Twisted Hideout",
+                           "act":  1,
+                           "level":  65
+                       },
+    "MapVoidReliquary":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "The Reliquary Vault",
+                             "act":  10,
+                             "level":  65
+                         },
+    "MapInferno":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Inferno",
+                       "act":  10,
+                       "level":  65
+                   },
+    "BlackTest":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "All Black",
+                      "act":  1,
+                      "level":  1
+                  },
+    "MapUniqueVault":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Vaults of Kamasa",
+                           "act":  10,
+                           "level":  65
+                       },
+    "G3_4":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Venom Crypts",
+                 "act":  3,
+                 "level":  35
+             },
+    "HideoutVerdant":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Overgrown Apex Hideout",
+                           "act":  1,
+                           "level":  65
+                       },
+    "G2_2":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Traitor\u0027s Passage",
+                 "act":  2,
+                 "level":  19
+             },
+    "MapHideoutLimestone_Claimable":  {
+                                          "waypoint":  false,
+                                          "town":  false,
+                                          "name":  "Limestone Hideout",
+                                          "act":  10,
+                                          "level":  65
+                                      },
+    "MapOasis":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Oasis",
+                     "act":  10,
+                     "level":  65
+                 },
+    "HideoutFelled":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Felled Hideout",
+                          "act":  1,
+                          "level":  65
+                      },
+    "P2_5":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Galai Gates",
+                 "act":  6,
+                 "level":  56
+             },
+    "MapBluff":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Bluff",
+                     "act":  10,
+                     "level":  65
+                 },
+    "HideoutBlankUrban":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Civic Square Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "G4_12":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "[DNT-UNUSED] Precursor Forge",
+                  "act":  4,
+                  "level":  53
+              },
+    "HideoutArenaIncursion":  {
+                                  "waypoint":  false,
+                                  "town":  false,
+                                  "name":  "Red Queen\u0027s Chambers Hideout",
+                                  "act":  1,
+                                  "level":  65
+                              },
+    "MapUniqueMegalith":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "The Ezomyte Megaliths",
+                              "act":  10,
+                              "level":  65
+                          },
+    "HideoutGrinding":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Grinding Hideout",
+                            "act":  1,
+                            "level":  65
+                        },
+    "G4_7":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Shrike Island",
+                 "act":  4,
+                 "level":  46
+             },
+    "MapSevenWaters":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Confluence",
+                           "act":  10,
+                           "level":  65
+                       },
+    "MapChasm":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Chasm",
+                     "act":  10,
+                     "level":  65
+                 },
+    "HideoutHourglass":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Hourglass Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "MapUniqueMerchant01_Sandswept":  {
+                                          "waypoint":  false,
+                                          "town":  false,
+                                          "name":  "Merchant\u0027s Campsite",
+                                          "act":  10,
+                                          "level":  65
+                                      },
+    "G4_9_":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Isle of Decay",
+                  "act":  4,
+                  "level":  53
+              },
+    "MapMothersoul_Female":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "The Matriarch Halls",
+                                 "act":  10,
+                                 "level":  65
+                             },
+    "G4_2_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Kedge Bay",
+                   "act":  4,
+                   "level":  46
+               },
+    "G4_11_1a":  {
+                     "waypoint":  true,
+                     "town":  false,
+                     "name":  "Ngakanu",
+                     "act":  4,
+                     "level":  53
+                 },
+    "MapSteppe":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Steppe",
+                      "act":  10,
+                      "level":  65
+                  },
+    "MapMineshaft":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Mineshaft",
+                         "act":  10,
+                         "level":  65
+                     },
+    "PersonalHideout":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Your Hideout",
+                            "act":  1,
+                            "level":  0
+                        },
+    "G_Endgame_Town":  {
+                           "waypoint":  true,
+                           "town":  true,
+                           "name":  "The Ziggurat Refuge",
+                           "act":  10,
+                           "level":  65
+                       },
+    "P3_1":  {
+                 "waypoint":  false,
+                 "town":  false,
+                 "name":  "Ashen Forest",
+                 "act":  6,
+                 "level":  54
+             },
+    "MapUniqueMerchant02_Crimson":  {
+                                        "waypoint":  false,
+                                        "town":  false,
+                                        "name":  "Merchant\u0027s Campsite",
+                                        "act":  10,
+                                        "level":  65
+                                    },
+    "ExpeditionLogBook_Atoll":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Barren Atoll",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "P2_2":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Pools of Khatal",
+                 "act":  6,
+                 "level":  55
+             },
+    "Design":  {
+                   "waypoint":  false,
+                   "town":  false,
+                   "name":  "Gone Fishing",
+                   "act":  3,
+                   "level":  1
+               },
+    "MapCanyon":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Canyon",
+                      "act":  10,
+                      "level":  65
+                  },
+    "ExpeditionLogBook_Tropical":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Lush Isle",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "HideoutChiyouSpring":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Chiyou Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "HideoutPietyArena":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Morbid Hideout",
+                              "act":  1,
+                              "level":  20
+                          },
+    "ExpeditionSubArea_BlackKnightBoss":  {
+                                              "waypoint":  false,
+                                              "town":  false,
+                                              "name":  "Tomb of the Fallen Knight",
+                                              "act":  10,
+                                              "level":  80
+                                          },
+    "G3_8":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Drowned City",
+                 "act":  3,
+                 "level":  40
+             },
+    "Sanctum_3_Foyer_2":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "NULL":  {
+                 "waypoint":  false,
+                 "town":  false,
+                 "name":  "NULL",
+                 "act":  1,
+                 "level":  0
+             },
+    "MapSwampTower":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Sinking Spire",
+                          "act":  10,
+                          "level":  65
+                      },
+    "G2_12":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Dreadnought",
+                  "act":  2,
+                  "level":  31
+              },
+    "MapVaalVault":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Sealed Vault",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapHiddenGrotto":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Hidden Grotto",
+                            "act":  10,
+                            "level":  65
+                        },
+    "G1_10":  {
+                  "waypoint":  false,
+                  "town":  false,
+                  "name":  "Root Hollow",
+                  "act":  1,
+                  "level":  15
+              },
+    "P3_7":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Cuachic Vault",
+                 "act":  6,
+                 "level":  56
+             },
+    "HideoutBlankBlack":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Black Void Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "MapUberBoss_IronCitadel_Quest":  {
+                                          "waypoint":  false,
+                                          "town":  false,
+                                          "name":  "Western Enigma Chamber",
+                                          "act":  10,
+                                          "level":  75
+                                      },
+    "Sanctum_2":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Trial of the Sekhemas",
+                      "act":  2,
+                      "level":  22
+                  },
+    "HideoutKitavaArenaAct10":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Ravenous Hideout",
+                                    "act":  1,
+                                    "level":  20
+                                },
+    "MapSunTemple":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Sun Temple",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapTrenches":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Trenches",
+                        "act":  10,
+                        "level":  65
+                    },
+    "BossRush_Area2":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Boss Rush Area 2",
+                           "act":  10,
+                           "level":  35
+                       },
+    "ExpeditionLogBook_Reef":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Bleached Shoals",
+                                   "act":  10,
+                                   "level":  65
+                               },
+    "ExpeditionSubArea_Laboratory":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Decayed Laboratory",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "P1_1":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Scorched Farmlands",
+                 "act":  6,
+                 "level":  54
+             },
+    "MapOrnateChambers":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Ornate Chambers",
+                              "act":  10,
+                              "level":  65
+                          },
+    "Sanctum_1_Foyer_3":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "HideoutLight":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Timekeeper\u0027s Hideout",
+                         "act":  1,
+                         "level":  65
+                     },
+    "G3_10":  {
+                  "waypoint":  false,
+                  "town":  false,
+                  "name":  "The Trial of Chaos",
+                  "act":  3,
+                  "level":  38
+              },
+    "G2_8a":  {
+                  "waypoint":  false,
+                  "town":  false,
+                  "name":  "Deshar",
+                  "act":  2,
+                  "level":  28
+              },
+    "MapWillow":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Willow",
+                      "act":  10,
+                      "level":  65
+                  },
+    "MapDeforestation":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Deforestation",
+                             "act":  10,
+                             "level":  65
+                         },
+    "MapTerrace":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Terrace",
+                       "act":  10,
+                       "level":  65
+                   },
+    "MapKarst":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Karst",
+                     "act":  10,
+                     "level":  65
+                 },
+    "Sanctum_4_Foyer_1":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "HideoutPrison":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Prison Hideout",
+                          "act":  1,
+                          "level":  65
+                      },
+    "MapUberBoss_Ritual":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Caer Tarth",
+                               "act":  10,
+                               "level":  79
+                           },
+    "MapPenitentiary":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Penitentiary",
+                            "act":  10,
+                            "level":  65
+                        },
+    "ExpeditionLogBook_Basin":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Stagnant Basin",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "HideoutCanopy":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Canopy Hideout",
+                          "act":  1,
+                          "level":  65
+                      },
+    "MapUniqueMerchant03_Raft":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "Moment of Zen",
+                                     "act":  10,
+                                     "level":  65
+                                 },
+    "MapUberBoss_JadeCitadel":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "The Jade Isles",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "P1_6":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Holten Estate",
+                 "act":  6,
+                 "level":  56
+             },
+    "G3_1":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Sandswept Marsh",
+                 "act":  3,
+                 "level":  33
+             },
+    "MapRazedFields":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Razed Fields",
+                           "act":  10,
+                           "level":  65
+                       },
+    "HideoutRitualLeague":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Ritualist\u0027s Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "HideoutDark":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Ghost-lit Graveyard Hideout",
+                        "act":  1,
+                        "level":  65
+                    },
+    "G2_4_3":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Buried Shrines",
+                   "act":  2,
+                   "level":  23
+               },
+    "EndgameDoodad_MeteorCrater":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "The Fallen Star",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "G1_13_1":  {
+                    "waypoint":  true,
+                    "town":  false,
+                    "name":  "Ogham Farmlands",
+                    "act":  1,
+                    "level":  12
+                },
+    "G3_2_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Infested Barrens",
+                   "act":  3,
+                   "level":  35
+               },
+    "Abyss_Depths3":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Abyssal Depths",
+                          "act":  2,
+                          "level":  22
+                      },
+    "MapUberBoss_Delirium":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "The Withered Willow",
+                                 "act":  10,
+                                 "level":  79
+                             },
+    "MapHideoutFelled_Claimable":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Felled Hideout",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "HideoutSunkenPalace":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Sunken Palace Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "MapBastille":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Bastille",
+                        "act":  10,
+                        "level":  65
+                    },
+    "G1_7":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Cemetery of the Eternals",
+                 "act":  1,
+                 "level":  7
+             },
+    "MapHideoutCanal_Claimable":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Canal Hideout",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "HideoutSunspire":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Sunspire Hideout",
+                            "act":  1,
+                            "level":  65
+                        },
+    "MapVaalFactory":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "The Assembly",
+                           "act":  10,
+                           "level":  65
+                       },
+    "G3_11":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Apex of Filth",
+                  "act":  3,
+                  "level":  41
+              },
+    "HideoutSynthesisHub":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Synthesis Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "MapWaywardIsle":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Wayward Isle",
+                           "act":  10,
+                           "level":  65
+                       },
+    "Abyss_Boss2":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Dark Domain",
+                        "act":  10,
+                        "level":  79
+                    },
+    "MapMothersoul_Male":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "The Patriarch Halls",
+                               "act":  10,
+                               "level":  65
+                           },
+    "P3_5":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Kriar Peaks",
+                 "act":  6,
+                 "level":  56
+             },
+    "MapUniqueReactor_02":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Ancient Gateway",
+                                "act":  10,
+                                "level":  65
+                            },
+    "P2_3":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Sel Khari Sanctuary ",
+                 "act":  6,
+                 "level":  55
+             },
+    "MapCenotes":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Cenotes",
+                       "act":  10,
+                       "level":  65
+                   },
+    "G4_14":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Brinerot Cove",
+                  "act":  4,
+                  "level":  53
+              },
+    "HideoutArenaGraveyardTrio":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Entombed Hideout",
+                                      "act":  1,
+                                      "level":  65
+                                  },
+    "MapUberBoss_IronCitadel":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "The Iron Citadel",
+                                    "act":  10,
+                                    "level":  80
+                                },
+    "Delirium_Act2Reveal":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Garukhan\u0027s Tomb",
+                                "act":  10,
+                                "level":  65
+                            },
+    "G1_WorldMap":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Act 1",
+                        "act":  1,
+                        "level":  0
+                    },
+    "G1_1":  {
+                 "waypoint":  false,
+                 "town":  false,
+                 "name":  "The Riverbank",
+                 "act":  1,
+                 "level":  1
+             },
+    "HideoutHasina":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Tavern Hideout",
+                          "act":  1,
+                          "level":  65
+                      },
+    "G3_17":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "The Black Chambers",
+                  "act":  3,
+                  "level":  45
+              },
+    "MapSavanna":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Savannah",
+                       "act":  10,
+                       "level":  65
+                   },
+    "MapHideoutShoreline_Claimable":  {
+                                          "waypoint":  false,
+                                          "town":  false,
+                                          "name":  "Shoreline Hideout",
+                                          "act":  4,
+                                          "level":  46
+                                      },
+    "G3_12":  {
+                  "waypoint":  false,
+                  "town":  false,
+                  "name":  "Temple of Kopec",
+                  "act":  3,
+                  "level":  42
+              },
+    "MapRiverhold":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Riverhold",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapUniqueMerchant04_PirateShip":  {
+                                           "waypoint":  false,
+                                           "town":  false,
+                                           "name":  "The Voyage",
+                                           "act":  10,
+                                           "level":  65
+                                       },
+    "ExpeditionLogBook_Prairie":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Grazed Prairie",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "HideoutBlankSea":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "All at Sea Hideout",
+                            "act":  1,
+                            "level":  65
+                        },
+    "G3_6_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Jiquani\u0027s Sanctum",
+                   "act":  3,
+                   "level":  38
+               },
+    "G2_3s":  {
+                  "waypoint":  false,
+                  "town":  false,
+                  "name":  "The Halani Gates",
+                  "act":  2,
+                  "level":  20
+              },
+    "MapArroyo":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Arroyo",
+                      "act":  10,
+                      "level":  65
+                  },
+    "HideoutBeaconOfSalvation":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "Beacon of Salvation Hideout",
+                                     "act":  1,
+                                     "level":  65
+                                 },
+    "ExpeditionSubArea_MedvedBoss":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Sprawling Jungle",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "G2_1":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Vastiri Outskirts",
+                 "act":  2,
+                 "level":  16
+             },
+    "Abyss_Intro":  {
+                        "waypoint":  true,
+                        "town":  false,
+                        "name":  "Lightless Passage",
+                        "act":  2,
+                        "level":  22
+                    },
+    "MapReservoir":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Reservoir",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapRustbowl":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Rustbowl",
+                        "act":  10,
+                        "level":  65
+                    },
+    "MapSteamingSprings":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Steaming Springs",
+                               "act":  10,
+                               "level":  65
+                           },
+    "G4_13":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Plunder\u0027s Point",
+                  "act":  4,
+                  "level":  53
+              },
+    "MapUberBoss_Divinity":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "The Origin Tower",
+                                 "act":  10,
+                                 "level":  79
+                             },
+    "MapCaldera":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Caldera",
+                       "act":  10,
+                       "level":  65
+                   },
+    "Sanctum_3_Foyer_1":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "MapLeaguePortal":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "The Realmgate",
+                            "act":  10,
+                            "level":  65
+                        },
+    "MapPrecursorTowerForest":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Precursor Tower",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "G4_6":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "[DNT-UNUSED] Vahi Loa",
+                 "act":  4,
+                 "level":  45
+             },
+    "MapSwarm":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Swarm",
+                     "act":  10,
+                     "level":  65
+                 },
+    "MapGrimhaven":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Grimhaven",
+                         "act":  10,
+                         "level":  65
+                     },
+    "ExpeditionSubArea_Sanctuary":  {
+                                        "waypoint":  false,
+                                        "town":  false,
+                                        "name":  "Tranquil Chamber",
+                                        "act":  10,
+                                        "level":  65
+                                    },
+    "MapHive":  {
+                    "waypoint":  false,
+                    "town":  false,
+                    "name":  "Hive",
+                    "act":  10,
+                    "level":  65
+                },
+    "MapHideoutFarmlands_Claimable":  {
+                                          "waypoint":  false,
+                                          "town":  false,
+                                          "name":  "Farmlands Hideout",
+                                          "act":  10,
+                                          "level":  65
+                                      },
+    "IncursionHubEndgame":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Vaal Ruins",
+                                "act":  10,
+                                "level":  65
+                            },
+    "HideoutDarkwood":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Darkwood Hideout",
+                            "act":  1,
+                            "level":  65
+                        },
+    "MapDecay":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Decay",
+                     "act":  10,
+                     "level":  65
+                 },
+    "G2_10_2":  {
+                    "waypoint":  true,
+                    "town":  false,
+                    "name":  "Mawdun Mine",
+                    "act":  2,
+                    "level":  18
+                },
+    "MapSulphuricCaverns":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Sulphuric Caverns",
+                                "act":  10,
+                                "level":  65
+                            },
+    "MapCrimsonShores":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Crimson Shores",
+                             "act":  10,
+                             "level":  65
+                         },
+    "HideoutVampireManor":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Bloodreaver Manor Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "Sanctum_4":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Trial of the Sekhemas",
+                      "act":  2,
+                      "level":  22
+                  },
+    "HideoutArenaMaven":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Crucible Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "ExpeditionSubArea_Fissure":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Stale Crevice",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "MapUniqueFreight_":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Freight",
+                              "act":  10,
+                              "level":  65
+                          },
+    "HideoutPillarsOfArun":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "Towering Hideout",
+                                 "act":  1,
+                                 "level":  20
+                             },
+    "G4_5_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Solitary Confinement",
+                   "act":  4,
+                   "level":  47
+               },
+    "MapBloodwood":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Bloodwood",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapCavernCity":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Sacred Reservoir",
+                          "act":  10,
+                          "level":  65
+                      },
+    "MapAzmerianRanges":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Azmerian Ranges",
+                              "act":  10,
+                              "level":  65
+                          },
+    "G2_9_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Path of Mourning",
+                   "act":  2,
+                   "level":  29
+               },
+    "MapDeserted":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Deserted",
+                        "act":  10,
+                        "level":  65
+                    },
+    "Delirium_Act1Town_Quest":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Simulacrum of Delusion",
+                                    "act":  10,
+                                    "level":  80
+                                },
+    "HideoutShipgraveyard":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "Shipwreck Hideout",
+                                 "act":  1,
+                                 "level":  20
+                             },
+    "G3_9":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Molten Vault",
+                 "act":  3,
+                 "level":  41
+             },
+    "Sanctum_3_Foyer_3":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "ExpeditionLogBook_Peninsula":  {
+                                        "waypoint":  false,
+                                        "town":  false,
+                                        "name":  "Craggy Peninsula",
+                                        "act":  10,
+                                        "level":  65
+                                    },
+    "G2_13":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Trial of the Sekhemas",
+                  "act":  2,
+                  "level":  22
+              },
+    "G2_5_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Mastodon Badlands",
+                   "act":  2,
+                   "level":  21
+               },
+    "Sanctum_1":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Trial of the Sekhemas",
+                      "act":  2,
+                      "level":  22
+                  },
+    "G3_10_Airlock":  {
+                          "waypoint":  true,
+                          "town":  false,
+                          "name":  "The Temple of Chaos",
+                          "act":  3,
+                          "level":  38
+                      },
+    "G4_1_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Isle of Kin",
+                   "act":  4,
+                   "level":  46
+               },
+    "P3_6":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Etched Ravine",
+                 "act":  6,
+                 "level":  56
+             },
+    "HideoutDreadnought":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "The Dreadnought Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "MapUniqueReactor_04":  {
+                                "waypoint":  true,
+                                "town":  false,
+                                "name":  "Site of the Chosen",
+                                "act":  10,
+                                "level":  65
+                            },
+    "Sanctum_3":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Trial of the Sekhemas",
+                      "act":  2,
+                      "level":  22
+                  },
+    "MapAridPlains":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Arid Plains",
+                          "act":  10,
+                          "level":  65
+                      },
+    "HideoutBlankDirt":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Eternal Wasteland Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "ExpeditionLogBook_Gully":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Sloughed Gully",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "MapRockpools":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Rockpools",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapSinkhole":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Sinkhole",
+                        "act":  10,
+                        "level":  65
+                    },
+    "CurrentTown":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Current Town",
+                        "act":  1,
+                        "level":  0
+                    },
+    "G3_town":  {
+                    "waypoint":  true,
+                    "town":  true,
+                    "name":  "Ziggurat Encampment",
+                    "act":  3,
+                    "level":  44
+                },
+    "MapPrecursorTowerDesert":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Precursor Tower",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "MapSlick":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Slick",
+                     "act":  10,
+                     "level":  65
+                 },
+    "G3_7":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Azak Bog",
+                 "act":  3,
+                 "level":  40
+             },
+    "MapMarrow":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Marrow",
+                      "act":  10,
+                      "level":  65
+                  },
+    "MapMesa":  {
+                    "waypoint":  false,
+                    "town":  false,
+                    "name":  "Mesa",
+                    "act":  10,
+                    "level":  65
+                },
+    "BossRush_Area3":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Boss Rush Area 3",
+                           "act":  10,
+                           "level":  35
+                       },
+    "HideoutThaumaturgy":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Thaumaturgical Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "IncursionTemplePresent":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Lost Temple",
+                                   "act":  1,
+                                   "level":  65
+                               },
+    "HideoutBlankCity":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Urban Sprawl Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "G2_9_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "The Spires of Deshar",
+                   "act":  2,
+                   "level":  30
+               },
+    "P3_Town":  {
+                    "waypoint":  true,
+                    "town":  true,
+                    "name":  "The Glade",
+                    "act":  6,
+                    "level":  64
+                },
+    "G1_9":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Tomb of the Consort",
+                 "act":  1,
+                 "level":  8
+             },
+    "MapLoftySummit":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Lofty Summit",
+                           "act":  10,
+                           "level":  65
+                       },
+    "ExpeditionSubArea_Kalguur_Act4":  {
+                                           "waypoint":  false,
+                                           "town":  false,
+                                           "name":  "Deserted Post",
+                                           "act":  4,
+                                           "level":  53
+                                       },
+    "G4_4_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Eye of Hinekora",
+                   "act":  4,
+                   "level":  46
+               },
+    "MapUberBoss_FallenStar":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Ruins of Kingsmarch",
+                                   "act":  10,
+                                   "level":  79
+                               },
+    "ExpeditionLogBook_Tundra":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "Frigid Bluffs",
+                                     "act":  10,
+                                     "level":  65
+                                 },
+    "ChayulaLeague_Tower":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Hive Fortress",
+                                "act":  10,
+                                "level":  65
+                            },
+    "CharacterSelect":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Character Select",
+                            "act":  1,
+                            "level":  0
+                        },
+    "G4_3_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Whakapanu Island",
+                   "act":  4,
+                   "level":  46
+               },
+    "G2_6":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Valley of the Titans",
+                 "act":  2,
+                 "level":  21
+             },
+    "MapAlpineRidge":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Alpine Ridge",
+                           "act":  10,
+                           "level":  65
+                       },
+    "HideoutDominusArena":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Indomitable Hideout",
+                                "act":  1,
+                                "level":  20
+                            },
+    "MapPrecursorTowerSwamp":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Precursor Tower",
+                                   "act":  10,
+                                   "level":  65
+                               },
+    "MapPrecursorTowerMountain":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "Precursor Tower",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "MapWetlands":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Wetlands",
+                        "act":  10,
+                        "level":  65
+                    },
+    "HideoutArenaElder":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Void Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "MapMortuary":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Mortuary",
+                        "act":  10,
+                        "level":  65
+                    },
+    "G1_13_2":  {
+                    "waypoint":  true,
+                    "town":  false,
+                    "name":  "Ogham Village",
+                    "act":  1,
+                    "level":  13
+                },
+    "MapGreenhouse":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Greenhouse",
+                          "act":  10,
+                          "level":  65
+                      },
+    "Abyss_Depths2":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Abyssal Depths",
+                          "act":  2,
+                          "level":  22
+                      },
+    "MapUniqueMerchant02_Farmland":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Merchant\u0027s Campsite",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "Delirium_VastiriOutskirts":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "[DNT-UNUSED] Vastiri Outpost",
+                                      "act":  10,
+                                      "level":  65
+                                  },
+    "HideoutBlankGrass":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Vast Plains Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "G2_town":  {
+                    "waypoint":  true,
+                    "town":  true,
+                    "name":  "The Ardura Caravan",
+                    "act":  2,
+                    "level":  32
+                },
+    "HideoutBlankJungle":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Jungle Clearing Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "G1_8":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Mausoleum of the Praetor",
+                 "act":  1,
+                 "level":  8
+             },
+    "MapFlotsam":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Flotsam",
+                       "act":  10,
+                       "level":  65
+                   },
+    "TN_WorldMap":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Atlas",
+                        "act":  10,
+                        "level":  0
+                    },
+    "Abyss_Boss1":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Lightless Void",
+                        "act":  10,
+                        "level":  79
+                    },
+    "G1_11":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Hunting Grounds",
+                  "act":  1,
+                  "level":  10
+              },
+    "G4_8b":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Arastas",
+                  "act":  4,
+                  "level":  52
+              },
+    "G2_7":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Titan Grotto",
+                 "act":  2,
+                 "level":  22
+             },
+    "MapPlantation":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Plantation",
+                          "act":  10,
+                          "level":  65
+                      },
+    "ExpeditionSubArea_UhtredBoss":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Secluded Temple",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "MapStronghold":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Stronghold",
+                          "act":  10,
+                          "level":  65
+                      },
+    "MapUniqueReactor_01":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Western Gateway",
+                                "act":  10,
+                                "level":  65
+                            },
+    "HideoutFarmlands":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Farmlands Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "PrecursorVault":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Precursor Vault",
+                           "act":  10,
+                           "level":  65
+                       },
+    "MapSanctuary":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Sanctuary",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapMire":  {
+                    "waypoint":  false,
+                    "town":  false,
+                    "name":  "Mire",
+                    "act":  10,
+                    "level":  65
+                },
+    "ExpeditionSubArea_Catacomb":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Derelict Catacombs",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "G4_town":  {
+                    "waypoint":  true,
+                    "town":  true,
+                    "name":  "Kingsmarch",
+                    "act":  4,
+                    "level":  53
+                },
+    "MapOvergrown":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Overgrown",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapUberBoss_Monolith":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "The Burning Monolith",
+                                 "act":  10,
+                                 "level":  74
+                             },
+    "MapPit":  {
+                   "waypoint":  false,
+                   "town":  false,
+                   "name":  "Pit",
+                   "act":  10,
+                   "level":  65
+               },
+    "MapOrbalasCrossing":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Orbala\u0027s Crossing",
+                               "act":  10,
+                               "level":  65
+                           },
+    "G1_2":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Clearfell",
+                 "act":  1,
+                 "level":  2
+             },
+    "G3_16":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Aggorat",
+                  "act":  3,
+                  "level":  44
+              },
+    "G2_8":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Deshar",
+                 "act":  2,
+                 "level":  28
+             },
+    "MapUniqueCastaway":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Castaway",
+                              "act":  10,
+                              "level":  65
+                          },
+    "BreachDomain_01":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Twisted Domain",
+                            "act":  10,
+                            "level":  79
+                        },
+    "HideoutMonolith":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Monolith Hideout",
+                            "act":  1,
+                            "level":  65
+                        },
+    "G4_2_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Journey\u0027s End",
+                   "act":  4,
+                   "level":  47
+               },
+    "HideoutLimestone":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Limestone Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "ChayulaLeague_TowerBoss":  {
+                                    "waypoint":  false,
+                                    "town":  false,
+                                    "name":  "Hive Colony",
+                                    "act":  10,
+                                    "level":  65
+                                },
+    "Map_HildaCampsite":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Hilda\u0027s Campsite",
+                              "act":  10,
+                              "level":  65
+                          },
+    "P2_6":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Qimah",
+                 "act":  6,
+                 "level":  56
+             },
+    "ExpeditionSubArea_Vein":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Gilded Deposit",
+                                   "act":  10,
+                                   "level":  65
+                               },
+    "HideoutArenaBlackStar_":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Polaric Hideout",
+                                   "act":  1,
+                                   "level":  65
+                               },
+    "ExpeditionSubArea_Precursor":  {
+                                        "waypoint":  false,
+                                        "town":  false,
+                                        "name":  "Ancient Cache",
+                                        "act":  10,
+                                        "level":  65
+                                    },
+    "ExpeditionSubArea_VoranaBoss":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Mournful Cliffside",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "MapUniqueSelenite":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "The Silent Cave",
+                              "act":  10,
+                              "level":  65
+                          },
+    "Delirium_Act1Town":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Simulacrum of Delusion",
+                              "act":  10,
+                              "level":  80
+                          },
+    "HideoutOlrothArena":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Ancestral Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "HideoutTencentApocalypse":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "Cataclysmic Hideout",
+                                     "act":  1,
+                                     "level":  65
+                                 },
+    "MapEpitaph":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Epitaph",
+                       "act":  10,
+                       "level":  65
+                   },
+    "HideoutColossalTitan":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "Titan Apex Hideout",
+                                 "act":  1,
+                                 "level":  65
+                             },
+    "ExpeditionSubArea_Pond":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Famed Pond",
+                                   "act":  10,
+                                   "level":  65
+                               },
+    "G6_WorldMap":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Interlude",
+                        "act":  6,
+                        "level":  0
+                    },
+    "GuildHideout__":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "Your Guild Hideout",
+                           "act":  1,
+                           "level":  0
+                       },
+    "RitualLeagueBoss":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Crux of Nothingness",
+                             "act":  10,
+                             "level":  80
+                         },
+    "G2_11":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "The Dreadnought\u0027s Wake",
+                  "act":  2,
+                  "level":  30
+              },
+    "HideoutShipwreck":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Kraken\u0027s Cove Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "HideoutBlankClouds":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Boundless Skies Hideout",
+                               "act":  1,
+                               "level":  65
+                           },
+    "P3_4":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Howling Caves",
+                 "act":  6,
+                 "level":  55
+             },
+    "G4_WorldMap":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Act 4",
+                        "act":  4,
+                        "level":  0
+                    },
+    "MapPrecursorTowerGrass":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Precursor Tower",
+                                   "act":  10,
+                                   "level":  65
+                               },
+    "HideoutBlankDesert2":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Vastiri Plains Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "HideoutBlankVolcanicCave":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "Volcanic Cave Hideout",
+                                     "act":  1,
+                                     "level":  65
+                                 },
+    "MapHideoutShrine_Claimable":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Shrine Hideout",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "P1_2":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Stones of Serle",
+                 "act":  6,
+                 "level":  54
+             },
+    "G3_5":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Chimeral Wetlands",
+                 "act":  3,
+                 "level":  36
+             },
+    "HideoutBlankSnow":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Glacial Expanse Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "HideoutDaressoArena":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Champion\u0027s Hideout",
+                                "act":  1,
+                                "level":  20
+                            },
+    "HideoutArenaKulemak":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Black Cathedral Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "HideoutArenaInfiniteHunger":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Seething Hideout",
+                                       "act":  1,
+                                       "level":  65
+                                   },
+    "G4_11_2":  {
+                    "waypoint":  true,
+                    "town":  false,
+                    "name":  "Heart of the Tribe",
+                    "act":  4,
+                    "level":  53
+                },
+    "G2_5_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "The Bone Pits",
+                   "act":  2,
+                   "level":  22
+               },
+    "EndgameDoodad_BeastGroundZero":  {
+                                          "waypoint":  false,
+                                          "town":  false,
+                                          "name":  "The Chained Beast",
+                                          "act":  10,
+                                          "level":  65
+                                      },
+    "MapUniqueMerchant03_Tropical":  {
+                                         "waypoint":  false,
+                                         "town":  false,
+                                         "name":  "Moment of Zen",
+                                         "act":  10,
+                                         "level":  65
+                                     },
+    "MapMothersoul_Male_Quest":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "The Patriarch Halls",
+                                     "act":  10,
+                                     "level":  65
+                                 },
+    "MapPrecursorTower":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Precursor Tower",
+                              "act":  10,
+                              "level":  65
+                          },
+    "Sanctum_4_Foyer_2":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "MapGeode":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Geode",
+                     "act":  10,
+                     "level":  65
+                 },
+    "MapBurialBog":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Burial Bog",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapUberBoss_CopperCitadel":  {
+                                      "waypoint":  false,
+                                      "town":  false,
+                                      "name":  "The Copper Citadel",
+                                      "act":  10,
+                                      "level":  80
+                                  },
+    "ExpeditionSubArea_Cavern":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "Smuggler\u0027s Den",
+                                     "act":  10,
+                                     "level":  65
+                                 },
+    "MapForge":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Forge",
+                     "act":  10,
+                     "level":  65
+                 },
+    "HideoutAtziriArena":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Corrupted Hideout",
+                               "act":  1,
+                               "level":  20
+                           },
+    "MapDerelictMansion":  {
+                               "waypoint":  false,
+                               "town":  false,
+                               "name":  "Derelict Mansion",
+                               "act":  10,
+                               "level":  65
+                           },
+    "HideoutSacrifice":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Sacrificial Apex Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "P1_3":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Blackwood",
+                 "act":  6,
+                 "level":  55
+             },
+    "G2_4_1":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Keth",
+                   "act":  2,
+                   "level":  21
+               },
+    "KaruiBossShowcase":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Karui Boss Showcase",
+                              "act":  4,
+                              "level":  30
+                          },
+    "ExpeditionSubArea_Lair":  {
+                                   "waypoint":  false,
+                                   "town":  false,
+                                   "name":  "Rancid Nest",
+                                   "act":  10,
+                                   "level":  65
+                               },
+    "MapCrypt":  {
+                     "waypoint":  false,
+                     "town":  false,
+                     "name":  "Crypt",
+                     "act":  10,
+                     "level":  65
+                 },
+    "HideoutDoomguard":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Doomguard Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "Sanctum_2_Foyer_3":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "Delirium_HungerBoss":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Loathsome Mire",
+                                "act":  10,
+                                "level":  80
+                            },
+    "MapRiverside":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Riverside",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapSump":  {
+                    "waypoint":  false,
+                    "town":  false,
+                    "name":  "Sump",
+                    "act":  10,
+                    "level":  65
+                },
+    "Sanctum_4_Foyer_3":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Trial of the Sekhemas",
+                              "act":  2,
+                              "level":  22
+                          },
+    "HideoutRacetrack":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Vastiri Racecourse Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "HideoutSummit":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Plateau of the Gods Hideout",
+                          "act":  1,
+                          "level":  65
+                      },
+    "ChayulaLeague":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Monastery of the Keepers",
+                          "act":  10,
+                          "level":  65
+                      },
+    "HideoutTranscendent":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Transcendent Hideout",
+                                "act":  1,
+                                "level":  65
+                            },
+    "MapUniqueUntaintedParadise":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Untainted Paradise",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "HideoutChaos":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Chaos Hideout",
+                         "act":  1,
+                         "level":  65
+                     },
+    "G4_3_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Singing Caverns",
+                   "act":  4,
+                   "level":  47
+               },
+    "P1_5":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Wolvenhold",
+                 "act":  6,
+                 "level":  56
+             },
+    "HideoutBlankAbyss":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Infinite Abyss Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "Abyss_Pinnacle":  {
+                           "waypoint":  false,
+                           "town":  false,
+                           "name":  "The Well of Souls",
+                           "act":  10,
+                           "level":  79
+                       },
+    "ExpeditionLeagueBoss":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "Kalguuran Tomb",
+                                 "act":  10,
+                                 "level":  80
+                             },
+    "DruidTrailer":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Druid Trailer",
+                         "act":  1,
+                         "level":  30
+                     },
+    "G2_3a":  {
+                  "waypoint":  false,
+                  "town":  false,
+                  "name":  "The Halani Gates",
+                  "act":  2,
+                  "level":  20
+              },
+    "MapRupture":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Rupture",
+                       "act":  10,
+                       "level":  65
+                   },
+    "G3_2_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "The Matlan Waterways",
+                   "act":  3,
+                   "level":  39
+               },
+    "MapUniqueReactor_03":  {
+                                "waypoint":  false,
+                                "town":  false,
+                                "name":  "Eastern Gateway",
+                                "act":  10,
+                                "level":  65
+                            },
+    "HideoutShrine":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Shrine Hideout",
+                          "act":  1,
+                          "level":  65
+                      },
+    "MapWoodland":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Woodland",
+                        "act":  10,
+                        "level":  65
+                    },
+    "MapMothersoul_Female_Quest":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "The Matriarch Halls",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "MapCliffside":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Cliffside",
+                         "act":  10,
+                         "level":  65
+                     },
+    "G1_4":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Grelwood",
+                 "act":  1,
+                 "level":  4
+             },
+    "G2_WorldMap":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Act 2",
+                        "act":  2,
+                        "level":  0
+                    },
+    "ExpeditionSubArea_Kalguur_Act1":  {
+                                           "waypoint":  false,
+                                           "town":  false,
+                                           "name":  "Lost Catacombs",
+                                           "act":  1,
+                                           "level":  12
+                                       },
+    "Delirium_Act3Town":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Sunken Pyramid",
+                              "act":  10,
+                              "level":  65
+                          },
+    "G3_14":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Utzaal",
+                  "act":  3,
+                  "level":  43
+              },
+    "HideoutBlankCrypt":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Mausoleum Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "MapExcavation":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Digsite",
+                          "act":  10,
+                          "level":  65
+                      },
+    "HideoutBlankMountain":  {
+                                 "waypoint":  false,
+                                 "town":  false,
+                                 "name":  "Alpine Plateau Hideout",
+                                 "act":  1,
+                                 "level":  65
+                             },
+    "MapUberBoss_StoneCitadel":  {
+                                     "waypoint":  false,
+                                     "town":  false,
+                                     "name":  "The Stone Citadel",
+                                     "act":  10,
+                                     "level":  80
+                                 },
+    "MapIceCave":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Ice Cave",
+                       "act":  10,
+                       "level":  65
+                   },
+    "G2_3":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "The Halani Gates",
+                 "act":  2,
+                 "level":  20
+             },
+    "G1_15":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Ogham Manor",
+                  "act":  1,
+                  "level":  15
+              },
+    "MapVaalCity":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Vaal City",
+                        "act":  10,
+                        "level":  65
+                    },
+    "G3_3":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Jungle Ruins",
+                 "act":  3,
+                 "level":  34
+             },
+    "P2_Town":  {
+                    "waypoint":  true,
+                    "town":  true,
+                    "name":  "The Khari Bazaar",
+                    "act":  6,
+                    "level":  64
+                },
+    "MapAugury":  {
+                      "waypoint":  false,
+                      "town":  false,
+                      "name":  "Augury",
+                      "act":  10,
+                      "level":  65
+                  },
+    "P2_1":  {
+                 "waypoint":  false,
+                 "town":  false,
+                 "name":  "The Khari Crossing",
+                 "act":  6,
+                 "level":  54
+             },
+    "Programming":  {
+                        "waypoint":  true,
+                        "town":  false,
+                        "name":  "Programming World",
+                        "act":  3,
+                        "level":  80
+                    },
+    "Abyss_Hub":  {
+                      "waypoint":  true,
+                      "town":  false,
+                      "name":  "The Well of Souls",
+                      "act":  2,
+                      "level":  22
+                  },
+    "G4_4_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "Halls of the Dead",
+                   "act":  4,
+                   "level":  47
+               },
+    "MapUberBoss_StoneCitadel_Quest":  {
+                                           "waypoint":  false,
+                                           "town":  false,
+                                           "name":  "Eastern Enigma Chamber",
+                                           "act":  10,
+                                           "level":  80
+                                       },
+    "HideoutArcaneIsle":  {
+                              "waypoint":  false,
+                              "town":  false,
+                              "name":  "Arcane Isle Hideout",
+                              "act":  1,
+                              "level":  65
+                          },
+    "G1_town":  {
+                    "waypoint":  true,
+                    "town":  true,
+                    "name":  "Clearfell Encampment",
+                    "act":  1,
+                    "level":  15
+                },
+    "MapSandspit":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Sandspit",
+                        "act":  10,
+                        "level":  65
+                    },
+    "MapLostTowers":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Lost Towers",
+                          "act":  10,
+                          "level":  65
+                      },
+    "MapMezzanine":  {
+                         "waypoint":  false,
+                         "town":  false,
+                         "name":  "Mezzanine",
+                         "act":  10,
+                         "level":  65
+                     },
+    "MapOutlands":  {
+                        "waypoint":  false,
+                        "town":  false,
+                        "name":  "Outlands",
+                        "act":  10,
+                        "level":  65
+                    },
+    "G1_3":  {
+                 "waypoint":  false,
+                 "town":  false,
+                 "name":  "Mud Burrow",
+                 "act":  1,
+                 "level":  3
+             },
+    "G4_8a":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Arastas",
+                  "act":  4,
+                  "level":  52
+              },
+    "G3_15":  {
+                  "waypoint":  true,
+                  "town":  false,
+                  "name":  "Library of Kamasa",
+                  "act":  3,
+                  "level":  43
+              },
+    "MapSeepage":  {
+                       "waypoint":  false,
+                       "town":  false,
+                       "name":  "Seepage",
+                       "act":  10,
+                       "level":  65
+                   },
+    "KaruiShowcase":  {
+                          "waypoint":  false,
+                          "town":  false,
+                          "name":  "Heart of the Tribe",
+                          "act":  4,
+                          "level":  30
+                      },
+    "HideoutShoreline":  {
+                             "waypoint":  false,
+                             "town":  false,
+                             "name":  "Shoreline Hideout",
+                             "act":  1,
+                             "level":  65
+                         },
+    "G2_4_2":  {
+                   "waypoint":  true,
+                   "town":  false,
+                   "name":  "The Lost City",
+                   "act":  2,
+                   "level":  22
+               },
+    "P3_2":  {
+                 "waypoint":  true,
+                 "town":  false,
+                 "name":  "Kriar Village",
+                 "act":  6,
+                 "level":  54
+             },
+    "MapHideoutPrison_Claimable":  {
+                                       "waypoint":  false,
+                                       "town":  false,
+                                       "name":  "Prison Hideout",
+                                       "act":  10,
+                                       "level":  65
+                                   },
+    "IncursionTemple":  {
+                            "waypoint":  false,
+                            "town":  false,
+                            "name":  "Atziri\u0027s Temple",
+                            "act":  3,
+                            "level":  46
+                        }
+}

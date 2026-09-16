@@ -1,0 +1,51 @@
+# v0.8.0 世界地图与维护功能审计
+
+## 概述
+
+审查范围为新增 `world-map/`、Electron 地图会话与覆盖层、缓存清理、设置链接及每小时调度的差异。用户授权迁移及只读检查本机 POE2 国际服；没有写入游戏内存、注入或规避反作弊的授权，也没有实现这些能力。地图模块默认关闭，首次确认风险后才启动独立子进程。价格、DAT、汉化和还原核心保持不变。
+
+针对性源码扫描、依赖审计、单元测试、真实 Electron 和打包 EXE 验证没有发现尚未解决的发布阻断项。这不是“无漏洞”保证，也不意味着读内存不会被封号。报告采用普通代码审计结构，`flavor = null`。
+
+## 证据与修复
+
+| Evidence | Finding | Path / 处置 |
+| --- | --- | --- |
+| E01：`world-map-audit.json`，只读 API 扫描与人工权限核查 | 仅使用查询及读取权限；未迁入注入、内存写入或输入模拟 API | `GameReader.cs`、`ClientGate.cs`；绑定所选目录与国际服正向标识 |
+| E02：`world-map-ui-offline.json`、发行包同项验证 | IPC 校验来源主窗口及 mainFrame；通用设置不能伪造地图授权；首次取消不启动 | `index.ts`、`WorldMapPage.vue`；应用内风险弹窗、必须勾选确认、主进程一次性限时令牌；已授权后重启恢复最后手动开关 |
+| E03：覆盖层实测及 `world-map-overlay-packaged.json` | 原来名称、连接线默认关闭；已调整。真实游戏中有名称绘制与连线，窗口置顶、不抢焦点、鼠标穿透 | `shared/world-map.ts`、`renderer/overlay.ts`；标签避让、HUD 裁剪、独立透明窗口 |
+| E04：`desktop-evidence.json`、调度契约测试 | 原地图锁会阻止每小时检查；已解除地图与补丁互斥。页面销毁原先停止地图；现保持后台会话 | `index.ts`、`WorldMapPage.vue`；独立子进程异步运行，真实回调执行隔离补丁成功且地图仍响应 |
+| E05：会话代际检查与工作进程审查 | 老轮询异常和过期路线结果存在影响新会话的可能；已加代际判断，旧进程 stderr 不污染新进程 | `index.ts`、`world-map.ts`；停止时取消 pending，队列上限 8，输出上限 24 MiB，20 秒超时 |
+| E06：`maintenance.test.ts`、设置页实际清理验证 | 清理仅接受固定类别；白名单目录、7 天阈值、路径/链接检查保护配置及还原备份 | `maintenance.ts`；当前日志、近期文件、链接和硬链接不删除，清理时排斥写入任务 |
+| E07：C# 14 项测试 | 上游不存在起点时可能生成假直达线；已改为明确不可达 | `RuntimePathFinder.cs`、`SelfTests.cs`；路径边和当前位置均需在当前快照内 |
+| E08：`npm audit` 返回 0；迁移检查 32 核心及 16 工具/种子一致 | Electron 与 sharp 的已知依赖问题已通过更新消除；无核心算法重写 | `package-lock.json`、`verify-migration.mjs` |
+
+## 已执行验证
+
+- TypeScript/Vue 类型检查及生产构建通过，15 项 Node 测试、14 项 C# 自测通过。
+- Python 核心回归 202 项通过；核心源码和打包运行时迁移一致性验证通过。
+- 真实桌面测试覆盖并行地图与补丁、自动检测回调、任务互斥、还原、进程树取消、托盘及重启状态。
+- 开关持久化覆盖开启后重启自动恢复、关闭后重启保持关闭；未授权或过期授权不能自动恢复。生产 worker 对正在运行的国际服返回退出码 2；探针使用禁止脚本名，检查失败也不可能写游戏文件。
+- 国际服世界地图只读实测：当前采样可见物化节点数随平移变化，已观察 2520 节点；地图名称及连线实际绘制。该数量不是程序阈值或跨机器承诺。
+- 打包 EXE 实际启动，271 个原引擎资源逐项哈希通过，内置 Python 及 .NET 地图服务运行通过。运行时测试不依赖用户自行安装 SDK。
+- 原始工作目录保留不改，事务证据采用实际工作区字节归档，不把 Git 的换行归一化产物当成原始字节。复现命令、stdout、stderr、退出码、哈希与回滚结果位于本机 `verification/VERIFICATION.txt`。
+
+复现入口（仓库根目录）：
+
+```powershell
+npm --prefix desktop test
+npm --prefix desktop run test:world-map
+npm --prefix desktop run test:migration
+node desktop/scripts/verify-map-audit.mjs
+node desktop/scripts/verify-world-map-ui.mjs --packaged
+node desktop/scripts/verify-world-map-overlay.mjs D:\poe2 --packaged
+```
+
+最后一条只可在用户授权、本机指定国际服且世界地图已打开时执行。
+
+## 边界与残余风险
+
+仅本机官方国际服进行了 live 验证；Steam/Epic、未来游戏版本及其他机器没有相同验证结论。进程路径、国际服标识、结构、坐标和可见性校验失败时返回等待/不可用，不承诺适配未知布局。国际服标识是兼容性限制，不是对恶意同权限本地用户的防篡改认证。
+
+文件清理通过链接、realpath、inode 及修改时间复查降低越界风险，但不声称能抵抗同用户权限进程精确替换目录的竞争攻击。用户应避免在清理时由其他程序修改这些缓存目录。Semgrep/CodeQL 未执行；已执行的是针对性自动断言与人工差异审查。未实测重启 Windows、自启全链路或独占全屏兼容性。项目没有配置发布代码签名。
+
+许可未擅自变更：界面按用户要求展示免费开源文案，整体仍遵守原 `使用许可.md` 的非商业条款，所选地图上游 MIT 声明随发行包附带。建议未来每次客户端更新重跑地图只读 probe、覆盖层实测与当前完整回归，再发布适配。

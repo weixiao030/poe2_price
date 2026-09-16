@@ -19,11 +19,12 @@ import { useAppStore } from './stores/app'
 import type { AppSettings, GameVersion, Operation, OperationResult } from '../shared/types'
 const HistoryPage = defineAsyncComponent(() => import('./components/HistoryPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'))
+const WorldMapPage = defineAsyncComponent(() => import('./components/WorldMapPage.vue'))
 const desktop = window.desktop
 const app = useAppStore(),
   message = useMessage(),
   dialog = useDialog()
-const page = ref<'workspace' | 'history' | 'settings'>('workspace')
+const page = ref<'workspace' | 'world-map' | 'history' | 'settings'>('workspace')
 const pathsOpen = ref(false),
   manualPath = ref(''),
   searching = ref(false),
@@ -32,7 +33,13 @@ const historyDetail = ref<OperationResult | null>(null),
   followLog = ref(true),
   logElement = ref<HTMLElement>()
 const title = computed(
-  () => ({ workspace: '物价补丁', history: '运行记录', settings: '应用设置' })[page.value]
+  () =>
+    ({
+      workspace: '物价补丁',
+      'world-map': '世界地图规划',
+      history: '运行记录',
+      settings: '应用设置'
+    })[page.value]
 )
 const names = { update: '更新物价', restore: '还原补丁', localize: 'POE1 汉化' }
 const canUpdate = computed(
@@ -59,9 +66,9 @@ const phase = computed(() => {
         ? '任务已取消'
         : latest.value.skipped
           ? '本轮已跳过'
-        : latest.value.exitCode === 0
-          ? '操作已完成'
-          : '上次任务未完成'
+          : latest.value.exitCode === 0
+            ? '操作已完成'
+            : '上次任务未完成'
       : '准备下一次冒险'
   return (
     app.events
@@ -189,6 +196,9 @@ onUnmounted(() => app.dispose())
             >{{ app.state.history.length }}</span
           >
         </button>
+        <button :class="['nav-item', { active: page === 'world-map' }]" @click="page = 'world-map'">
+          <Icon icon="ph:map-trifold" />世界地图规划
+        </button>
         <button :class="['nav-item', { active: page === 'settings' }]" @click="page = 'settings'">
           <Icon icon="ph:sliders-horizontal" />应用设置
         </button>
@@ -220,7 +230,7 @@ onUnmounted(() => app.dispose())
         <div class="page-heading">
           <div>
             <h1>{{ title }}</h1>
-            <p>
+            <p v-if="page !== 'world-map'">
               {{
                 page === 'workspace'
                   ? '让价值一目了然，把时间留给探索。'
@@ -483,23 +493,48 @@ onUnmounted(() => app.dispose())
               </div>
             </section>
           </div>
-
         </template>
         <HistoryPage v-else-if="page === 'history'" @select="historyDetail = $event" />
+        <WorldMapPage v-else-if="page === 'world-map'" />
         <template v-else>
           <SettingsPage />
         </template>
-        <footer class="page-footer">
+        <footer v-if="page !== 'world-map'" class="page-footer">
           <span>POE {{ app.settings.gameVersion === 'poe2' ? '2' : '1' }} 物价补丁</span
           ><span>价格标注 · 客户端独立备份 · 随时还原</span>
         </footer>
       </div>
-      <div v-if="page === 'workspace' && !app.loading" class="persistent-actions" aria-label="补丁操作">
-        <div class="persistent-status"><Icon icon="ph:shield-check" /><span>{{ app.client ? app.client.displayName : '先选择游戏客户端' }}</span></div>
+      <div
+        v-if="page === 'workspace' && !app.loading"
+        class="persistent-actions"
+        aria-label="补丁操作"
+      >
+        <div class="persistent-status">
+          <Icon icon="ph:shield-check" /><span>{{
+            app.client ? app.client.displayName : '先选择游戏客户端'
+          }}</span>
+        </div>
         <div class="flex gap-2">
-          <n-button v-if="app.settings.gameVersion === 'poe1'" :disabled="app.running || !app.client || app.client.isChina" @click="confirmOperation('localize')">一键汉化 POE1</n-button>
-          <n-button secondary :disabled="app.running || !app.client" @click="confirmOperation('restore')"><template #icon><Icon icon="ph:arrow-counter-clockwise" /></template>还原补丁</n-button>
-          <n-button type="primary" :disabled="!canUpdate" :loading="app.running" @click="confirmOperation('update')"><template #icon><Icon icon="ph:play-fill" /></template>{{ app.running ? '任务执行中' : '开始更新物价' }}</n-button>
+          <n-button
+            v-if="app.settings.gameVersion === 'poe1'"
+            :disabled="app.running || !app.client || app.client.isChina"
+            @click="confirmOperation('localize')"
+            >一键汉化 POE1</n-button
+          >
+          <n-button
+            secondary
+            :disabled="app.running || !app.client"
+            @click="confirmOperation('restore')"
+            ><template #icon><Icon icon="ph:arrow-counter-clockwise" /></template>还原补丁</n-button
+          >
+          <n-button
+            type="primary"
+            :disabled="!canUpdate"
+            :loading="app.running"
+            @click="confirmOperation('update')"
+            ><template #icon><Icon icon="ph:play-fill" /></template
+            >{{ app.running ? '任务执行中' : '开始更新物价' }}</n-button
+          >
         </div>
       </div>
     </main>

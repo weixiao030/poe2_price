@@ -1,0 +1,3295 @@
+{
+   "MapAlpineRidge": {
+      "name": "Alpine Ridge",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Alpine Ridge",
+         "french": "Crête alpine",
+         "german": "Bergkamm",
+         "japanese": "高山の尾根",
+         "korean": "고산지대 산등성이",
+         "portuguese": "Monte Alpino",
+         "russian": "Горный хребет",
+         "spanish": "Cumbre alpina",
+         "thai": "Alpine Ridge",
+         "traditional chinese": "高山山脊"
+      }
+   },
+   "MapAridPlains": {
+      "name": "Arid Plains",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Arid Plains",
+         "french": "Plaines arides",
+         "german": "Ausgedörrte Felder",
+         "japanese": "乾燥平原",
+         "korean": "메마른 평야",
+         "portuguese": "Planícies Áridas",
+         "russian": "Засушливые равнины",
+         "spanish": "Planicies áridas",
+         "thai": "Arid Plains",
+         "traditional chinese": "旱原"
+      }
+   },
+   "MapArroyo": {
+      "name": "Arroyo",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Arroyo",
+         "french": "Arroyo",
+         "german": "Arroyo",
+         "japanese": "アロヨ",
+         "korean": "마른 하천",
+         "portuguese": "Arroio",
+         "russian": "Арройо",
+         "spanish": "Arroyo",
+         "thai": "Arroyo",
+         "traditional chinese": "旱谷"
+      }
+   },
+   "MapAugury": {
+      "name": "Augury",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Augury",
+         "french": "Augure",
+         "german": "Prophezeiung",
+         "japanese": "予兆",
+         "korean": "점술",
+         "portuguese": "Augúrio",
+         "russian": "Ауспиции",
+         "spanish": "Premonición",
+         "thai": "Augury",
+         "traditional chinese": "預兆"
+      }
+   },
+   "MapAzmerianRanges": {
+      "name": "Azmerian Ranges",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "craft"
+      ],
+      "translates": {
+         "english": "Azmerian Ranges",
+         "french": "Crêtes azmériennes",
+         "german": "Azmerische Gebirge",
+         "japanese": "アズメリ山脈",
+         "korean": "아즈메리 산맥",
+         "portuguese": "Cordilheiras Azmerianas",
+         "russian": "Хребты азмири",
+         "spanish": "Cordillera azmeriana",
+         "thai": "Azmerian Ranges",
+         "traditional chinese": "阿茲莫里山脈"
+      }
+   },
+   "MapBackwash": {
+      "name": "Backwash",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Backwash",
+         "french": "Ressac",
+         "german": "Spülsaum",
+         "japanese": "引き波",
+         "korean": "역류",
+         "portuguese": "Retrofluxo",
+         "russian": "Стоячие воды",
+         "spanish": "Desaguadero",
+         "thai": "Backwash",
+         "traditional chinese": "餘波"
+      }
+   },
+   "MapBastille": {
+      "name": "Bastille",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Bastille",
+         "french": "Bastille",
+         "german": "Gefängnis",
+         "japanese": "監獄",
+         "korean": "방어탑",
+         "portuguese": "Bastilha",
+         "russian": "Форт",
+         "spanish": "Bastilla",
+         "thai": "Bastille",
+         "traditional chinese": "堡壘"
+      }
+   },
+   "MapBazaar": {
+      "name": "Bazaar",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Bazaar",
+         "french": "Bazar",
+         "german": "Basar",
+         "japanese": "バザー",
+         "korean": "장터",
+         "portuguese": "Bazar",
+         "russian": "Базар",
+         "spanish": "Bazar",
+         "thai": "Bazaar",
+         "traditional chinese": "喧鬧集市"
+      }
+   },
+   "MapBloodwood": {
+      "name": "Bloodwood",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Bloodwood",
+         "french": "Boisanglant",
+         "german": "Blutwald",
+         "japanese": "ブラッドウッド",
+         "korean": "피숲",
+         "portuguese": "Bosque Sangrento",
+         "russian": "Кроволесье",
+         "spanish": "Bosque sangriento",
+         "thai": "Bloodwood",
+         "traditional chinese": "血林"
+      }
+   },
+   "MapBloomingField": {
+      "name": "Blooming Field",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Blooming Field",
+         "french": "Champ fleuri",
+         "german": "Blumenwiese",
+         "japanese": "花咲く野原",
+         "korean": "꽃피는 들판",
+         "portuguese": "Campos Floridos",
+         "russian": "Цветущий луг",
+         "spanish": "Campo floreciente",
+         "thai": "Blooming Field",
+         "traditional chinese": "盛放田野"
+      }
+   },
+   "MapBluff": {
+      "name": "Bluff",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Bluff",
+         "french": "Falaise",
+         "german": "Klippe",
+         "japanese": "絶壁",
+         "korean": "절벽",
+         "portuguese": "Penhasco",
+         "russian": "Утёс",
+         "spanish": "Peñascos",
+         "thai": "Bluff",
+         "traditional chinese": "絕壁"
+      }
+   },
+   "MapBurialBog": {
+      "name": "Burial Bog",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Burial Bog",
+         "french": "Tourbière funéraire",
+         "german": "Begräbnismoor",
+         "japanese": "埋葬の沼",
+         "korean": "매장용 습지대",
+         "portuguese": "Pântano Fúnebre",
+         "russian": "Погребальная трясина",
+         "spanish": "Ciénaga funeraria",
+         "thai": "Burial Bog",
+         "traditional chinese": "埋葬沼澤"
+      }
+   },
+   "MapCaldera": {
+      "name": "Caldera",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Caldera",
+         "french": "Caldera",
+         "german": "Caldera",
+         "japanese": "カルデラ",
+         "korean": "칼데라",
+         "portuguese": "Caldeira",
+         "russian": "Кальдера",
+         "spanish": "Caldera",
+         "thai": "Caldera",
+         "traditional chinese": "火山炎口"
+      }
+   },
+   "MapCanyon": {
+      "name": "Canyon",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Canyon",
+         "french": "Canyon",
+         "german": "Schlucht",
+         "japanese": "渓谷",
+         "korean": "협곡",
+         "portuguese": "Cânion",
+         "russian": "Каньон",
+         "spanish": "Cañón",
+         "thai": "Canyon",
+         "traditional chinese": "炙陽峽谷"
+      }
+   },
+   "MapCavernCity": {
+      "name": "Sacred Reservoir",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "lineage"
+      ],
+      "translates": {
+         "english": "Sacred Reservoir",
+         "french": "Réservoir sacré",
+         "german": "Heiliges Reservoir",
+         "japanese": "神聖な貯水池",
+         "korean": "성스러운 저수지",
+         "portuguese": "Reservatório Sagrado",
+         "russian": "Священный водоём",
+         "spanish": "Reservorio sagrado",
+         "thai": "Sacred Reservoir",
+         "traditional chinese": "神聖水源地"
+      }
+   },
+   "MapCenotes": {
+      "name": "Cenotes",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Cenotes",
+         "french": "Cénotes",
+         "german": "Cenoten",
+         "japanese": "セノーテ",
+         "korean": "세노테",
+         "portuguese": "Cenotal",
+         "russian": "Сеноты",
+         "spanish": "Cenotes",
+         "thai": "Cenotes",
+         "traditional chinese": "天然井"
+      }
+   },
+   "MapChannel": {
+      "name": "Channel",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Channel",
+         "french": "Chenal",
+         "german": "Kanal",
+         "japanese": "水路",
+         "korean": "물길",
+         "portuguese": "Canal",
+         "russian": "Канал",
+         "spanish": "Canal",
+         "thai": "Channel",
+         "traditional chinese": "通道"
+      }
+   },
+   "MapChasm": {
+      "name": "Chasm",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Chasm",
+         "french": "Gouffre",
+         "german": "Kluft",
+         "japanese": "谷間",
+         "korean": "절벽길",
+         "portuguese": "Precipício",
+         "russian": "Разлом",
+         "spanish": "Sima",
+         "thai": "Chasm",
+         "traditional chinese": "裂口"
+      }
+   },
+   "MapCliffside": {
+      "name": "Cliffside",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Cliffside",
+         "french": "Escarpement",
+         "german": "Klippe",
+         "japanese": "断崖",
+         "korean": "낭떠러지",
+         "portuguese": "Encosta",
+         "russian": "Обрыв",
+         "spanish": "Ladera",
+         "thai": "Cliffside",
+         "traditional chinese": "崖壁"
+      }
+   },
+   "MapCreek": {
+      "name": "Creek",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Creek",
+         "french": "Crique",
+         "german": "Bach",
+         "japanese": "小川",
+         "korean": "개울",
+         "portuguese": "Riacho",
+         "russian": "Ручей",
+         "spanish": "Arroyo",
+         "thai": "Creek",
+         "traditional chinese": "小溪"
+      }
+   },
+   "MapCrimsonShores": {
+      "name": "Crimson Shores",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Crimson Shores",
+         "french": "Rivages cramoisis",
+         "german": "Purpurküste",
+         "japanese": "深紅の岸",
+         "korean": "붉은 물가",
+         "portuguese": "Praias Vermelhas",
+         "russian": "Багровые берега",
+         "spanish": "Costas carmesís",
+         "thai": "Crimson Shores",
+         "traditional chinese": "緋紅海岸"
+      }
+   },
+   "MapCrypt": {
+      "name": "Crypt",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Crypt",
+         "french": "Crypte",
+         "german": "Beinhaus",
+         "japanese": "地下納骨堂",
+         "korean": "묘실",
+         "portuguese": "Cripta",
+         "russian": "Крипта",
+         "spanish": "Cripta",
+         "thai": "Crypt",
+         "traditional chinese": "靜謐陵墓"
+      }
+   },
+   "MapDecay": {
+      "name": "Decay",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Decay",
+         "french": "Déclin",
+         "german": "Verfall",
+         "japanese": "腐敗",
+         "korean": "부패",
+         "portuguese": "Podridão",
+         "russian": "Гниль",
+         "spanish": "Decaimiento",
+         "thai": "Decay",
+         "traditional chinese": "腐蝕"
+      }
+   },
+   "MapDeforestation": {
+      "name": "Deforestation",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Deforestation",
+         "french": "Déforestation",
+         "german": "Gerodeter Wald",
+         "japanese": "伐り尽くされた森",
+         "korean": "벌채지",
+         "portuguese": "Desmatamento",
+         "russian": "Безлесье",
+         "spanish": "Deforestación",
+         "thai": "Deforestation",
+         "traditional chinese": "伐林地"
+      }
+   },
+   "MapDerelictMansion": {
+      "name": "Derelict Mansion",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "lineage"
+      ],
+      "translates": {
+         "english": "Derelict Mansion",
+         "french": "Manoir délabré",
+         "german": "Verfallenes Herrenhaus",
+         "japanese": "廃屋敷",
+         "korean": "방치된 저택",
+         "portuguese": "Mansão Abandonada",
+         "russian": "Заброшенное поместье",
+         "spanish": "Mansión ruinosa",
+         "thai": "Derelict Mansion",
+         "traditional chinese": "廢棄宅邸"
+      }
+   },
+   "MapDeserted": {
+      "name": "Deserted",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Deserted",
+         "french": "Contrée déserte",
+         "german": "Verlassenheit",
+         "japanese": "荒涼地",
+         "korean": "인적 없는",
+         "portuguese": "Desértico",
+         "russian": "Пустошь",
+         "spanish": "Baldío",
+         "thai": "Deserted",
+         "traditional chinese": "棄置之地"
+      }
+   },
+   "MapEpitaph": {
+      "name": "Epitaph",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Epitaph",
+         "french": "Épitaphe",
+         "german": "Epitaph",
+         "japanese": "碑文",
+         "korean": "비문",
+         "portuguese": "Epitáfio",
+         "russian": "Надгробия",
+         "spanish": "Epitafio",
+         "thai": "Epitaph",
+         "traditional chinese": "幽殤之園"
+      }
+   },
+   "MapExcavation": {
+      "name": "Digsite",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Digsite",
+         "french": "Digsite",
+         "german": "Ausgrabungsstätte",
+         "japanese": "発掘現場",
+         "korean": "발굴 현장",
+         "portuguese": "Escavação",
+         "russian": "Раскопки",
+         "spanish": "Sitio de excavación",
+         "thai": "Digsite",
+         "traditional chinese": "挖掘地"
+      }
+   },
+   "MapFlotsam": {
+      "name": "Flotsam",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Flotsam",
+         "french": "Débris flottants",
+         "german": "Treibgut",
+         "japanese": "漂流物",
+         "korean": "표류물",
+         "portuguese": "Destroços à Deriva",
+         "russian": "Обломки",
+         "spanish": "Restos de naufragio",
+         "thai": "Flotsam",
+         "traditional chinese": "廢料堆"
+      }
+   },
+   "MapForge": {
+      "name": "Forge",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Forge",
+         "french": "Forge",
+         "german": "Schmiede",
+         "japanese": "鍜治炉",
+         "korean": "대장간",
+         "portuguese": "Forja",
+         "russian": "Кузница",
+         "spanish": "Forja",
+         "thai": "Forge",
+         "traditional chinese": "鍛造"
+      }
+   },
+   "MapFortress": {
+      "name": "Fortress",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Fortress",
+         "french": "Forteresse",
+         "german": "Trutzburg",
+         "japanese": "要塞",
+         "korean": "요새",
+         "portuguese": "Fortaleza",
+         "russian": "Крепость",
+         "spanish": "Fortaleza",
+         "thai": "Fortress",
+         "traditional chinese": "堡壘"
+      }
+   },
+   "MapFrozenFalls": {
+      "name": "Frozen Falls",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Frozen Falls",
+         "french": "Chutes gelées",
+         "german": "Gefrorene Wasserfälle",
+         "japanese": "凍った滝",
+         "korean": "얼어붙은 폭포",
+         "portuguese": "Cataratas Congeladas",
+         "russian": "Замёрзшие водопады",
+         "spanish": "Cataratas congeladas",
+         "thai": "Frozen Falls",
+         "traditional chinese": "冰凍瀑布"
+      }
+   },
+   "MapGeode": {
+      "name": "Geode",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Geode",
+         "french": "Géode",
+         "german": "Geode",
+         "japanese": "ジオード",
+         "korean": "정동석",
+         "portuguese": "Geodo",
+         "russian": "Жеода",
+         "spanish": "Geoda",
+         "thai": "Geode",
+         "traditional chinese": "晶洞"
+      }
+   },
+   "MapGreenhouse": {
+      "name": "Greenhouse",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Greenhouse",
+         "french": "Serre",
+         "german": "Gewächshaus",
+         "japanese": "温室",
+         "korean": "온실",
+         "portuguese": "Estufa",
+         "russian": "Оранжерея",
+         "spanish": "Invernadero",
+         "thai": "Greenhouse",
+         "traditional chinese": "繁茂溫室"
+      }
+   },
+   "MapGrimhaven": {
+      "name": "Grimhaven",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Grimhaven",
+         "french": "Havre sinistre",
+         "german": "Düsterer Port",
+         "japanese": "グリムヘブン",
+         "korean": "그림헤이븐",
+         "portuguese": "Abrigo Macabro",
+         "russian": "Мрачная гавань",
+         "spanish": "Refugio sombrío",
+         "thai": "Grimhaven",
+         "traditional chinese": "肅穆之地"
+      }
+   },
+   "MapHeadland": {
+      "name": "Headland",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Headland",
+         "french": "Promontoire",
+         "german": "Landzunge",
+         "japanese": "岬",
+         "korean": "갑",
+         "portuguese": "Promontório",
+         "russian": "Мыс",
+         "spanish": "Cabo",
+         "thai": "Headland",
+         "traditional chinese": "海角"
+      }
+   },
+   "MapHiddenGrotto": {
+      "name": "Hidden Grotto",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Hidden Grotto",
+         "french": "Grotte cachée",
+         "german": "Versteckte Grotte",
+         "japanese": "隠れ岩屋",
+         "korean": "숨겨진 석굴",
+         "portuguese": "Gruta Oculta",
+         "russian": "Тайный грот",
+         "spanish": "Gruta oculta",
+         "thai": "Hidden Grotto",
+         "traditional chinese": "隱密石窟"
+      }
+   },
+   "MapHideoutCanal_Claimable": {
+      "name": "Canal Hideout",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "hideout"
+      ],
+      "translates": {
+         "english": "Canal Hideout",
+         "french": "Repaire du Canal",
+         "german": "Versteckter Kanal",
+         "japanese": "運河の隠れ家",
+         "korean": "운하 은신처",
+         "portuguese": "Refúgio do Canal",
+         "russian": "Убежище в каналах",
+         "spanish": "Guarida de canal",
+         "thai": "ที่ซ่อน Canal",
+         "traditional chinese": "藏身處：運河"
+      }
+   },
+   "MapHideoutFarmlands_Claimable": {
+      "name": "Farmlands Hideout",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "hideout"
+      ],
+      "translates": {
+         "english": "Farmlands Hideout",
+         "french": "Repaire : Terres arables",
+         "german": "Verstecktes Ackerland",
+         "japanese": "農場の隠れ家",
+         "korean": "농지 은신처",
+         "portuguese": "Refúgio dos Campos de Cultivo",
+         "russian": "Убежище в фермерских землях",
+         "spanish": "Guarida de tierras de cultivo",
+         "thai": "ที่ซ่อนแดนเพาะปลูก",
+         "traditional chinese": "藏身處：農地"
+      }
+   },
+   "MapHideoutFelled_Claimable": {
+      "name": "Felled Hideout",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "hideout"
+      ],
+      "translates": {
+         "english": "Felled Hideout",
+         "french": "Repaire abattu",
+         "german": "Versteckte Abholzung",
+         "japanese": "伐採された隠れ家",
+         "korean": "벌채된 은신처",
+         "portuguese": "Refúgio Caído",
+         "russian": "Снесённое убежище",
+         "spanish": "Guarida talada",
+         "thai": "ที่ซ่อน Felled",
+         "traditional chinese": "藏身處：殞落"
+      }
+   },
+   "MapHideoutLimestone_Claimable": {
+      "name": "Limestone Hideout",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "hideout"
+      ],
+      "translates": {
+         "english": "Limestone Hideout",
+         "french": "Repaire de calcaire",
+         "german": "Kalkstein-Versteck",
+         "japanese": "石灰岩の隠れ家",
+         "korean": "석회암 은신처",
+         "portuguese": "Refúgio de Calcário",
+         "russian": "Известняковое убежище",
+         "spanish": "Guarida de caliza",
+         "thai": "ที่ซ่อน Limestone",
+         "traditional chinese": "藏身處：石灰岩"
+      }
+   },
+   "MapHideoutPrison_Claimable": {
+      "name": "Prison Hideout",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "hideout"
+      ],
+      "translates": {
+         "english": "Prison Hideout",
+         "french": "Repaire : Prison",
+         "german": "Verstecktes Gefängnis",
+         "japanese": "監獄の隠れ家",
+         "korean": "감옥 은신처",
+         "portuguese": "Refúgio da Prisão",
+         "russian": "Убежище в тюрьме",
+         "spanish": "Guarida de prisión",
+         "thai": "ที่ซ่อนเรือนจำ",
+         "traditional chinese": "藏身處：監獄"
+      }
+   },
+   "MapHideoutShoreline_Claimable": {
+      "name": "Shoreline Hideout",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "hideout"
+      ],
+      "translates": {
+         "english": "Shoreline Hideout",
+         "french": "Repaire : Littoral",
+         "german": "Versteckte Küste",
+         "japanese": "海岸線の隠れ家",
+         "korean": "해안선 은신처",
+         "portuguese": "Refúgio da Costa",
+         "russian": "Убежище на берегу",
+         "spanish": "Guarida de ribera",
+         "thai": "ที่ซ่อนชายทะเล",
+         "traditional chinese": "藏身處：海岸線"
+      }
+   },
+   "MapHideoutShrine_Claimable": {
+      "name": "Shrine Hideout",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "hideout"
+      ],
+      "translates": {
+         "english": "Shrine Hideout",
+         "french": "Repaire du Sanctuaire",
+         "german": "Versteckter Schrein",
+         "japanese": "神殿の隠れ家",
+         "korean": "성소 은신처",
+         "portuguese": "Refúgio do Altar",
+         "russian": "Убежище с алтарём",
+         "spanish": "Guarida de sagrario",
+         "thai": "ที่ซ่อน Shrine",
+         "traditional chinese": "藏身處：神殿"
+      }
+   },
+   "MapHive": {
+      "name": "Hive",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Hive",
+         "french": "Ruche",
+         "german": "Nest",
+         "japanese": "巣穴",
+         "korean": "벌레집",
+         "portuguese": "Colmeia",
+         "russian": "Улей",
+         "spanish": "Colmena",
+         "thai": "Hive",
+         "traditional chinese": "巢穴"
+      }
+   },
+   "MapIceCave": {
+      "name": "Ice Cave",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Ice Cave",
+         "french": "Ice Cave",
+         "german": "Eishöhle",
+         "japanese": "氷の洞窟",
+         "korean": "얼음 동굴",
+         "portuguese": "Caverna de Gelo",
+         "russian": "Ледяная пещера",
+         "spanish": "Cueva de hielo",
+         "thai": "Ice Cave",
+         "traditional chinese": "寒冰洞穴"
+      }
+   },
+   "MapInferno": {
+      "name": "Inferno",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Inferno",
+         "french": "Fournaise",
+         "german": "Inferno",
+         "japanese": "業火",
+         "korean": "지옥불",
+         "portuguese": "Inferno",
+         "russian": "Пожарище",
+         "spanish": "Infierno",
+         "thai": "Inferno",
+         "traditional chinese": "煉獄"
+      }
+   },
+   "MapKarst": {
+      "name": "Karst",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Karst",
+         "french": "Karst",
+         "german": "Karst",
+         "japanese": "カルスト",
+         "korean": "카르스트",
+         "portuguese": "Carste",
+         "russian": "Карст",
+         "spanish": "Karst",
+         "thai": "Karst",
+         "traditional chinese": "卡司特"
+      }
+   },
+   "MapLeaguePortal": {
+      "name": "The Realmgate",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Realmgate",
+         "french": "La Porte des Royaumes",
+         "german": "Das Weltentor",
+         "japanese": "レルムゲート",
+         "korean": "세계관문",
+         "portuguese": "O Portal do Reino",
+         "russian": "Врата миров",
+         "spanish": "La puerta del reino",
+         "thai": "ประตูข้ามอาณาจักร",
+         "traditional chinese": "界域之門"
+      }
+   },
+   "MapLoftySummit": {
+      "name": "Lofty Summit",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Lofty Summit",
+         "french": "Haut sommet",
+         "german": "Hoher Gipfel",
+         "japanese": "そびえる山頂",
+         "korean": "높은 정상",
+         "portuguese": "Cume Elevado",
+         "russian": "Вершина",
+         "spanish": "Cima prominente",
+         "thai": "Lofty Summit",
+         "traditional chinese": "崇高之巔"
+      }
+   },
+   "MapLostTowers": {
+      "name": "Lost Towers",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Lost Towers",
+         "french": "Tours perdues",
+         "german": "Verlorene Türme",
+         "japanese": "失われた塔",
+         "korean": "잃어버린 탑",
+         "portuguese": "Torres Perdidas",
+         "russian": "Утраченные башни",
+         "spanish": "Torres perdidas",
+         "thai": "หอคอยสาบสูญ",
+         "traditional chinese": "失落之塔"
+      }
+   },
+   "MapMarrow": {
+      "name": "Marrow",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Marrow",
+         "french": "Entrailles",
+         "german": "Innerstes",
+         "japanese": "骨髄",
+         "korean": "골수",
+         "portuguese": "Medula",
+         "russian": "Свалка костей",
+         "spanish": "Médula",
+         "thai": "Marrow",
+         "traditional chinese": "朽髓"
+      }
+   },
+   "MapMesa": {
+      "name": "Mesa",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Mesa",
+         "french": "Mesa",
+         "german": "Hochebene",
+         "japanese": "台地",
+         "korean": "메사",
+         "portuguese": "Mesa",
+         "russian": "Плоскогорье",
+         "spanish": "Mesa",
+         "thai": "Mesa",
+         "traditional chinese": "平頂荒漠"
+      }
+   },
+   "MapMezzanine": {
+      "name": "Mezzanine",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Mezzanine",
+         "french": "Mezzanine",
+         "german": "Mezzanin",
+         "japanese": "メザニン",
+         "korean": "중층",
+         "portuguese": "Mezanino",
+         "russian": "Mezzanine",
+         "spanish": "Entrepiso",
+         "thai": "Mezzanine",
+         "traditional chinese": "樓中樓"
+      }
+   },
+   "MapMineshaft": {
+      "name": "Mineshaft",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Mineshaft",
+         "french": "Puits de mine",
+         "german": "Minenschacht",
+         "japanese": "坑道",
+         "korean": "갱도",
+         "portuguese": "Poço de Mina",
+         "russian": "Шахтный колодец",
+         "spanish": "Mina",
+         "thai": "Mineshaft",
+         "traditional chinese": "礦井"
+      }
+   },
+   "MapMire": {
+      "name": "Mire",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Mire",
+         "french": "Bourbier",
+         "german": "Morast",
+         "japanese": "泥沼",
+         "korean": "진창",
+         "portuguese": "Lamaçal",
+         "russian": "Трясина",
+         "spanish": "Barrizal",
+         "thai": "Mire",
+         "traditional chinese": "泥沼"
+      }
+   },
+   "MapMonument": {
+      "name": "The Monument",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Monument",
+         "french": "Le Monument",
+         "german": "Das Monument",
+         "japanese": "石碑",
+         "korean": "기념물",
+         "portuguese": "O Monumento",
+         "russian": "Монумент",
+         "spanish": "El monumento",
+         "thai": "The Monument",
+         "traditional chinese": "紀念碑"
+      }
+   },
+   "MapMortuary": {
+      "name": "Mortuary",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Mortuary",
+         "french": "Mortuary",
+         "german": "Leichenhalle",
+         "japanese": "霊安場",
+         "korean": "시체 안치소",
+         "portuguese": "Mortuário",
+         "russian": "Морг",
+         "spanish": "Morgue",
+         "thai": "Mortuary",
+         "traditional chinese": "停屍間"
+      }
+   },
+   "MapMothersoul_Female": {
+      "name": "The Matriarch Halls",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter"
+      ],
+      "translates": {
+         "english": "The Matriarch Halls",
+         "french": "Les Halls de la Matriarche",
+         "german": "Die Hallen der Matriarchin",
+         "japanese": "母祖の広間",
+         "korean": "가모장의 전당",
+         "portuguese": "Os Salões Matriarcais",
+         "russian": "Залы матриарха",
+         "spanish": "Los salones de la matriarca",
+         "thai": "โถงมาตา",
+         "traditional chinese": "聖母殿"
+      }
+   },
+   "MapMothersoul_Female_Quest": {
+      "name": "The Matriarch Halls",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter",
+         "quest"
+      ],
+      "translates": {
+         "english": "The Matriarch Halls",
+         "french": "Les Halls de la Matriarche",
+         "german": "Die Hallen der Matriarchin",
+         "japanese": "母祖の広間",
+         "korean": "가모장의 전당",
+         "portuguese": "Os Salões Matriarcais",
+         "russian": "Залы матриарха",
+         "spanish": "Los salones de la matriarca",
+         "thai": "โถงมาตา",
+         "traditional chinese": "聖母殿"
+      }
+   },
+   "MapMothersoul_Male": {
+      "name": "The Patriarch Halls",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter"
+      ],
+      "translates": {
+         "english": "The Patriarch Halls",
+         "french": "Les Halls du Patriarche",
+         "german": "Die Hallen des Patriarchen",
+         "japanese": "父祖の広間",
+         "korean": "가부장의 전당",
+         "portuguese": "Os Salões Patriarcais",
+         "russian": "Залы патриарха",
+         "spanish": "Los salones del patriarca",
+         "thai": "โถงปิตา",
+         "traditional chinese": "聖祖殿"
+      }
+   },
+   "MapMothersoul_Male_Quest": {
+      "name": "The Patriarch Halls",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter",
+         "quest"
+      ],
+      "translates": {
+         "english": "The Patriarch Halls",
+         "french": "Les Halls du Patriarche",
+         "german": "Die Hallen des Patriarchen",
+         "japanese": "父祖の広間",
+         "korean": "가부장의 전당",
+         "portuguese": "Os Salões Patriarcais",
+         "russian": "Залы патриарха",
+         "spanish": "Los salones del patriarca",
+         "thai": "โถงปิตา",
+         "traditional chinese": "聖祖殿"
+      }
+   },
+   "MapNecropolis": {
+      "name": "Necropolis",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Necropolis",
+         "french": "Nécropole",
+         "german": "Nekropole",
+         "japanese": "共同墓地",
+         "korean": "매장지",
+         "portuguese": "Necrópole",
+         "russian": "Некрополь",
+         "spanish": "Necrópolis",
+         "thai": "Necropolis",
+         "traditional chinese": "魔影墓場"
+      }
+   },
+   "MapOasis": {
+      "name": "Oasis",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Oasis",
+         "french": "Oasis",
+         "german": "Oase",
+         "japanese": "オアシス",
+         "korean": "오아시스",
+         "portuguese": "Oásis",
+         "russian": "Оазис",
+         "spanish": "Oasis",
+         "thai": "Oasis",
+         "traditional chinese": "幻景綠洲"
+      }
+   },
+   "MapOrbalasCrossing": {
+      "name": "Orbala's Crossing",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Orbala's Crossing",
+         "french": "Passage d'Orbala",
+         "german": "Orbalas Querung",
+         "japanese": "オルバラの渡り路",
+         "korean": "오발라의 교차로",
+         "portuguese": "Travessia de Orbala",
+         "russian": "Перевал Орбалы",
+         "spanish": "El cruce de Orbala",
+         "thai": "Orbala's Crossing",
+         "traditional chinese": "奧爾巴拉渡口"
+      }
+   },
+   "MapOrnateChambers": {
+      "name": "Ornate Chambers",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Ornate Chambers",
+         "french": "Ornate Chambers",
+         "german": "Kunstvolle Kammern",
+         "japanese": "豪華な広間",
+         "korean": "화려한 석실",
+         "portuguese": "Câmaras Ornadas",
+         "russian": "Витые залы",
+         "spanish": "Cámaras ornamentadas",
+         "thai": "Ornate Chambers",
+         "traditional chinese": "華美密室"
+      }
+   },
+   "MapOutlands": {
+      "name": "Outlands",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Outlands",
+         "french": "Terres lointaines",
+         "german": "Vorlande",
+         "japanese": "辺境",
+         "korean": "외곽 지역",
+         "portuguese": "Terras Distantes",
+         "russian": "Дальние земли",
+         "spanish": "Las afueras",
+         "thai": "Outlands",
+         "traditional chinese": "外域"
+      }
+   },
+   "MapOvergrown": {
+      "name": "Overgrown",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Overgrown",
+         "french": "Brousse",
+         "german": "Überwucherter Wald",
+         "japanese": "鬱蒼地",
+         "korean": "무성한 땅",
+         "portuguese": "Vegetação Densa",
+         "russian": "Заросли",
+         "spanish": "Sobrecrecimiento",
+         "thai": "Overgrown",
+         "traditional chinese": "蔥鬱之域"
+      }
+   },
+   "MapPenitentiary": {
+      "name": "Penitentiary",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Penitentiary",
+         "french": "Pénitencier",
+         "german": "Zuchthaus",
+         "japanese": "刑務所",
+         "korean": "교도소",
+         "portuguese": "Penitenciária",
+         "russian": "Каторга",
+         "spanish": "Penitenciaría",
+         "thai": "Penitentiary",
+         "traditional chinese": "監獄"
+      }
+   },
+   "MapPit": {
+      "name": "Pit",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Pit",
+         "french": "Fosse",
+         "german": "Grube",
+         "japanese": "遺跡発掘場",
+         "korean": "구덩이",
+         "portuguese": "Fosso",
+         "russian": "Яма",
+         "spanish": "Foso",
+         "thai": "Pit",
+         "traditional chinese": "巨坑"
+      }
+   },
+   "MapPlantation": {
+      "name": "Plantation",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Plantation",
+         "french": "Plantation",
+         "german": "Plantage",
+         "japanese": "大農園",
+         "korean": "플랜테이션",
+         "portuguese": "Plantação",
+         "russian": "Плантация",
+         "spanish": "Plantación",
+         "thai": "Plantation",
+         "traditional chinese": "林地"
+      }
+   },
+   "MapPort": {
+      "name": "Port",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Port",
+         "french": "Port",
+         "german": "Hafen",
+         "japanese": "港",
+         "korean": "항만",
+         "portuguese": "Porto",
+         "russian": "Порт",
+         "spanish": "Puerto",
+         "thai": "Port",
+         "traditional chinese": "失落城塢"
+      }
+   },
+   "MapPrecipice": {
+      "name": "Precipice",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Precipice",
+         "french": "Précipice",
+         "german": "Felshang",
+         "japanese": "絶壁",
+         "korean": "벼랑",
+         "portuguese": "Precipício",
+         "russian": "Пропасть",
+         "spanish": "Precipicio",
+         "thai": "Precipice",
+         "traditional chinese": "陡斷峭壁"
+      }
+   },
+   "MapPrecursorTower": {
+      "name": "Precursor Tower",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Precursor Tower",
+         "french": "Tour des Prédécesseurs",
+         "german": "Wegbereiter-Turm",
+         "japanese": "先人の塔",
+         "korean": "선도자 탑",
+         "portuguese": "Torre Precursora",
+         "russian": "Башня Предтеч",
+         "spanish": "Torre de los precursores",
+         "thai": "หอคอยกลุ่มชนก่อนกาล",
+         "traditional chinese": "先行者高塔"
+      }
+   },
+   "MapPrecursorTowerDesert": {
+      "name": "Precursor Tower",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Precursor Tower",
+         "french": "Tour des Prédécesseurs",
+         "german": "Wegbereiter-Turm",
+         "japanese": "先人の塔",
+         "korean": "선도자 탑",
+         "portuguese": "Torre Precursora",
+         "russian": "Башня Предтеч",
+         "spanish": "Torre de los precursores",
+         "thai": "หอคอยกลุ่มชนก่อนกาล",
+         "traditional chinese": "先行者高塔"
+      }
+   },
+   "MapPrecursorTowerForest": {
+      "name": "Precursor Tower",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Precursor Tower",
+         "french": "Tour des Prédécesseurs",
+         "german": "Wegbereiter-Turm",
+         "japanese": "先人の塔",
+         "korean": "선도자 탑",
+         "portuguese": "Torre Precursora",
+         "russian": "Башня Предтеч",
+         "spanish": "Torre de los precursores",
+         "thai": "หอคอยกลุ่มชนก่อนกาล",
+         "traditional chinese": "先行者高塔"
+      }
+   },
+   "MapPrecursorTowerGrass": {
+      "name": "Precursor Tower",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Precursor Tower",
+         "french": "Tour des Prédécesseurs",
+         "german": "Wegbereiter-Turm",
+         "japanese": "先人の塔",
+         "korean": "선도자 탑",
+         "portuguese": "Torre Precursora",
+         "russian": "Башня Предтеч",
+         "spanish": "Torre de los precursores",
+         "thai": "หอคอยกลุ่มชนก่อนกาล",
+         "traditional chinese": "先行者高塔"
+      }
+   },
+   "MapPrecursorTowerMountain": {
+      "name": "Precursor Tower",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Precursor Tower",
+         "french": "Tour des Prédécesseurs",
+         "german": "Wegbereiter-Turm",
+         "japanese": "先人の塔",
+         "korean": "선도자 탑",
+         "portuguese": "Torre Precursora",
+         "russian": "Башня Предтеч",
+         "spanish": "Torre de los precursores",
+         "thai": "หอคอยกลุ่มชนก่อนกาล",
+         "traditional chinese": "先行者高塔"
+      }
+   },
+   "MapPrecursorTowerSwamp": {
+      "name": "Precursor Tower",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Precursor Tower",
+         "french": "Tour des Prédécesseurs",
+         "german": "Wegbereiter-Turm",
+         "japanese": "先人の塔",
+         "korean": "선도자 탑",
+         "portuguese": "Torre Precursora",
+         "russian": "Башня Предтеч",
+         "spanish": "Torre de los precursores",
+         "thai": "หอคอยกลุ่มชนก่อนกาล",
+         "traditional chinese": "先行者高塔"
+      }
+   },
+   "MapRavine": {
+      "name": "Ravine",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Ravine",
+         "french": "Ravin",
+         "german": "Hohlweg",
+         "japanese": "渓谷",
+         "korean": "심곡",
+         "portuguese": "Ravina",
+         "russian": "Ущелье",
+         "spanish": "Desfiladero",
+         "thai": "Ravine",
+         "traditional chinese": "溪谷"
+      }
+   },
+   "MapRazedFields": {
+      "name": "Razed Fields",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Razed Fields",
+         "french": "Razed Fields",
+         "german": "Zerstörte Felder",
+         "japanese": "焦土",
+         "korean": "초토화된 들판",
+         "portuguese": "Campos Arrasados",
+         "russian": "Выжженные поля",
+         "spanish": "Campos arrasados",
+         "thai": "Razed Fields",
+         "traditional chinese": "殘破原野"
+      }
+   },
+   "MapReservoir": {
+      "name": "Reservoir",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Reservoir",
+         "french": "Réservoir",
+         "german": "Stausee",
+         "japanese": "貯水池",
+         "korean": "저수지",
+         "portuguese": "Reservatório",
+         "russian": "Водоём",
+         "spanish": "Embalse",
+         "thai": "Reservoir",
+         "traditional chinese": "水源地"
+      }
+   },
+   "MapRiverhold": {
+      "name": "Riverhold",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Riverhold",
+         "french": "Riverhold",
+         "german": "Flussfestung",
+         "japanese": "リバーホールド",
+         "korean": "강요새",
+         "portuguese": "Forte do Rio",
+         "russian": "Риверхолд",
+         "spanish": "Fortaleza costera",
+         "thai": "Riverhold",
+         "traditional chinese": "河流堡"
+      }
+   },
+   "MapRiverside": {
+      "name": "Riverside",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Riverside",
+         "french": "Berge",
+         "german": "Flussufer",
+         "japanese": "川辺",
+         "korean": "강변",
+         "portuguese": "Ribeirão",
+         "russian": "Приречье",
+         "spanish": "Ribera",
+         "thai": "Riverside",
+         "traditional chinese": "河畔"
+      }
+   },
+   "MapRockpools": {
+      "name": "Rockpools",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Rockpools",
+         "french": "Estran",
+         "german": "Felsentümpel",
+         "japanese": "潮だまり",
+         "korean": "바위틈 웅덩이",
+         "portuguese": "Lagoas Rochosas",
+         "russian": "Литораль",
+         "spanish": "Estanques",
+         "thai": "Rockpools",
+         "traditional chinese": "岩池"
+      }
+   },
+   "MapRugosa": {
+      "name": "Rugosa",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Rugosa",
+         "french": "Rugosa",
+         "german": "Rugosa",
+         "japanese": "ルゴサ",
+         "korean": "루고사",
+         "portuguese": "Rugosa",
+         "russian": "Кораллы",
+         "spanish": "Rugosa",
+         "thai": "Rugosa",
+         "traditional chinese": "盧戈薩"
+      }
+   },
+   "MapRupture": {
+      "name": "Rupture",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Rupture",
+         "french": "Rupture",
+         "german": "Bruch",
+         "japanese": "断裂",
+         "korean": "파열",
+         "portuguese": "Colapso",
+         "russian": "Прорыв",
+         "spanish": "Grieta",
+         "thai": "Rupture",
+         "traditional chinese": "殘破"
+      }
+   },
+   "MapRustbowl": {
+      "name": "Rustbowl",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Rustbowl",
+         "french": "Friche",
+         "german": "Rosttal",
+         "japanese": "錆の窪地",
+         "korean": "녹그릇",
+         "portuguese": "Ferrabismo",
+         "russian": "Ржавь",
+         "spanish": "Ruinas oxidadas",
+         "thai": "Rustbowl",
+         "traditional chinese": "銹碗"
+      }
+   },
+   "MapSanctuary": {
+      "name": "Sanctuary",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sanctuary",
+         "french": "Sanctuaire",
+         "german": "Zufluchtsstätte",
+         "japanese": "聖域",
+         "korean": "성역",
+         "portuguese": "Santuário",
+         "russian": "Святыня",
+         "spanish": "Santuario",
+         "thai": "Sanctuary",
+         "traditional chinese": "聖所"
+      }
+   },
+   "MapSandspit": {
+      "name": "Sandspit",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sandspit",
+         "french": "Presqu'île",
+         "german": "Sandbank",
+         "japanese": "砂の岬",
+         "korean": "모래 구덩이",
+         "portuguese": "Fosso de Areia",
+         "russian": "Песчаная коса",
+         "spanish": "Foso de arena",
+         "thai": "Sandspit",
+         "traditional chinese": "沙吐"
+      }
+   },
+   "MapSavanna": {
+      "name": "Savannah",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Savannah",
+         "french": "Savane",
+         "german": "Savanne",
+         "japanese": "サバンナ",
+         "korean": "사바나",
+         "portuguese": "Savana",
+         "russian": "Саванна",
+         "spanish": "Sabana",
+         "thai": "Savannah",
+         "traditional chinese": "大草原"
+      }
+   },
+   "MapSeepage": {
+      "name": "Seepage",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Seepage",
+         "french": "Infiltration",
+         "german": "Sickerwasser",
+         "japanese": "漏出",
+         "korean": "누수",
+         "portuguese": "Infiltração",
+         "russian": "Альков",
+         "spanish": "Drenaje",
+         "thai": "Seepage",
+         "traditional chinese": "滲漏"
+      }
+   },
+   "MapSevenWaters": {
+      "name": "Confluence",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Confluence",
+         "french": "Confluence",
+         "german": "Zusammenfluss",
+         "japanese": "合流点",
+         "korean": "합류지",
+         "portuguese": "Confluência",
+         "russian": "Стечение вод",
+         "spanish": "Confluencia",
+         "thai": "Confluence",
+         "traditional chinese": "匯流處"
+      }
+   },
+   "MapSinkhole": {
+      "name": "Sinkhole",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sinkhole",
+         "french": "Doline",
+         "german": "Erdloch",
+         "japanese": "陥没穴",
+         "korean": "낙수혈",
+         "portuguese": "Buraco",
+         "russian": "Провал",
+         "spanish": "Sumidero",
+         "thai": "Sinkhole",
+         "traditional chinese": "沉洞"
+      }
+   },
+   "MapSinterRift": {
+      "name": "Sinter Rift",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sinter Rift",
+         "french": "Faille de scories",
+         "german": "Sinter-Spalte",
+         "japanese": "焼結の裂け目",
+         "korean": "유황화 균열",
+         "portuguese": "Fenda de Precipitação",
+         "russian": "Туфовый разлом",
+         "spanish": "Grieta sedimentaria",
+         "thai": "Sinter Rift",
+         "traditional chinese": "罪灰裂隙"
+      }
+   },
+   "MapSlash": {
+      "name": "Slash",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Slash",
+         "french": "Slash",
+         "german": "Priel",
+         "japanese": "横断",
+         "korean": "절창",
+         "portuguese": "Roça",
+         "russian": "Протока",
+         "spanish": "Grieta",
+         "thai": "Slash",
+         "traditional chinese": "橫斷流域"
+      }
+   },
+   "MapSlick": {
+      "name": "Slick",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Slick",
+         "french": "Nappe souterraine",
+         "german": "Öl-Lache",
+         "japanese": "水面",
+         "korean": "미끌",
+         "portuguese": "Viscoso",
+         "russian": "Гладь",
+         "spanish": "Cámaras oleosas",
+         "thai": "Slick",
+         "traditional chinese": "浮油"
+      }
+   },
+   "MapSnowfall": {
+      "name": "Snowfall",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Snowfall",
+         "french": "Chute de neige",
+         "german": "Schneefall",
+         "japanese": "降雪",
+         "korean": "강설",
+         "portuguese": "Neve",
+         "russian": "Снегопад",
+         "spanish": "Nevada",
+         "thai": "Snowfall",
+         "traditional chinese": "雪域"
+      }
+   },
+   "MapSpiderWoods": {
+      "name": "Spider Woods",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Spider Woods",
+         "french": "Bois aux araignées",
+         "german": "Spinnenwald",
+         "japanese": "蜘蛛の森",
+         "korean": "거미 숲",
+         "portuguese": "Matas das Aranhas",
+         "russian": "Паучьи леса",
+         "spanish": "Bosque arácnido",
+         "thai": "Spider Woods",
+         "traditional chinese": "蜘蛛之林"
+      }
+   },
+   "MapSpring_": {
+      "name": "Spring",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Spring",
+         "french": "Source",
+         "german": "Quelle",
+         "japanese": "泉",
+         "korean": "샘",
+         "portuguese": "Primavera",
+         "russian": "Ручей",
+         "spanish": "Manantial",
+         "thai": "Spring",
+         "traditional chinese": "湧泉"
+      }
+   },
+   "MapSteamingSprings": {
+      "name": "Steaming Springs",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Steaming Springs",
+         "french": "Sources thermales",
+         "german": "Heisse Quellen",
+         "japanese": "蒸気泉",
+         "korean": "증기 뿜는 샘",
+         "portuguese": "Fontes Vaporizantes",
+         "russian": "Горячие источники",
+         "spanish": "Manantiales vaporosos",
+         "thai": "Steaming Springs",
+         "traditional chinese": "蒸氣之泉"
+      }
+   },
+   "MapSteppe": {
+      "name": "Steppe",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Steppe",
+         "french": "Steppe",
+         "german": "Steppe",
+         "japanese": "草原",
+         "korean": "아열대 초원",
+         "portuguese": "Estepe",
+         "russian": "Степь",
+         "spanish": "Estepa",
+         "thai": "Steppe",
+         "traditional chinese": "乾草原"
+      }
+   },
+   "MapStronghold": {
+      "name": "Stronghold",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Stronghold",
+         "french": "Place forte",
+         "german": "Festung",
+         "japanese": "拠点",
+         "korean": "요새",
+         "portuguese": "Fortaleza",
+         "russian": "Твердыня",
+         "spanish": "Fortificación",
+         "thai": "Stronghold",
+         "traditional chinese": "要塞"
+      }
+   },
+   "MapSulphuricCaverns": {
+      "name": "Sulphuric Caverns",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sulphuric Caverns",
+         "french": "Cavernes sulfureuses",
+         "german": "Schwefelkavernen",
+         "japanese": "硫黄の洞窟",
+         "korean": "유황 동굴",
+         "portuguese": "Cavernas Sulfúricas",
+         "russian": "Серные пещеры",
+         "spanish": "Cavernas sulfurosas",
+         "thai": "Sulphuric Caverns",
+         "traditional chinese": "硫化洞窟"
+      }
+   },
+   "MapSump": {
+      "name": "Sump",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sump",
+         "french": "Puisard",
+         "german": "Sickergrube",
+         "japanese": "汚水溜め",
+         "korean": "웅덩이",
+         "portuguese": "Brejo",
+         "russian": "Водоотлив",
+         "spanish": "Foso séptico",
+         "thai": "Sump",
+         "traditional chinese": "污水坑"
+      }
+   },
+   "MapSunTemple": {
+      "name": "Sun Temple",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sun Temple",
+         "french": "Temple du Soleil",
+         "german": "Sonnentempel",
+         "japanese": "太陽の神殿",
+         "korean": "태양의 사원",
+         "portuguese": "Templo do Sol",
+         "russian": "Храм солнца",
+         "spanish": "Templo del sol",
+         "thai": "Sun Temple",
+         "traditional chinese": "太陽神殿"
+      }
+   },
+   "MapSwampTower": {
+      "name": "Sinking Spire",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Sinking Spire",
+         "french": "Cîme engloutie",
+         "german": "Sinkende Spitze",
+         "japanese": "沈む尖塔",
+         "korean": "가라앉는 첨탑",
+         "portuguese": "Torre Submersa",
+         "russian": "Тонущий шпиль",
+         "spanish": "Torre pantanosa",
+         "thai": "ยอดแหลมที่จม",
+         "traditional chinese": "沉溺尖塔"
+      }
+   },
+   "MapSwarm": {
+      "name": "Swarm",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Swarm",
+         "french": "Essaim",
+         "german": "Gewimmel",
+         "japanese": "群れ",
+         "korean": "무리",
+         "portuguese": "Enxame",
+         "russian": "Рой",
+         "spanish": "Enjambre",
+         "thai": "Swarm",
+         "traditional chinese": "蟲群"
+      }
+   },
+   "MapTerrace": {
+      "name": "Terrace",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Terrace",
+         "french": "Terrasse",
+         "german": "Terrasse",
+         "japanese": "テラス",
+         "korean": "테라스",
+         "portuguese": "Esplanada",
+         "russian": "Терраса",
+         "spanish": "Terraza",
+         "thai": "Terrace",
+         "traditional chinese": "台地"
+      }
+   },
+   "MapTrenches": {
+      "name": "Trenches",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Trenches",
+         "french": "Tranchées",
+         "german": "Gräben",
+         "japanese": "塹壕",
+         "korean": "참호",
+         "portuguese": "Trincheiras",
+         "russian": "Траншеи",
+         "spanish": "Trincheras",
+         "thai": "Trenches",
+         "traditional chinese": "壕溝"
+      }
+   },
+   "MapUberBoss_CopperCitadel": {
+      "name": "The Copper Citadel",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter"
+      ],
+      "translates": {
+         "english": "The Copper Citadel",
+         "french": "La Citadelle de cuivre",
+         "german": "Die Kupferzitadelle",
+         "japanese": "銅の城塞",
+         "korean": "구리의 성채",
+         "portuguese": "A Cidadela de Cobre",
+         "russian": "Медная цитадель",
+         "spanish": "La ciudadela de cobre",
+         "thai": "ปราการทองแดง",
+         "traditional chinese": "青銅城塞"
+      }
+   },
+   "MapUberBoss_CopperCitadel_Quest": {
+      "name": "The Copper Citadel",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter",
+         "quest"
+      ],
+      "translates": {
+         "english": "The Copper Citadel",
+         "french": "La Citadelle de cuivre",
+         "german": "Die Kupferzitadelle",
+         "japanese": "銅の城塞",
+         "korean": "구리의 성채",
+         "portuguese": "A Cidadela de Cobre",
+         "russian": "Медная цитадель",
+         "spanish": "La ciudadela de cobre",
+         "thai": "ปราการทองแดง",
+         "traditional chinese": "青銅城塞"
+      }
+   },
+   "MapUberBoss_Delirium": {
+      "name": "The Withered Willow",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Withered Willow",
+         "french": "Le Saule flétri",
+         "german": "Die Welke Weide",
+         "japanese": "枯れ柳",
+         "korean": "시든 버드나무",
+         "portuguese": "O Salgueiro Murcho",
+         "russian": "Увядшая ива",
+         "spanish": "El sauce marchito",
+         "thai": "ต้นหลิวเหี่ยวแห้ง",
+         "traditional chinese": "凋萎敗柳"
+      }
+   },
+   "MapUberBoss_Divinity": {
+      "name": "The Origin Tower",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "traverse"
+      ],
+      "translates": {
+         "english": "The Origin Tower",
+         "french": "La Tour des Origines",
+         "german": "Der Turm der Ursprungs",
+         "japanese": "起源の塔",
+         "korean": "기원의 탑",
+         "portuguese": "A Torre da Origem",
+         "russian": "Башня истока",
+         "spanish": "La torre del origen",
+         "thai": "หอคอยต้นกำเนิด",
+         "traditional chinese": "起源高塔"
+      }
+   },
+   "MapUberBoss_FallenStar": {
+      "name": "Ruins of Kingsmarch",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "traverse"
+      ],
+      "translates": {
+         "english": "Ruins of Kingsmarch",
+         "french": "Ruines de Marcheroi",
+         "german": "Ruinen von Königsmark",
+         "japanese": "キングスマーチの廃墟",
+         "korean": "킹스마치의 폐허",
+         "portuguese": "Ruínas de Kingsmarch",
+         "russian": "Развалины Кингсмарша",
+         "spanish": "Las ruinas de Marca del rey",
+         "thai": "ซากนครคิงส์มาร์ช",
+         "traditional chinese": "金司馬區廢墟"
+      }
+   },
+   "MapUberBoss_IronCitadel": {
+      "name": "The Iron Citadel",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter"
+      ],
+      "translates": {
+         "english": "The Iron Citadel",
+         "french": "La Citadelle de fer",
+         "german": "Die Eisenzitadelle",
+         "japanese": "鉄の城塞",
+         "korean": "철의 성채",
+         "portuguese": "A Cidadela de Ferro",
+         "russian": "Железная цитадель",
+         "spanish": "La ciudadela de hierro",
+         "thai": "ปราการเหล็ก",
+         "traditional chinese": "鋼鐵城塞"
+      }
+   },
+   "MapUberBoss_IronCitadel_Quest": {
+      "name": "Western Enigma Chamber",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "quest"
+      ],
+      "translates": {
+         "english": "Western Enigma Chamber",
+         "french": "Chambre des énigmes occidentale",
+         "german": "Westliche Rätselkammer",
+         "japanese": "西のエニグマの間",
+         "korean": "서쪽 수수께끼 석실",
+         "portuguese": "Câmara Enigma Ocidental",
+         "russian": "Западный зал загадок",
+         "spanish": "Cámara de enigmas occidental",
+         "thai": "ห้องอาถรรพ์ตะวันตก",
+         "traditional chinese": "西側謎團密室"
+      }
+   },
+   "MapUberBoss_JadeCitadel": {
+      "name": "The Jade Isles",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "lineage"
+      ],
+      "translates": {
+         "english": "The Jade Isles",
+         "french": "Les Îles de Jade",
+         "german": "Die Jadeinseln",
+         "japanese": "ヒスイの島",
+         "korean": "비취 군도",
+         "portuguese": "As Ilhas Jade",
+         "russian": "Нефритовые острова",
+         "spanish": "Las islas de jade",
+         "thai": "หมู่เกาะหยก",
+         "traditional chinese": "翠玉群島"
+      }
+   },
+   "MapUberBoss_Monolith": {
+      "name": "The Burning Monolith",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "traverse"
+      ],
+      "translates": {
+         "english": "The Burning Monolith",
+         "french": "Le Monolithe ardent",
+         "german": "Der Brennende Monolith",
+         "japanese": "燃えるモノリス",
+         "korean": "불타는 거석",
+         "portuguese": "O Monólito Ardente",
+         "russian": "Горящий монолит",
+         "spanish": "El monolito ardiente",
+         "thai": "อนุสาวรีย์เพลิงพิโรธ",
+         "traditional chinese": "燃燒豐碑"
+      }
+   },
+   "MapUberBoss_Ritual": {
+      "name": "Caer Tarth",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "traverse"
+      ],
+      "translates": {
+         "english": "Caer Tarth",
+         "french": "Caer Tarth",
+         "german": "Caer Tarth",
+         "japanese": "カイル・タルス",
+         "korean": "캐어 타르스",
+         "portuguese": "Caer Tarth",
+         "russian": "Каэр Тарт",
+         "spanish": "Caer Tarth",
+         "thai": "เคียร์ ทาร์ธ",
+         "traditional chinese": "凱爾塔斯"
+      }
+   },
+   "MapUberBoss_StoneCitadel": {
+      "name": "The Stone Citadel",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "arbiter"
+      ],
+      "translates": {
+         "english": "The Stone Citadel",
+         "french": "La Citadelle de pierre",
+         "german": "Die Steinzitadelle",
+         "japanese": "石の城塞",
+         "korean": "돌의 성채",
+         "portuguese": "A Cidadela de Pedra",
+         "russian": "Каменная цитадель",
+         "spanish": "La ciudadela de piedra",
+         "thai": "ปราการศิลา",
+         "traditional chinese": "岩石城塞"
+      }
+   },
+   "MapUberBoss_StoneCitadel_Quest": {
+      "name": "Eastern Enigma Chamber",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "quest"
+      ],
+      "translates": {
+         "english": "Eastern Enigma Chamber",
+         "french": "Chambre des énigmes orientale",
+         "german": "Östliche Rätselkammer",
+         "japanese": "東のエニグマの間",
+         "korean": "동쪽 수수께끼 석실",
+         "portuguese": "Câmara Enigma Oriental",
+         "russian": "Восточный зал загадок",
+         "spanish": "Cámara de enigmas oriental",
+         "thai": "ห้องอาถรรพ์ตะวันออก",
+         "traditional chinese": "東側謎團密室"
+      }
+   },
+   "MapUniqueCastaway": {
+      "name": "Castaway",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Castaway",
+         "french": "Naufrage",
+         "german": "Schiffbruch",
+         "japanese": "難破",
+         "korean": "조난자",
+         "portuguese": "Náufrago",
+         "russian": "Изгой",
+         "spanish": "Naufragio",
+         "thai": "ซากเรืออับปาง",
+         "traditional chinese": "漂流者之所"
+      }
+   },
+   "MapUniqueFreight_": {
+      "name": "Freight",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Freight",
+         "french": "Cargaison",
+         "german": "Frachthafen",
+         "japanese": "積荷",
+         "korean": "화물",
+         "portuguese": "Carregamento",
+         "russian": "Фрахт",
+         "spanish": "Cargamento",
+         "thai": "Freight",
+         "traditional chinese": "貨物"
+      }
+   },
+   "MapUniqueInitialTower": {
+      "name": "Precursor Tower",
+      "type": "unique",
+      "group": "map",
+      "tags": [
+         "tower"
+      ],
+      "translates": {
+         "english": "Precursor Tower",
+         "french": "Tour des Prédécesseurs",
+         "german": "Wegbereiter-Turm",
+         "japanese": "先人の塔",
+         "korean": "선도자 탑",
+         "portuguese": "Torre Precursora",
+         "russian": "Башня Предтеч",
+         "spanish": "Torre precursora",
+         "thai": "หอคอยกลุ่มชนก่อนกาล",
+         "traditional chinese": "先行者高塔"
+      }
+   },
+   "MapUniqueLake": {
+      "name": "The Fractured Lake",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Fractured Lake",
+         "french": "Le Lac fracturé",
+         "german": "Der zerbrochene See",
+         "japanese": "ひび割れた湖",
+         "korean": "분열된 호수",
+         "portuguese": "O Lago Rachado",
+         "russian": "Расколотое озеро",
+         "spanish": "El lago fracturado",
+         "thai": "ทะเลสาบแตกร้าว",
+         "traditional chinese": "破裂迷湖"
+      }
+   },
+   "MapUniqueMegalith": {
+      "name": "The Ezomyte Megaliths",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Ezomyte Megaliths",
+         "french": "Les Mégalithes ézmoytes",
+         "german": "Die Megalithen der Ezomyten",
+         "japanese": "エゾマイトのメガリス",
+         "korean": "에조미어 거석",
+         "portuguese": "Os Megalitos Ezomytas",
+         "russian": "Мегалиты эзомитов",
+         "spanish": "Los megalitos ezomitas",
+         "thai": "มหาศิลาเอโซไมต์",
+         "traditional chinese": "艾茲麥巨石"
+      }
+   },
+   "MapUniqueMerchant01_Chimeral": {
+      "name": "Merchant's Campsite",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Merchant's Campsite",
+         "french": "Campement du marchand",
+         "german": "Händlerlager",
+         "japanese": "商人の野営場",
+         "korean": "상인의 야영지",
+         "portuguese": "Acampamento Mercante",
+         "russian": "Лагерь торговца",
+         "spanish": "Campamento del mercader",
+         "thai": "ค่ายพ่อค้า",
+         "traditional chinese": "商人營地"
+      }
+   },
+   "MapUniqueMerchant01_Oasis": {
+      "name": "Jado's Campsite",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Jado's Campsite",
+         "french": "Campement de Jado",
+         "german": "Jados Zeltplatz",
+         "japanese": "ジャドのキャンプ地",
+         "korean": "자도의 야영지",
+         "portuguese": "Acampamento de Jado",
+         "russian": "Лагерь Джадо",
+         "spanish": "El campamento de Jado",
+         "thai": "ค่ายจาโด",
+         "traditional chinese": "賈多的營地"
+      }
+   },
+   "MapUniqueMerchant01_Sandswept": {
+      "name": "Merchant's Campsite",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Merchant's Campsite",
+         "french": "Campement du marchand",
+         "german": "Händlerlager",
+         "japanese": "商人の野営場",
+         "korean": "상인의 야영지",
+         "portuguese": "Acampamento Mercante",
+         "russian": "Лагерь торговца",
+         "spanish": "Campamento del mercader",
+         "thai": "ค่ายพ่อค้า",
+         "traditional chinese": "商人營地"
+      }
+   },
+   "MapUniqueMerchant02_Crimson": {
+      "name": "Merchant's Campsite",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Merchant's Campsite",
+         "french": "Campement du marchand",
+         "german": "Händlerlager",
+         "japanese": "商人の野営場",
+         "korean": "상인의 야영지",
+         "portuguese": "Acampamento Mercante",
+         "russian": "Лагерь торговца",
+         "spanish": "Campamento del mercader",
+         "thai": "ค่ายพ่อค้า",
+         "traditional chinese": "商人營地"
+      }
+   },
+   "MapUniqueMerchant02_Farmland": {
+      "name": "Merchant's Campsite",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Merchant's Campsite",
+         "french": "Campement du marchand",
+         "german": "Händlerlager",
+         "japanese": "商人の野営場",
+         "korean": "상인의 야영지",
+         "portuguese": "Acampamento Mercante",
+         "russian": "Лагерь торговца",
+         "spanish": "Campamento del mercader",
+         "thai": "ค่ายพ่อค้า",
+         "traditional chinese": "商人營地"
+      }
+   },
+   "MapUniqueMerchant03_Beach": {
+      "name": "Moment of Zen",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Moment of Zen",
+         "french": "Moment de quiétude",
+         "german": "Augenblick des Zen",
+         "japanese": "禅の刹那",
+         "korean": "한 순간의 선",
+         "portuguese": "Momento Zen",
+         "russian": "Безмятежность",
+         "spanish": "Momento zen",
+         "thai": "ช่วงเวลาสงบเงียบ",
+         "traditional chinese": "禪意時刻"
+      }
+   },
+   "MapUniqueMerchant03_Raft": {
+      "name": "Moment of Zen",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Moment of Zen",
+         "french": "Moment de quiétude",
+         "german": "Augenblick des Zen",
+         "japanese": "禅の刹那",
+         "korean": "한 순간의 선",
+         "portuguese": "Momento Zen",
+         "russian": "Безмятежность",
+         "spanish": "Momento zen",
+         "thai": "ช่วงเวลาสงบเงียบ",
+         "traditional chinese": "禪意時刻"
+      }
+   },
+   "MapUniqueMerchant03_Tropical": {
+      "name": "Moment of Zen",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Moment of Zen",
+         "french": "Moment de quiétude",
+         "german": "Augenblick des Zen",
+         "japanese": "禅の刹那",
+         "korean": "한 순간의 선",
+         "portuguese": "Momento Zen",
+         "russian": "Безмятежность",
+         "spanish": "Momento zen",
+         "thai": "ช่วงเวลาสงบเงียบ",
+         "traditional chinese": "禪意時刻"
+      }
+   },
+   "MapUniqueMerchant04_PirateShip": {
+      "name": "The Voyage",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Voyage",
+         "french": "La Traversée",
+         "german": "Die Überfahrt",
+         "japanese": "航海",
+         "korean": "항해",
+         "portuguese": "A Jornada",
+         "russian": "«Путешествие»",
+         "spanish": "El viaje",
+         "thai": "การเดินทาง",
+         "traditional chinese": "航程"
+      }
+   },
+   "MapUniqueReactor_01": {
+      "name": "Western Gateway",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Western Gateway",
+         "french": "Portail occidental",
+         "german": "Westliche Pforte",
+         "japanese": "西のゲートウェイ",
+         "korean": "서쪽 관문",
+         "portuguese": "Portal Ocidental",
+         "russian": "Западные ворота",
+         "spanish": "Entrada occidental",
+         "thai": "ทางผ่านตะวันตก",
+         "traditional chinese": "西側閘門"
+      }
+   },
+   "MapUniqueReactor_02": {
+      "name": "Ancient Gateway",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Ancient Gateway",
+         "french": "Portail antique",
+         "german": "Uralte Pforte",
+         "japanese": "古のゲートウェイ",
+         "korean": "고대 관문",
+         "portuguese": "Portal Antigo",
+         "russian": "Древние ворота",
+         "spanish": "Entrada antigua",
+         "thai": "ทางผ่านโบราณ",
+         "traditional chinese": "遠古閘門"
+      }
+   },
+   "MapUniqueReactor_03": {
+      "name": "Eastern Gateway",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Eastern Gateway",
+         "french": "Portail oriental",
+         "german": "Östliche Pforte",
+         "japanese": "東のゲートウェイ",
+         "korean": "동쪽 관문",
+         "portuguese": "Portal Oriental",
+         "russian": "Восточные ворота",
+         "spanish": "Entrada oriental",
+         "thai": "ทางผ่านตะวันออก",
+         "traditional chinese": "東側閘門"
+      }
+   },
+   "MapUniqueReactor_04": {
+      "name": "Site of the Chosen",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Site of the Chosen",
+         "french": "Site of the Chosen",
+         "german": "Ort der Auserwählten",
+         "japanese": "選ばれし者の場",
+         "korean": "선택받은 자의 장소",
+         "portuguese": "Local dos Escolhidos",
+         "russian": "Место избранных",
+         "spanish": "El sitio del elegido",
+         "thai": "สถานที่ผู้ถูกเลือก",
+         "traditional chinese": "天選之所"
+      }
+   },
+   "MapUniqueSelenite": {
+      "name": "The Silent Cave",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Silent Cave",
+         "french": "La Caverne silencieuse",
+         "german": "Die schweigende Höhle",
+         "japanese": "静かな洞窟",
+         "korean": "고요한 동굴",
+         "portuguese": "A Caverna Silenciosa",
+         "russian": "Безмолвная пещера",
+         "spanish": "La cueva silenciosa",
+         "thai": "ถ้ำสงัด",
+         "traditional chinese": "沉默洞穴"
+      }
+   },
+   "MapUniqueUntaintedParadise": {
+      "name": "Untainted Paradise",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Untainted Paradise",
+         "french": "Paradis immaculé",
+         "german": "Unberührtes Paradies",
+         "japanese": "汚れなき楽園",
+         "korean": "때묻지 않은 낙원",
+         "portuguese": "Paraíso Imaculado",
+         "russian": "Нетронутый рай",
+         "spanish": "Paraíso prístino",
+         "thai": "เกาะสวรรค์ไร้มลทิน",
+         "traditional chinese": "純淨樂園"
+      }
+   },
+   "MapUniqueVault": {
+      "name": "Vaults of Kamasa",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Vaults of Kamasa",
+         "french": "Salle des coffres de Kamasa",
+         "german": "Schatzkammer von Kamasa",
+         "japanese": "カマサの宝物庫",
+         "korean": "카마사의 금고",
+         "portuguese": "Cofres de Kamasa",
+         "russian": "Сокровищница Камасы",
+         "spanish": "Cámaras de Kamasa",
+         "thai": "พระคลังแห่งคามาซา",
+         "traditional chinese": "卡瑪薩秘寶庫"
+      }
+   },
+   "MapUniqueWildwood": {
+      "name": "The Viridian Wildwood",
+      "type": "unique",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Viridian Wildwood",
+         "french": "La Sylve viridienne",
+         "german": "Der Viridische Finsterwald",
+         "japanese": "青緑のワイルドウッド",
+         "korean": "취록의 야생림",
+         "portuguese": "A Selva Viridiana",
+         "russian": "Диколесье Вириди",
+         "spanish": "El bosque viridino",
+         "thai": "ป่าวิเศษวิริเดียน",
+         "traditional chinese": "翠綠荒林"
+      }
+   },
+   "MapVaalCity": {
+      "name": "Vaal City",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Vaal City",
+         "french": "Cité vaal",
+         "german": "Stadt der Vaal",
+         "japanese": "ヴァールの都市",
+         "korean": "바알 도시",
+         "portuguese": "Cidade Vaal",
+         "russian": "Город ваал",
+         "spanish": "Ciudad vaal",
+         "thai": "Vaal City",
+         "traditional chinese": "瓦爾古城"
+      }
+   },
+   "MapVaalFactory": {
+      "name": "The Assembly",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "The Assembly",
+         "french": "L'Assemblée",
+         "german": "Die Fertigungsanlage",
+         "japanese": "工場",
+         "korean": "조립 시설",
+         "portuguese": "O Conclave",
+         "russian": "Сборочный цех",
+         "spanish": "La asamblea",
+         "thai": "The Assembly",
+         "traditional chinese": "集會"
+      }
+   },
+   "MapVaalFoundry": {
+      "name": "Molten Vault",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Molten Vault",
+         "french": "Chambre forte magmatique",
+         "german": "Geschmolzenes Gewölbe",
+         "japanese": "鍛冶場",
+         "korean": "녹아내린 금고실",
+         "portuguese": "Cofre Derretido",
+         "russian": "Расплавленные залы",
+         "spanish": "Cámara fundida",
+         "thai": "Molten Vault",
+         "traditional chinese": "熔岩寶庫"
+      }
+   },
+   "MapVaalVault": {
+      "name": "Sealed Vault",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "lineage"
+      ],
+      "translates": {
+         "english": "Sealed Vault",
+         "french": "Refuge scellé",
+         "german": "Versiegeltes Gewölbe",
+         "japanese": "封印された地下室",
+         "korean": "봉인된 금고실",
+         "portuguese": "Cofre Selado",
+         "russian": "Скрытое убежище",
+         "spanish": "Cámara sellada",
+         "thai": "Sealed Vault",
+         "traditional chinese": "封印的寶庫"
+      }
+   },
+   "MapVaalVillage": {
+      "name": "Vaal Village",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Vaal Village",
+         "french": "Village vaal",
+         "german": "Dorf der Vaal",
+         "japanese": "ヴァールの村",
+         "korean": "바알 마을",
+         "portuguese": "Aldeia Vaal",
+         "russian": "Поселение ваал",
+         "spanish": "Aldea vaal",
+         "thai": "Vaal Village",
+         "traditional chinese": "瓦爾村莊"
+      }
+   },
+   "MapVoidReliquary": {
+      "name": "The Reliquary Vault",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "traverse"
+      ],
+      "translates": {
+         "english": "The Reliquary Vault",
+         "french": "La Chambre forte du Reliquaire",
+         "german": "Die Reliquienkammer",
+         "japanese": "聖遺物の宝物庫",
+         "korean": "성유물 보관실 금고",
+         "portuguese": "Cofre do Relicário",
+         "russian": "Хранилище реликвария",
+         "spanish": "La cámara del relicario",
+         "thai": "คลังวัตถุโบราณ",
+         "traditional chinese": "聖物寶庫"
+      }
+   },
+   "MapWaywardIsle": {
+      "name": "Wayward Isle",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Wayward Isle",
+         "french": "Île imprévisible",
+         "german": "Unberechenbare Insel",
+         "japanese": "気まぐれな島",
+         "korean": "다스리기 힘든 섬",
+         "portuguese": "Ilha Desgarrada",
+         "russian": "Непокорный остров",
+         "spanish": "Isla incontrolable",
+         "thai": "Wayward Isle",
+         "traditional chinese": "無常之島"
+      }
+   },
+   "MapWetlands": {
+      "name": "Wetlands",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Wetlands",
+         "french": "Paluns",
+         "german": "Sumpfgebiet",
+         "japanese": "湿地帯",
+         "korean": "습지대",
+         "portuguese": "Pantanal",
+         "russian": "Топи",
+         "spanish": "Humedales",
+         "thai": "Wetlands",
+         "traditional chinese": "濕地"
+      }
+   },
+   "MapWillow": {
+      "name": "Willow",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Willow",
+         "french": "Bosquet",
+         "german": "Laubwald",
+         "japanese": "柳",
+         "korean": "버드나무",
+         "portuguese": "Salgueiro",
+         "russian": "Ивняк",
+         "spanish": "Saucedal",
+         "thai": "Willow",
+         "traditional chinese": "垂柳"
+      }
+   },
+   "MapWoodland": {
+      "name": "Woodland",
+      "type": "normal",
+      "group": "map",
+      "tags": [],
+      "translates": {
+         "english": "Woodland",
+         "french": "Forêt claire",
+         "german": "Waldland",
+         "japanese": "森林地帯",
+         "korean": "밀림",
+         "portuguese": "Bosque",
+         "russian": "Редколесье",
+         "spanish": "Bosque",
+         "thai": "Woodland",
+         "traditional chinese": "木林"
+      }
+   },
+   "Map_HildaCampsite": {
+      "name": "Hilda's Campsite",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "traverse"
+      ],
+      "translates": {
+         "english": "Hilda's Campsite",
+         "french": "Campement d'Hilda",
+         "german": "Hildas Lager",
+         "japanese": "ヒルダのキャンプ地",
+         "korean": "힐다의 야영지",
+         "portuguese": "Acampamento de Hilda",
+         "russian": "Лагерь Хильды",
+         "spanish": "El campamento de Hilda",
+         "thai": "ค่ายฮิลด้า",
+         "traditional chinese": "希爾妲的營地"
+      }
+   },
+   "RitualLeagueBoss": {
+      "name": "Crux of Nothingness",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "ritual"
+      ],
+      "translates": {
+         "english": "Crux of Nothingness",
+         "french": "Cœur du Rien",
+         "german": "Der Kern des Nichts",
+         "japanese": "無の中核",
+         "korean": "허무의 핵심",
+         "portuguese": "Cerne do Nada",
+         "russian": "Суть небытия",
+         "spanish": "El quid de la nada",
+         "thai": "รากฐานความว่างเปล่า",
+         "traditional chinese": "無量困境"
+      }
+   },
+   "ChayulaLeague_Tower": {
+      "name": "Hive Fortress",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "breach"
+      ],
+      "translates": {
+         "english": "Hive Fortress",
+         "french": "Forteresse de Ruche",
+         "german": "Schwarmfestung",
+         "japanese": "ハイヴフォトレス",
+         "korean": "벌레집 요새",
+         "portuguese": "Fortaleza da Colmeia",
+         "russian": "Крепость улья",
+         "spanish": "Fortaleza de la colmena",
+         "thai": "ปราการรวงรัง",
+         "traditional chinese": "巢裔要塞"
+      }
+   },
+   "ChayulaLeague_TowerBoss": {
+      "name": "Hive Colony",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "breach"
+      ],
+      "translates": {
+         "english": "Hive Colony",
+         "french": "Colonie de Ruche",
+         "german": "Schwarmkolonie",
+         "japanese": "ハイヴコロニー",
+         "korean": "벌레집 군락지",
+         "portuguese": "Colônia da Colmeia",
+         "russian": "Колония улья",
+         "spanish": "Colonia de la colmena",
+         "thai": "อาณานิคมรวงรัง",
+         "traditional chinese": "巢裔聚落"
+      }
+   },
+   "ExpeditionLogBook_Prairie": {
+      "name": "Grazed Prairie",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Grazed Prairie",
+         "french": "Prairie pâturée",
+         "german": "Abgegraste Prärie",
+         "japanese": "放牧の大草原",
+         "korean": "풀이 뜯긴 프레리",
+         "portuguese": "Pradaria Pastoreada",
+         "russian": "Травянистые прерии",
+         "spanish": "Pradera erosionada",
+         "thai": "ทุ่งหญ้าเตียนโล่ง",
+         "traditional chinese": "闊牧遼原"
+      }
+   },
+   "ExpeditionLogBook_Digsite": {
+      "name": "Exhumed Ruins",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Exhumed Ruins",
+         "french": "Excavation abandonnée",
+         "german": "Exhumierte Ruinen",
+         "japanese": "掘り起こされた遺跡",
+         "korean": "파헤쳐진 폐허",
+         "portuguese": "Ruínas Exumadas",
+         "russian": "Разрытые руины",
+         "spanish": "Ruinas exhumadas",
+         "thai": "ซากที่ถูกขุดค้น",
+         "traditional chinese": "廢棄挖掘場"
+      }
+   },
+   "ExpeditionLogBook_Peninsula": {
+      "name": "Craggy Peninsula",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Craggy Peninsula",
+         "french": "Péninsule escarpée",
+         "german": "Zerklüftete Halbinsel",
+         "japanese": "岩だらけの半島",
+         "korean": "바위투성이 반도",
+         "portuguese": "Península Escarpada",
+         "russian": "Скалистый мыс",
+         "spanish": "Península escarpada",
+         "thai": "แหลมชะง่อน",
+         "traditional chinese": "崎嶇半島"
+      }
+   },
+   "ExpeditionLogBook_Tropical": {
+      "name": "Lush Isle",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Lush Isle",
+         "french": "Île luxuriante",
+         "german": "Üppige Insel",
+         "japanese": "生い茂った島",
+         "korean": "우거진 섬",
+         "portuguese": "Ilha Viçosa",
+         "russian": "Зелёный островок",
+         "spanish": "Isla frondosa",
+         "thai": "เกาะเขียวขจี",
+         "traditional chinese": "蓊鬱群島"
+      }
+   },
+   "ExpeditionLogBook_Wastes": {
+      "name": "Scorched Cay",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Scorched Cay",
+         "french": "Îlot calciné",
+         "german": "Verbrannte Sandbank",
+         "japanese": "焼け焦げた小島",
+         "korean": "그을린 암초",
+         "portuguese": "Recife Queimado",
+         "russian": "Выжженный островок",
+         "spanish": "Cayo calcinado",
+         "thai": "เกาะปริ่มน้ำร้อนระอุ",
+         "traditional chinese": "焦灼孤島"
+      }
+   },
+   "ExpeditionLogBook_Gully": {
+      "name": "Sloughed Gully",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Sloughed Gully",
+         "french": "Ravin érodé",
+         "german": "Abgetragene Schlucht",
+         "japanese": "ぬかるんだ峡谷",
+         "korean": "진창이 된 고랑",
+         "portuguese": "Ravina Erodida",
+         "russian": "Осыпавшийся овраг",
+         "spanish": "Hondonada pantanosa",
+         "thai": "ร่องธารโคลน",
+         "traditional chinese": "滑塌溪谷"
+      }
+   },
+   "ExpeditionLogBook_Tundra": {
+      "name": "Frigid Bluffs",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Frigid Bluffs",
+         "french": "Falaises glaciales",
+         "german": "Kalte Klippen",
+         "japanese": "凍てついた断崖",
+         "korean": "차디찬 절벽",
+         "portuguese": "Penhascos Frígidos",
+         "russian": "Холодные скалы",
+         "spanish": "Peñascos helados",
+         "thai": "ผาชันเยือกเย็น",
+         "traditional chinese": "寒風峭壁"
+      }
+   },
+   "ExpeditionLogBook_Reef": {
+      "name": "Bleached Shoals",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Bleached Shoals",
+         "french": "Bancs de sable blanchis",
+         "german": "Gebleichte Untiefen",
+         "japanese": "白化した浅瀬",
+         "korean": "표백된 모래톱",
+         "portuguese": "Bancos de Areia Descorados",
+         "russian": "Выбеленная отмель",
+         "spanish": "Bajíos blanquecinos",
+         "thai": "ดอนทรายซีดใต้น้ำ",
+         "traditional chinese": "白化淺灘"
+      }
+   },
+   "ExpeditionLogBook_Basin": {
+      "name": "Stagnant Basin",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Stagnant Basin",
+         "french": "Bassin stagnant",
+         "german": "Stagnierendes Becken",
+         "japanese": "淀んだ盆地",
+         "korean": "고인 분지",
+         "portuguese": "Bacia Estagnada",
+         "russian": "Застойный водоём",
+         "spanish": "Cuenca estancada",
+         "thai": "ลุ่มน้ำขัง",
+         "traditional chinese": "靜滯盆地"
+      }
+   },
+   "ExpeditionLogBook_Atoll": {
+      "name": "Barren Atoll",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Barren Atoll",
+         "french": "Atoll stérile",
+         "german": "Ödes Atoll",
+         "japanese": "荒れ果てた環礁",
+         "korean": "불모의 산호섬",
+         "portuguese": "Atoleiro Estéril",
+         "russian": "Бесплодный риф",
+         "spanish": "Atolón desierto",
+         "thai": "เกาะวงแหวนแห้งแล้ง",
+         "traditional chinese": "貧瘠環礁"
+      }
+   },
+   "ExpeditionLogBook_Heath": {
+      "name": "Moor of Fallen Skies",
+      "type": "unique",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "Moor of Fallen Skies",
+         "french": "Lande des Cieux tombés",
+         "german": "Heide der Untergegangenen Himmel",
+         "japanese": "落ちたる空の原野",
+         "korean": "무너진 하늘의 황야",
+         "portuguese": "Charneca dos Céus Caídos",
+         "russian": "Причал Падших небес",
+         "spanish": "Páramo del cielo caído",
+         "thai": "ทุ่งโล่งนภาร่วง",
+         "traditional chinese": "殞空荒原"
+      }
+   },
+   "ExpeditionSubArea_MedvedBoss": {
+      "name": "Sprawling Jungle",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "expedition"
+      ],
+      "translates": {
+         "english": "Sprawling Jungle",
+         "french": "Sprawling Jungle",
+         "german": "Weitläufiger Dschungel",
+         "japanese": "広がるジャングル",
+         "korean": "뻗어 가는 밀림",
+         "portuguese": "Selva Extensa",
+         "russian": "Разросшиеся джунгли",
+         "spanish": "Jungla expansiva",
+         "thai": "ป่าดงดิบกว้างไกล",
+         "traditional chinese": "蔓延叢林"
+      }
+   },
+   "ExpeditionSubArea_VoranaBoss": {
+      "name": "Mournful Cliffside",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "expedition"
+      ],
+      "translates": {
+         "english": "Mournful Cliffside",
+         "french": "Mournful Cliffside",
+         "german": "Trostlose Steilküste",
+         "japanese": "嘆きの崖",
+         "korean": "음울한 낭떠러지",
+         "portuguese": "Encosta Melancólica",
+         "russian": "Скорбный утёс",
+         "spanish": "Acantilado apenado",
+         "thai": "เชิงผาอาลัย",
+         "traditional chinese": "哀泣崖壁"
+      }
+   },
+   "ExpeditionSubArea_OlrothBoss": {
+      "name": "Obscure Island",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "expedition"
+      ],
+      "translates": {
+         "english": "Obscure Island",
+         "french": "Île obscure",
+         "german": "Geheimnisvolle Insel",
+         "japanese": "隠れた島",
+         "korean": "후미진 섬",
+         "portuguese": "Ilha Obscura",
+         "russian": "Неясный остров",
+         "spanish": "Isla oscura",
+         "thai": "เกาะลับแล",
+         "traditional chinese": "幽隱島嶼"
+      }
+   },
+   "ExpeditionSubArea_UhtredBoss": {
+      "name": "Secluded Temple",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "expedition"
+      ],
+      "translates": {
+         "english": "Secluded Temple",
+         "french": "Temple retiré",
+         "german": "Abgelegener Tempel",
+         "japanese": "孤立した寺院",
+         "korean": "외딴 사원",
+         "portuguese": "Templo Isolado",
+         "russian": "Уединённый храм",
+         "spanish": "Templo oculto",
+         "thai": "วิหารสันโดษ",
+         "traditional chinese": "隱密神廟"
+      }
+   },
+   "ExpeditionSubArea_BlackKnightBoss": {
+      "name": "Tomb of the Fallen Knight",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "expedition"
+      ],
+      "translates": {
+         "english": "Tomb of the Fallen Knight",
+         "french": "Tombeau du Chevalier déchu",
+         "german": "Grab des Gefallenen Ritters",
+         "japanese": "堕ちた騎士の墓",
+         "korean": "몰락 기사의 무덤",
+         "portuguese": "Túmulo do Cavaleiro Caído",
+         "russian": "Гробница падшего рыцаря",
+         "spanish": "La tumba del Caballero caído",
+         "thai": "หลุมศพอัศวินผู้วินาศ",
+         "traditional chinese": "殞落騎士之墓"
+      }
+   },
+   "EndgameDoodad_MeteorCrater": {
+      "name": "The Fallen Star",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "expedition"
+      ],
+      "translates": {
+         "english": "The Fallen Star",
+         "french": "The Fallen Star",
+         "german": "Der Gefallene Stern",
+         "japanese": "墜ちた星",
+         "korean": "별똥별",
+         "portuguese": "A Estrela Cadente",
+         "russian": "Упавшая звезда",
+         "spanish": "La estrella caída",
+         "thai": "ถิ่นดาราร่วงหล่น",
+         "traditional chinese": "殞星"
+      }
+   },
+   "EndgameDoodad_BeastGroundZero": {
+      "name": "The Chained Beast",
+      "type": "normal",
+      "group": "map",
+      "tags": [
+         "boss",
+         "expedition"
+      ],
+      "translates": {
+         "english": "The Chained Beast",
+         "french": "La Bête enchaînée",
+         "german": "Die Angekettete Bestie",
+         "japanese": "繋がれし魔獣",
+         "korean": "사슬에 매인 짐승",
+         "portuguese": "A Fera Acorrentada",
+         "russian": "Скованный зверь",
+         "spanish": "La bestia encadenada",
+         "thai": "บีสต์ใต้พันธนาการ",
+         "traditional chinese": "鏈纏巨獸"
+      }
+   }
+}

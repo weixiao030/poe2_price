@@ -1,4 +1,6 @@
 import { addIcon } from '@iconify/vue'
+import { mapIcons } from './map-icons'
+for (const [name, icon] of Object.entries(mapIcons)) addIcon(name, icon)
 // Local Phosphor icons, no network requests.
 const icons = {
   'ph:stack-fill': {
