@@ -53,7 +53,7 @@
       "buildResources": "resources"
     },
     "asar": true,
-    "compression": "maximum",
+    "compression": "normal",
     "artifactName": "POE-Price-Patch-${version}-${arch}-免安装版.${ext}",
     "files": [
       "out/**/*",

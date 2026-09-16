@@ -13,11 +13,12 @@ const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-no-install-'))
 const appDirectory = path.join(sandbox, '免安装版 中文路径')
 await fs.mkdir(appDirectory)
 const evidence = { archive, appDirectory, commands: [], checks: [] }
-function run(command, args) {
+function run(command, args, extraEnv = {}) {
   const result = spawnSync(command, args, {
     cwd: root,
     encoding: 'utf8',
     windowsHide: true,
+    env: { ...process.env, ...extraEnv },
     timeout: 180000,
     maxBuffer: 8 * 1024 * 1024
   })
@@ -46,7 +47,16 @@ async function inventory(directory) {
   return hashes
 }
 try {
-  run('tar', ['-xf', archive, '-C', appDirectory])
+  run(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "$ErrorActionPreference = 'Stop'\nExpand-Archive -LiteralPath $env:POE_TEST_ARCHIVE -DestinationPath $env:POE_TEST_APP_DIR"
+    ],
+    { POE_TEST_ARCHIVE: archive, POE_TEST_APP_DIR: appDirectory }
+  )
   const extracted = await inventory(appDirectory)
   const unpacked = await inventory(path.join(root, 'dist/win-unpacked'))
   // NSIS adds its elevation helper after the ZIP target; the app does not use it.
