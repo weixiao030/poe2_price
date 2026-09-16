@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.0</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.1</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -23,7 +23,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.8.0` 使用统一桌面界面，工作空间按“物价补丁 → 运行记录 → 引用设置”排列。优化打开速度与后台占用：界面资源压缩，后台自启不创建渲染窗口，从托盘打开时再加载；关闭到托盘后释放界面，仍按原配置进行每小时自动更新。物价、汉化、岛屿传言提示和还原核心保持不变。
+`v0.8.1` 保留底部“一键汉化 POE1”独立入口，位于“还原补丁”左侧，无需选择价格赛季。识别或切换客户端时禁用汉化按钮，执行时显示加载状态。继续保留 v0.8.0 的启动和后台占用优化，物价、汉化、岛屿传言提示和还原核心不变。
 
 [下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
@@ -57,6 +57,12 @@
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/9/17 更新（v0.8.1）
+
+- 底部“一键汉化 POE1”独立于物价更新，保留确认弹窗，无需价格赛季。
+- 识别或切换客户端时禁止发起汉化，执行时显示加载状态。
+- 增加独立汉化入口、取消确认、禁用状态及紧凑窗口布局的自动检查。
 
 ### 26/9/16 更新（v0.8.0）
 
@@ -195,8 +201,8 @@
 
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
-- `POE-Price-Patch-0.8.0-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.0-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
+- `POE-Price-Patch-0.8.1-x64-Setup.exe`：安装版，推荐日常使用。
+- `POE-Price-Patch-0.8.1-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装

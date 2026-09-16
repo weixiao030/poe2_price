@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const packageVersion = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version
 const packaged = process.argv.includes('--packaged')
 const appDirectory = process.argv.includes('--app-dir')
   ? path.resolve(process.argv[process.argv.indexOf('--app-dir') + 1])
@@ -104,7 +105,7 @@ try {
   )
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
   const snapshot = await page.evaluate(() => window.desktop.getSnapshot())
-  assert.equal(snapshot.version, '0.8.0')
+  assert.equal(snapshot.version, packageVersion)
   assert.deepEqual(snapshot.history, [record])
   assert.equal(snapshot.settings.autoUpdate, true)
   assert.equal(

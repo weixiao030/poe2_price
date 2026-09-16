@@ -50,6 +50,8 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm --prefix desktop run dist
+      - name: Verify independent localization entry
+        run: node desktop/scripts/verify-localize-entry.mjs
       - name: Verify packaged application
         run: |
           node desktop/scripts/verify-package.mjs --ci

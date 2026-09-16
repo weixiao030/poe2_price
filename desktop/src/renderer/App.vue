@@ -511,7 +511,8 @@ onUnmounted(() => app.dispose())
         <div class="flex gap-2">
           <n-button
             v-if="app.settings.gameVersion === 'poe1'"
-            :disabled="app.running || !app.client || app.client.isChina"
+            :disabled="app.running || app.querying || !app.client || app.client.isChina"
+            :loading="app.state.active?.request.operation === 'localize'"
             @click="confirmOperation('localize')"
             >一键汉化 POE1</n-button
           >
