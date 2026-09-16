@@ -27,7 +27,7 @@
 
 [下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
-推荐日常使用 **Setup 安装版**；**Portable 免安装版**每次打开前会先解包，启动时间通常更长。两种版本都内置运行环境。
+提供 **Setup 安装版**和 **ZIP 免安装版**，两种版本都内置运行环境。免安装版只需将压缩包完整解压到一个文件夹，双击其中的 `物价补丁.exe` 即可运行，后续启动无需重复解包；不要只取出 EXE 或直接在压缩包内运行。
 
 ---
 
@@ -61,6 +61,7 @@
 ### 26/9/16 更新（v0.8.0）
 
 - 工作空间顺序统一为“物价补丁 → 运行记录 → 引用设置”，页面、安装包及发布版本统一为 v0.8.0。
+- 免安装版改为完整程序文件夹 ZIP，解压后双击 `物价补丁.exe`，取消每次启动时的自解包过程；Setup 安装版继续保留。
 - 压缩界面资源，背景图片异步加载，不再阻塞工作台显示。
 - 后台自启仅驻留托盘，不创建隐藏窗口或预热渲染进程，不自动扫描游戏或加载背景；打开工作台时按需加载。
 - 关闭到托盘后释放界面，保留任务、运行记录与每小时更新。重新打开、最小化恢复和关闭退出均保留。
@@ -195,12 +196,14 @@
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
 - `POE-Price-Patch-0.8.0-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.0-x64-Portable.exe`：免安装版，双击解包运行。
+- `POE-Price-Patch-0.8.0-x64-免安装版.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装
 
 安装版按提示选择安装位置；免安装版可放在任意可写目录。无需放进游戏根目录，也无需另装 Python 或 .NET。应用内选择包含 `Content.ggpk` 或 `Bundles2\\_.index.bin` 的游戏目录。
+
+从旧版迁移或移动免安装版文件夹后，如需开机自启，请在“引用设置”重新关闭并开启“开机自动启动”，将自启路径更新为当前 `物价补丁.exe`。
 
 > 💡 **提示：** 自动识别会检查已安装程序、注册表、WeGame/Steam 游戏库与 Epic 清单；未识别到或有多个客户端时，请手动选择并核对游戏版本、服区和目录。
 
@@ -265,9 +268,11 @@ python -m pytest tests -q
 npm --prefix desktop test
 npm --prefix desktop run dist
 node desktop/scripts/verify-startup.mjs --packaged
+node desktop/scripts/verify-no-install.mjs
+node desktop/scripts/verify-compatibility.mjs
 ```
 
-输出目录：`desktop/dist`，包含 Setup、Portable 和未压缩应用目录。推送 main 执行构建与验证；只有与应用版本一致的标签才创建 Release，发布附带 SHA256 校验值。发行包暂未配置项目代码签名。
+输出目录：`desktop/dist`，包含 Setup 安装版、免安装版 ZIP 和未压缩应用目录。推送 main 执行构建与验证；只有与应用版本一致的标签才发布 Release，发布附带 SHA256 校验值。发行包暂未配置项目代码签名。
 
 ### 调试参数
 

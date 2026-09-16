@@ -16,4 +16,11 @@ test('release metadata agrees and only the price engine is packaged', () => {
     ['engine', 'icon.png']
   )
   assert.equal(pkg.scripts.build, 'npm run typecheck && electron-vite build')
+  assert.deepEqual(pkg.build.win.target, [
+    { target: 'nsis', arch: ['x64'] },
+    { target: 'zip', arch: ['x64'] }
+  ])
+  assert.equal(pkg.build.win.executableName, '物价补丁')
+  assert.equal(pkg.build.artifactName, 'POE-Price-Patch-${version}-${arch}-免安装版.${ext}')
+  assert.equal(pkg.build.portable, undefined)
 })

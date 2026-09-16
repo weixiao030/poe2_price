@@ -54,6 +54,7 @@
     },
     "asar": true,
     "compression": "maximum",
+    "artifactName": "POE-Price-Patch-${version}-${arch}-免安装版.${ext}",
     "files": [
       "out/**/*",
       "package.json"
@@ -70,6 +71,7 @@
     ],
     "win": {
       "icon": "resources/icon.png",
+      "executableName": "物价补丁",
       "requestedExecutionLevel": "asInvoker",
       "target": [
         {
@@ -79,7 +81,7 @@
           ]
         },
         {
-          "target": "portable",
+          "target": "zip",
           "arch": [
             "x64"
           ]
@@ -93,10 +95,6 @@
       "createDesktopShortcut": true,
       "deleteAppDataOnUninstall": false,
       "artifactName": "POE-Price-Patch-${version}-${arch}-Setup.${ext}"
-    },
-    "portable": {
-      "requestExecutionLevel": "user",
-      "artifactName": "POE-Price-Patch-${version}-${arch}-Portable.${ext}"
     }
   }
 }

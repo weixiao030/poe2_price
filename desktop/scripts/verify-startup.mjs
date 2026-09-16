@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packaged = process.argv.includes('--packaged')
+const appDirectory = process.argv.includes('--app-dir')
+  ? path.resolve(process.argv[process.argv.indexOf('--app-dir') + 1])
+  : path.join(root, 'dist/win-unpacked')
 const output = path.join(root, 'test-results')
 await fs.mkdir(output, { recursive: true })
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-startup-check-'))
@@ -70,7 +73,7 @@ async function readyPage() {
 }
 try {
   application = await electron.launch({
-    ...(packaged ? { executablePath: path.join(root, 'dist/win-unpacked/POE 物价补丁.exe') } : {}),
+    ...(packaged ? { executablePath: path.join(appDirectory, '物价补丁.exe') } : {}),
     args: [...(packaged ? [] : [root]), '--hidden'],
     env,
     timeout: 30000

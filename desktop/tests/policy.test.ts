@@ -78,3 +78,51 @@ test('keeps newest bounded log output under a sustained output stream', () => {
   assert.ok(output.endsWith('中文阶段 4999\n'))
   assert.ok(!output.includes('阶段 1\n'))
 })
+
+test('all client families preserve update/restore routing, scopes and season identity', () => {
+  for (const gameVersion of ['poe1', 'poe2'] as const) {
+    for (const platform of ['official', 'steam', 'wegame']) {
+      for (const patchScope of ['all', 'currency', 'uniques', 'none'] as const) {
+        for (const languageMode of ['auto', 'localization', 'zh-CN', 'zh-TW', 'config'] as const) {
+          for (const leagueIsCurrent of [false, true]) {
+            const r = validateRequest({
+              ...request,
+              gameVersion,
+              patchScope,
+              languageMode,
+              leagueIsCurrent,
+              gameDirectory: `D:\\兼容性\\${platform}\\${gameVersion}`,
+              poeCurrencySeason: platform === 'wegame' ? 'selected-cn-season' : '',
+              league: 'selected-league',
+              poeNinjaLeague: 'Selected Ninja League'
+            })
+            const args = argsFor(r)
+            assert.equal(
+              scriptFor(r),
+              gameVersion === 'poe1' ? 'update_poe1_price_patch.ps1' : 'update_price_patch.ps1'
+            )
+            assert.equal(args.PatchScope, patchScope)
+            assert.equal(args.LeagueIsCurrent, leagueIsCurrent)
+            assert.equal(args.PoeCurrencySeason, r.poeCurrencySeason)
+            assert.equal(args.League, r.league)
+            assert.equal(args[gameVersion === 'poe1' ? 'Poe1Dir' : 'Poe2Dir'], r.gameDirectory)
+            assert.equal(args.Poe1LanguageMode, gameVersion === 'poe1' ? languageMode : undefined)
+            assert.equal(args.PoeNinjaLeague, gameVersion === 'poe2' ? r.poeNinjaLeague : undefined)
+            assert.equal(args.IslandRumourHints, gameVersion === 'poe2' ? true : undefined)
+            const restore = { ...r, operation: 'restore' as const }
+            assert.equal(
+              scriptFor(restore),
+              gameVersion === 'poe1' ? 'restore_poe1_price_patch.ps1' : 'restore_price_patch.ps1'
+            )
+            assert.deepEqual(
+              argsFor(restore),
+              gameVersion === 'poe1'
+                ? { Poe1Dir: r.gameDirectory, Poe1LanguageMode: languageMode }
+                : { Poe2Dir: r.gameDirectory }
+            )
+          }
+        }
+      }
+    }
+  }
+})

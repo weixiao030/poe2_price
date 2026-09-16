@@ -22,7 +22,7 @@ await fs.writeFile(path.join(output, 'invalid.png'), 'invalid-image')
 await fs.writeFile(path.join(output, 'large.png'), Buffer.alloc(21 * 1024 * 1024))
 let app, page
 async function launch() {
-  app = await electron.launch({ ...(packaged ? { executablePath: path.join(root, 'dist/win-unpacked/POE 物价补丁.exe'), args: [] } : { args: [root] }), env, timeout: 60000 })
+  app = await electron.launch({ ...(packaged ? { executablePath: path.join(root, 'dist/win-unpacked/物价补丁.exe'), args: [] } : { args: [root] }), env, timeout: 60000 })
   page = await app.firstWindow()
   page.on('pageerror', (e) => evidence.errors.push(e.message))
   await page.getByRole('heading', { name: '物价补丁', exact: true }).waitFor()

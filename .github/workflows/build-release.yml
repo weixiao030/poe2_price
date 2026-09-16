@@ -55,19 +55,24 @@ jobs:
           node desktop/scripts/verify-package.mjs --ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node desktop/scripts/verify-startup.mjs --packaged
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node desktop/scripts/verify-no-install.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node desktop/scripts/verify-compatibility.mjs
       - name: Check version tag and generate hashes
         shell: pwsh
         run: |
           $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/package version mismatch' }
-          Get-ChildItem desktop/dist -Filter '*.exe' | ForEach-Object {
+          Get-Item "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe", "desktop/dist/POE-Price-Patch-$version-x64-免安装版.zip" | ForEach-Object {
             '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
           } | Set-Content desktop/dist/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
         with:
           name: poe-price-patch-desktop
           path: |
-            desktop/dist/*.exe
+            desktop/dist/*-Setup.exe
+            desktop/dist/*-免安装版.zip
             desktop/dist/SHA256SUMS.txt
           if-no-files-found: error
   publish:
@@ -87,4 +92,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" release/* --verify-tag --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/* --clobber
+            gh release edit "$RELEASE_TAG" --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest
+            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name | select(endswith("-Portable.exe"))' | while IFS= read -r asset; do
+              gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+            done
+          else
+            gh release create "$RELEASE_TAG" release/* --verify-tag --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest
+          fi
