@@ -34,7 +34,7 @@ def run_powershell(script: str) -> str:
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            script,
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); " + script,
         ],
         cwd=ROOT,
         text=True,

@@ -1,12 +1,3 @@
-import type {
-  AtlasSnapshot,
-  AtlasRoute,
-  MapStatus,
-  RouteRequest,
-  OverlayOptions,
-  MapPlanningState,
-  GridPoint
-} from './world-map'
 export type GameVersion = 'poe1' | 'poe2'
 export type Operation = 'update' | 'restore' | 'localize'
 export type PatchScope = 'all' | 'currency' | 'uniques' | 'none'
@@ -81,19 +72,6 @@ export interface AppSnapshot {
   nextUpdate: string | null
 }
 export interface DesktopApi {
-  getMapStatus(): Promise<MapStatus>
-  setMapDirectory(directory: string): Promise<MapStatus>
-  setMapEnabled(enabled: boolean): Promise<MapStatus>
-  confirmMapConsent(token: string): Promise<MapStatus>
-  readMap(reset?: boolean): Promise<AtlasSnapshot>
-  searchMap(query: string): Promise<string[]>
-  planMapRoute(request: RouteRequest): Promise<AtlasRoute>
-  clearMapRoute(): Promise<void>
-  setMapOverlay(options: Partial<OverlayOptions>): Promise<MapStatus>
-  setMapPlanning(state: Partial<MapPlanningState>): Promise<MapStatus>
-  setMapPicking(enabled: boolean): Promise<MapStatus>
-  onMapSelection(callback: (point: GridPoint) => void): () => void
-  onMapPicking(callback: (picking: boolean) => void): () => void
   cleanupFiles(
     kind: 'cache' | 'logs',
     remove: boolean
@@ -104,7 +82,7 @@ export interface DesktopApi {
     olderThanDays: number
     cancelled?: boolean
   }>
-  openCommunity(kind: 'source' | 'community' | 'world-map'): Promise<void>
+  openCommunity(kind: 'source' | 'community'): Promise<void>
   getSnapshot(): Promise<AppSnapshot>
   saveSettings(settings: Partial<AppSettings>): Promise<AppSettings>
   pickGameDirectory(): Promise<string | null>

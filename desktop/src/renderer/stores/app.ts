@@ -85,7 +85,14 @@ export const useAppStore = defineStore('app', () => {
         window.desktop.onProgress(push)
       ]
       state.value = await window.desktop.getSnapshot()
-      background.value = await window.desktop.getBackground()
+      void window.desktop
+        .getBackground()
+        .then((value) => {
+          background.value = value
+        })
+        .catch((e) => {
+          error.value = String(e.message || e)
+        })
       if (state.value.active?.logTail)
         push({
           runId: state.value.active.runId,
@@ -212,9 +219,13 @@ export const useAppStore = defineStore('app', () => {
     }
     try {
       const result = await window.desktop.runOperation(request)
-      if (result.exitCode === 0 &&
-          (operation === 'localize' || request.languageMode !== settings.value.languageMode))
-        void inspect().catch((e) => { error.value = String(e.message || e) })
+      if (
+        result.exitCode === 0 &&
+        (operation === 'localize' || request.languageMode !== settings.value.languageMode)
+      )
+        void inspect().catch((e) => {
+          error.value = String(e.message || e)
+        })
       return result
     } finally {
       busy.value = false

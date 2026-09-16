@@ -1,0 +1,25 @@
+.cleanup-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.cleanup-result {
+  padding: 10px 0;
+  color: var(--accent);
+  font-size: 12px;
+}
+.open-source-section {
+  margin-top: 20px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.open-source-section a {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--accent);
+}

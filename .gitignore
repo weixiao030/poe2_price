@@ -20,7 +20,6 @@ build/downloads/*.zip
 desktop/out/
 desktop/dist/
 desktop/.runtime/
-desktop/.world-map/
 desktop/test-results/
 desktop/playwright-report/
 .pytest_cache/

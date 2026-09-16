@@ -1,6 +1,6 @@
 {
   "name": "poe-price-patch-desktop",
-  "version": "0.8.1",
+  "version": "0.8.0",
   "description": "POE1 / POE2 物价补丁桌面应用",
   "main": "out/main/index.js",
   "author": "POE Price Patch",
@@ -11,9 +11,7 @@
     "dev": "electron-vite dev",
     "typecheck": "vue-tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "build": "npm run typecheck && npm run build:world-map && electron-vite build",
-    "build:world-map": "dotnet publish ../world-map/WorldMap.csproj -c Release -r win-x64 --self-contained false -o .world-map -p:UseAppHost=true",
-    "test:world-map": "dotnet run --project ../world-map/WorldMap.csproj -c Release -- --self-test",
+    "build": "npm run typecheck && electron-vite build",
     "prepare:runtime": "node scripts/prepare-runtime.mjs",
     "dist": "npm run prepare:runtime && npm run build && electron-builder --publish never",
     "test:desktop": "node scripts/verify-desktop.mjs",
@@ -61,10 +59,6 @@
       "package.json"
     ],
     "extraResources": [
-      {
-        "from": ".world-map",
-        "to": "world-map"
-      },
       {
         "from": ".runtime",
         "to": "engine"

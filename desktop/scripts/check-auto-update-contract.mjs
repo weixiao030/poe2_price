@@ -41,8 +41,6 @@ const context = vm.createContext({
   path,
   crypto,
   maintenanceRunning: false,
-  worldMap: { enabled: false },
-  mapChanging: false,
   Date: class extends Date {
     static now() {
       return now
@@ -112,26 +110,6 @@ const afterFailedHour = status()
 engineExit = 2
 await probe.tick()
 const afterSkippedHour = status()
-context.worldMap.enabled = true
-context.mapChanging = true
-let beforeMapHour = calls
-await probe.tick()
-const mapRunningGameHour = {
-  calls: calls - beforeMapHour,
-  exitCode: state.history[0].exitCode,
-  enabled: context.worldMap.enabled,
-  ...status()
-}
-engineExit = 0
-beforeMapHour = calls
-await probe.tick()
-const mapWaitingGameHour = {
-  calls: calls - beforeMapHour,
-  exitCode: state.history[0].exitCode,
-  mapEnabled: context.worldMap.enabled,
-  ...status()
-}
-context.mapChanging = false
 const expiredTimer = vm.runInContext('timer.callback', context)
 state.settings.autoUpdate = false
 probe.schedule()
@@ -148,8 +126,6 @@ console.log(
       afterRestore,
       afterFailedHour,
       afterSkippedHour,
-      mapRunningGameHour,
-      mapWaitingGameHour,
       afterManualOff,
       disabledQueuedCallbackRuns
     },

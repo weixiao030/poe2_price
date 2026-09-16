@@ -28,7 +28,7 @@ def run_windows_powershell(script: str, timeout: int = 120) -> str:
             "-ExecutionPolicy",
             "Bypass",
             "-Command",
-            script,
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); " + script,
         ],
         cwd=ROOT,
         text=True,

@@ -3,7 +3,7 @@ import { useAppStore } from '../stores/app'
 import { useMessage } from 'naive-ui'
 import { Icon } from '@iconify/vue'
 import { ref } from 'vue'
-import '../world-map.css'
+import './settings.css'
 const app = useAppStore(),
   message = useMessage(),
   desktop = window.desktop
@@ -206,6 +206,6 @@ async function cleanup(kind: 'cache' | 'logs') {
     /></a>
   </section>
   <p class="about-line">
-    POE 物价补丁 {{ app.state.version }} · 本地配置保存在当前 Windows 用户目录 · 禁止商业使用
+    POE 物价补丁 v{{ app.state.version }} · 本地配置保存在当前 Windows 用户目录 · 禁止商业使用
   </p>
 </template>

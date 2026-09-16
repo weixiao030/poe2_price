@@ -36,7 +36,7 @@ async function shot(name) {
   await page.screenshot({ path: file })
   evidence.screenshots.push(file)
 }
-async function settings() { await page.getByRole('button', { name: '应用设置', exact: true }).click() }
+async function settings() { await page.getByRole('button', { name: '引用设置', exact: true }).click() }
 async function workspace() { await page.getByRole('button', { name: '物价补丁', exact: true }).click() }
 async function waitFor(predicate) {
   const until = Date.now() + 60000

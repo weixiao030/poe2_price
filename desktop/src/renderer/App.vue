@@ -19,12 +19,11 @@ import { useAppStore } from './stores/app'
 import type { AppSettings, GameVersion, Operation, OperationResult } from '../shared/types'
 const HistoryPage = defineAsyncComponent(() => import('./components/HistoryPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'))
-const WorldMapPage = defineAsyncComponent(() => import('./components/WorldMapPage.vue'))
 const desktop = window.desktop
 const app = useAppStore(),
   message = useMessage(),
   dialog = useDialog()
-const page = ref<'workspace' | 'world-map' | 'history' | 'settings'>('workspace')
+const page = ref<'workspace' | 'history' | 'settings'>('workspace')
 const pathsOpen = ref(false),
   manualPath = ref(''),
   searching = ref(false),
@@ -36,9 +35,8 @@ const title = computed(
   () =>
     ({
       workspace: '物价补丁',
-      'world-map': '世界地图规划',
       history: '运行记录',
-      settings: '应用设置'
+      settings: '引用设置'
     })[page.value]
 )
 const names = { update: '更新物价', restore: '还原补丁', localize: 'POE1 汉化' }
@@ -196,11 +194,8 @@ onUnmounted(() => app.dispose())
             >{{ app.state.history.length }}</span
           >
         </button>
-        <button :class="['nav-item', { active: page === 'world-map' }]" @click="page = 'world-map'">
-          <Icon icon="ph:map-trifold" />世界地图规划
-        </button>
         <button :class="['nav-item', { active: page === 'settings' }]" @click="page = 'settings'">
-          <Icon icon="ph:sliders-horizontal" />应用设置
+          <Icon icon="ph:sliders-horizontal" />引用设置
         </button>
       </nav>
       <div class="sidebar-bottom">
@@ -208,7 +203,7 @@ onUnmounted(() => app.dispose())
           <Icon icon="ph:shield-check" /><span>本地执行 · 自动备份</span>
         </div>
         <div class="version-line">
-          <span>桌面版 {{ app.state.version }}</span
+          <span>桌面版 v{{ app.state.version }}</span
           ><span>Windows</span>
         </div>
       </div>
@@ -230,7 +225,7 @@ onUnmounted(() => app.dispose())
         <div class="page-heading">
           <div>
             <h1>{{ title }}</h1>
-            <p v-if="page !== 'world-map'">
+            <p>
               {{
                 page === 'workspace'
                   ? '让价值一目了然，把时间留给探索。'
@@ -495,11 +490,10 @@ onUnmounted(() => app.dispose())
           </div>
         </template>
         <HistoryPage v-else-if="page === 'history'" @select="historyDetail = $event" />
-        <WorldMapPage v-else-if="page === 'world-map'" />
         <template v-else>
           <SettingsPage />
         </template>
-        <footer v-if="page !== 'world-map'" class="page-footer">
+        <footer class="page-footer">
           <span>POE {{ app.settings.gameVersion === 'poe2' ? '2' : '1' }} 物价补丁</span
           ><span>价格标注 · 客户端独立备份 · 随时还原</span>
         </footer>
