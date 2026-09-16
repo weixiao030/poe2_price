@@ -54,7 +54,7 @@
     },
     "asar": true,
     "compression": "normal",
-    "artifactName": "POE-Price-Patch-${version}-${arch}-免安装版.${ext}",
+    "artifactName": "POE-Price-Patch-${version}-${arch}-NoInstall.${ext}",
     "files": [
       "out/**/*",
       "package.json"

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { version } = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
-const archive = path.join(root, `dist/POE-Price-Patch-${version}-x64-免安装版.zip`)
+const archive = path.join(root, `dist/POE-Price-Patch-${version}-x64-NoInstall.zip`)
 const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-no-install-'))
 const appDirectory = path.join(sandbox, '免安装版 中文路径')
 await fs.mkdir(appDirectory)

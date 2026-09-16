@@ -21,6 +21,6 @@ test('release metadata agrees and only the price engine is packaged', () => {
     { target: 'zip', arch: ['x64'] }
   ])
   assert.equal(pkg.build.win.executableName, '物价补丁')
-  assert.equal(pkg.build.artifactName, 'POE-Price-Patch-${version}-${arch}-免安装版.${ext}')
+  assert.equal(pkg.build.artifactName, 'POE-Price-Patch-${version}-${arch}-NoInstall.${ext}')
   assert.equal(pkg.build.portable, undefined)
 })

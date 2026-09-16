@@ -196,7 +196,7 @@
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
 - `POE-Price-Patch-0.8.0-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.0-x64-免安装版.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
+- `POE-Price-Patch-0.8.0-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装

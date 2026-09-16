@@ -64,7 +64,7 @@ jobs:
         run: |
           $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/package version mismatch' }
-          Get-Item "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe", "desktop/dist/POE-Price-Patch-$version-x64-免安装版.zip" | ForEach-Object {
+          Get-Item "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe", "desktop/dist/POE-Price-Patch-$version-x64-NoInstall.zip" | ForEach-Object {
             '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
           } | Set-Content desktop/dist/SHA256SUMS.txt -Encoding utf8
       - uses: actions/upload-artifact@v4
@@ -72,7 +72,7 @@ jobs:
           name: poe-price-patch-desktop
           path: |
             desktop/dist/*-Setup.exe
-            desktop/dist/*-免安装版.zip
+            desktop/dist/*-NoInstall.zip
             desktop/dist/SHA256SUMS.txt
           if-no-files-found: error
   publish:
@@ -95,9 +95,11 @@ jobs:
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release/* --clobber
             gh release edit "$RELEASE_TAG" --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest
-            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name | select(endswith("-Portable.exe"))' | while IFS= read -r asset; do
-              gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+            gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name | select(endswith("-Portable.exe") or endswith("-x64-.zip"))' | while IFS= read -r asset; do
+              [ -z "$asset" ] || gh release delete-asset "$RELEASE_TAG" "$asset" --yes
             done
           else
             gh release create "$RELEASE_TAG" release/* --verify-tag --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest
           fi
+          archive_url=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[] | select(.name | endswith("-NoInstall.zip")) | .apiUrl')
+          gh api --method PATCH "$archive_url" -f label="免安装版 ZIP（完整解压后运行物价补丁.exe）"
