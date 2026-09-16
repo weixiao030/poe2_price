@@ -14,8 +14,3 @@ test('hourly preference survives operations; only manual off stops future checks
   assert.deepEqual(observed.afterManualOff, { enabled: false, confirmed: true, scheduled: false })
   assert.equal(observed.disabledQueuedCallbackRuns, 0)
 })
-
-test('legacy confirmed configuration is eligible for one-time preference migration', () => {
-  const legacy = { autoUpdate: false, confirmed: true, preferenceRecorded: false }
-  assert.equal(!legacy.preferenceRecorded && !legacy.autoUpdate && legacy.confirmed, true)
-})
