@@ -129,7 +129,7 @@ function confirmOperation(operation: Operation) {
         : operation === 'restore'
           ? '确认还原补丁'
           : '确认汉化 POE1',
-    content: `${app.client?.displayName || ''}\n${app.client?.path || ''}\n\n${operation === 'restore' ? '将用此客户端的专属基线还原补丁，并关闭每小时自动更新。' : operation === 'localize' ? '将下载并校验 POE1 国际服汉化工具。完成后在游戏内选择法文国旗。' : '将获取所选赛季价格并写入当前游戏客户端。'}请确认游戏已关闭。`,
+    content: `${app.client?.displayName || ''}\n${app.client?.path || ''}\n\n${operation === 'restore' ? `将用此客户端的专属基线还原补丁。${app.settings.autoUpdate ? '每小时自动更新仍保持开启，下一轮会按最近成功的配置重新应用补丁。' : ''}` : operation === 'localize' ? '将下载并校验 POE1 国际服汉化工具。完成后在游戏内选择法文国旗。' : '将获取所选赛季价格并写入当前游戏客户端。'}请确认游戏已关闭。`,
     positiveText: '确认执行',
     negativeText: '返回',
     onPositiveClick: () => {

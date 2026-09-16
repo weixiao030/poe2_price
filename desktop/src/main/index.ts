@@ -186,10 +186,6 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
           nextState.settings = { ...nextState.settings, languageMode: 'localization' }
       }
       if (request.operation === 'update') nextState.confirmed = { request, installKind: kind }
-      if (request.operation === 'restore') {
-        nextState.confirmed = null
-        nextState.settings = { ...nextState.settings, autoUpdate: false }
-      }
     }
     store.store = nextState
   } catch (error) {
@@ -206,13 +202,20 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
   return result
 }
 function schedule() {
-  clearTimeout(timer)
-  nextUpdate = null
-  if (!store.get('settings').autoUpdate || !store.get('confirmed')) return
+  if (!store.get('settings').autoUpdate || !store.get('confirmed')) {
+    clearTimeout(timer)
+    timer = undefined
+    nextUpdate = null
+    return
+  }
+  // Settings changes and manual operations must not postpone an existing hourly check.
+  if (timer) return
   nextUpdate = new Date(Date.now() + 3_600_000).toISOString()
   timer = setTimeout(async () => {
+    timer = undefined
+    nextUpdate = null
     const confirmed = store.get('confirmed')
-    if (active || !confirmed) {
+    if (active || !confirmed || !store.get('settings').autoUpdate) {
       schedule()
       refresh()
       return
@@ -370,8 +373,9 @@ else {
       handle('background:choose', () => chooseBackground(window!))
       handle('background:clear', clearBackground)
       handle('settings:save', (input: unknown) => {
-        if (active) throw new Error('任务执行中不能修改设置')
         const patch = settingsPatch(input)
+        if (active && Object.keys(patch).some((key) => key !== 'autoUpdate'))
+          throw new Error('任务执行中不能修改设置')
         if (patch.autoStart !== undefined) {
           if (!app.isPackaged) throw new Error('开机启动仅在发布版本中可用')
           app.setLoginItemSettings({
@@ -381,6 +385,8 @@ else {
           })
         }
         store.set('settings', { ...store.get('settings'), ...patch })
+        if (patch.autoUpdate !== undefined)
+          log.info(`用户设置每小时自动更新：${patch.autoUpdate ? '开启' : '关闭'}`)
         schedule()
         refresh()
         return store.get('settings')

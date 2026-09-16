@@ -128,8 +128,11 @@ try {
     '隔离脚本成功执行、历史赛季 false 保留、中文日志完整、连续任务与互斥验证通过'
   )
   await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: true }))
-  assert.ok((await page.evaluate(() => window.desktop.getSnapshot())).nextUpdate)
-  evidence.checks.push('成功手动任务后每小时调度建立')
+  const due = (await page.evaluate(() => window.desktop.getSnapshot())).nextUpdate
+  assert.ok(due)
+  await page.evaluate(() => window.desktop.saveSettings({ backgroundOpacity: 25 }))
+  assert.equal((await page.evaluate(() => window.desktop.getSnapshot())).nextUpdate, due)
+  evidence.checks.push('成功手动任务后每小时调度建立；其他设置不推迟原定时间')
   await app.evaluate(({ dialog }, directory) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] })
   }, game)
@@ -160,10 +163,10 @@ try {
   await waitSnapshot(page, (s) => !s.active && s.history[0]?.operation === 'restore')
   const restored = await page.evaluate(() => window.desktop.getSnapshot())
   assert.equal(restored.history[0].exitCode, 0)
-  assert.equal(restored.settings.autoUpdate, false)
-  assert.equal(restored.nextUpdate, null)
+  assert.equal(restored.settings.autoUpdate, true)
+  assert.ok(restored.nextUpdate)
   evidence.checks.push(
-    '真实界面选择目录、刷新赛季、切换范围、确认更新及还原；还原成功后停用自动更新'
+    '真实界面选择目录、刷新赛季、切换范围、确认更新及还原；还原成功后仍保持每小时自动更新'
   )
   await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: false }))
   await fs.writeFile(
@@ -179,10 +182,14 @@ try {
   await page.waitForFunction(() =>
     document.querySelector('[role="log"]').textContent.includes('CHILD_PID=')
   )
+  await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: true }))
+  await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: false }))
+  assert.equal((await page.evaluate(() => window.desktop.getSnapshot())).nextUpdate, null)
   const active = (await page.evaluate(() => window.desktop.getSnapshot())).active
   assert.equal(await page.evaluate((id) => window.desktop.cancelOperation(id), active.runId), true)
   const cancelled = await page.evaluate(() => window.__qaTask)
   assert.equal(cancelled.cancelled, true)
+  assert.equal((await page.evaluate(() => window.desktop.getSnapshot())).settings.autoUpdate, false)
   const childPid = Number(cancelled.stdout.match(/CHILD_PID=(\d+)/)?.[1])
   assert.ok(childPid > 0)
   assert.throws(() => process.kill(childPid, 0))
@@ -219,15 +226,28 @@ try {
   await page.getByRole('button', { name: /运行记录/ }).click()
   await page.screenshot({ path: path.join(reportDir, 'history.png'), fullPage: true })
   const count = (await page.evaluate(() => window.desktop.getSnapshot())).history.length
+  await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: true }))
   await app.close()
   app = null
   page = await launch()
+  const resumed = await page.evaluate(() => window.desktop.getSnapshot())
+  assert.equal(resumed.settings.autoUpdate, true)
+  assert.ok(resumed.nextUpdate)
   assert.equal((await page.evaluate(() => window.desktop.getSnapshot())).history.length, count)
   assert.equal(
     (await page.evaluate(() => window.desktop.getSnapshot())).settings.closeToTray,
     false
   )
-  evidence.checks.push('关闭重启后设置与运行历史持久化')
+  await page.getByRole('button', { name: '应用设置', exact: true }).click()
+  assert.equal(await page.getByRole('switch', { name: '每小时自动更新' }).getAttribute('aria-checked'), 'true')
+  await page.getByRole('switch', { name: '每小时自动更新' }).click()
+  await app.close()
+  app = null
+  page = await launch()
+  const disabled = await page.evaluate(() => window.desktop.getSnapshot())
+  assert.equal(disabled.settings.autoUpdate, false)
+  assert.equal(disabled.nextUpdate, null)
+  evidence.checks.push('自动更新开启后重启保持开启并恢复调度；手动关闭后重启保持关闭；历史保留')
   assert.deepEqual(evidence.errors, [])
   evidence.checks.push('所有页面无未捕获 JavaScript 错误')
   console.log(JSON.stringify(evidence, null, 2))

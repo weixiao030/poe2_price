@@ -125,7 +125,8 @@ const localeDate = (date: string) => new Date(date).toLocaleString('zh-CN', { ho
     <div class="settings-row">
       <div>
         <b>每小时自动更新</b>
-        <p>沿用最近一次成功更新的配置，游戏运行时跳过。</p>
+        <p>沿用最近一次成功更新的配置，每小时检查；仅手动关闭才停用。</p>
+        <p>游戏运行、目录占用或本轮失败时，下个小时继续尝试。</p>
         <span v-if="app.settings.autoUpdate" class="schedule-note">{{
           app.state.nextUpdate
             ? `下次执行：${localeDate(app.state.nextUpdate)}`
@@ -134,7 +135,6 @@ const localeDate = (date: string) => new Date(date).toLocaleString('zh-CN', { ho
       </div>
       <n-switch
         :value="app.settings.autoUpdate"
-        :disabled="app.running"
         aria-label="每小时自动更新"
         @update:value="save({ autoUpdate: $event })"
       />
