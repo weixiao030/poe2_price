@@ -55,6 +55,7 @@ let store: Store<{
   settings: AppSettings
   history: OperationResult[]
   confirmed: { request: PatchRequest; installKind: string } | null
+  autoUpdatePreferenceRecorded: boolean
 }>
 const pendingQueries = new Map<string, Promise<unknown>>()
 
@@ -353,7 +354,8 @@ else {
         defaults: {
           settings: defaults,
           history: [] as OperationResult[],
-          confirmed: null as { request: PatchRequest; installKind: string } | null
+          confirmed: null as { request: PatchRequest; installKind: string } | null,
+          autoUpdatePreferenceRecorded: false
         },
         clearInvalidConfig: true
       })
@@ -362,6 +364,13 @@ else {
       } catch (error) {
         log.error('配置格式无效', error)
         store.set('settings', defaults)
+      }
+      // v0.7.2 could turn this preference off after a restore without a user action.
+      // Migrate that untracked legacy state once; later changes are explicit.
+      if (!store.get('autoUpdatePreferenceRecorded')) {
+        if (!store.get('settings').autoUpdate && store.get('confirmed'))
+          store.set('settings', { ...store.get('settings'), autoUpdate: true })
+        store.set('autoUpdatePreferenceRecorded', true)
       }
       session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) =>
         callback(false)
@@ -384,6 +393,7 @@ else {
             args: ['--hidden']
           })
         }
+        if (patch.autoUpdate !== undefined) store.set('autoUpdatePreferenceRecorded', true)
         store.set('settings', { ...store.get('settings'), ...patch })
         if (patch.autoUpdate !== undefined)
           log.info(`用户设置每小时自动更新：${patch.autoUpdate ? '开启' : '关闭'}`)

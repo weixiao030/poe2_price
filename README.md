@@ -1,4 +1,4 @@
-# POE1/2 物价补丁 v0.7.3
+# POE1/2 物价补丁 v0.7.4
 
 Windows 桌面应用，统一管理 POE1 / POE2 物价标注、岛屿传言提示、汉化与还原。使用 Electron、TypeScript、Vue 3、Naive UI 和 Pinia；价格与游戏数据处理继续使用经过验证的原项目引擎。
 
