@@ -20,7 +20,6 @@ COMMON = TOOLS / "poe2_patch_common.ps1"
 PROFILES = TOOLS / "poe_patch_profiles.ps1"
 POE1_COMMON = TOOLS / "poe1_patch_common.ps1"
 POE1_UPDATE = TOOLS / "update_poe1_price_patch.ps1"
-GUI = TOOLS / "price_patch_gui.ps1"
 
 
 def ps_quote(value: Path | str) -> str:
@@ -291,7 +290,7 @@ def test_poe1_scripts_keep_isolated_paths_and_c_d_contract():
     common = (TOOLS / "poe1_patch_common.ps1").read_text(encoding="utf-8-sig")
     update = (TOOLS / "update_poe1_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore = (TOOLS / "restore_poe1_price_patch.ps1").read_text(encoding="utf-8-sig")
-    gui = (TOOLS / "price_patch_gui.ps1").read_text(encoding="utf-8-sig")
+    gui = (ROOT / "desktop/src/renderer/App.vue").read_text(encoding="utf-8")
     profiles = (TOOLS / "poe_patch_profiles.ps1").read_text(encoding="utf-8-sig")
 
     assert ".poe1-price-patch" in update and ".poe1-price-patch" in restore
@@ -300,8 +299,6 @@ def test_poe1_scripts_keep_isolated_paths_and_c_d_contract():
     assert 'if ($DetectedVersion -eq "poe1") {' in profiles
     assert "one physical directory" in profiles
     assert "POE1" in restore
-    assert "RequestedGameVersion" in gui
-    assert '"poe1"' in gui and '"poe2"' in gui and '"auto"' in gui
 
 
 def test_poe1_localization_download_prefers_domestic_accelerators_and_validates_tool():
@@ -384,127 +381,12 @@ def test_poe1_localization_release_page_fallback_never_needs_bdnb():
     }
 
 
-def test_poe1_gui_localization_process_reports_progress_without_blocking(tmp_path: Path):
-    gui = GUI.read_text(encoding="utf-8-sig")
-    working_dir = tmp_path / "游戏目录 with spaces"
-    working_dir.mkdir()
-    fixture = working_dir / "fake localize with spaces.ps1"
-    fixture.write_text(
-        "\n".join(
-            [
-                "param([string]$Poe1Dir)",
-                "[Console]::OutputEncoding = [Text.Encoding]::UTF8",
-                'Write-Host "阶段一"',
-                "Start-Sleep -Milliseconds 350",
-                'Write-Output "完成:$Poe1Dir"',
-            ]
-        ),
-        encoding="utf-8-sig",
-    )
-    helpers = "\n".join(
-        powershell_function(gui, name)
-        for name in (
-            "Read-PoePatchProcessLogText",
-            "Get-PoePatchProcessLogTail",
-            "Invoke-PoePatchMonitoredLocalization",
-        )
-    )
-
-    output = run_powershell(
-        f"$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; {helpers}; "
-        "$updates=New-Object System.Collections.Generic.List[string]; "
-        f"$result=Invoke-PoePatchMonitoredLocalization -ScriptPath {ps_quote(fixture)} "
-        f"-GameDirectory {ps_quote(working_dir)} -PollMilliseconds 50 -TimeoutMilliseconds 5000 "
-        "-OnProgress { param([string]$text) $updates.Add($text) | Out-Null }; "
-        "[pscustomobject]@{ExitCode=$result.ExitCode;StdOut=$result.StdOut;Updates=@($updates)} | ConvertTo-Json -Compress"
-    )
-    result = json.loads(output)
-
-    assert result["ExitCode"] == 0
-    assert f"完成:{working_dir}" in result["StdOut"]
-    assert any("正在汉化 POE1（已运行" in item for item in result["Updates"])
-    assert any("阶段一" in item for item in result["Updates"])
 
 
-def test_poe1_gui_localization_returns_stderr_and_nonzero_exit(tmp_path: Path):
-    gui = GUI.read_text(encoding="utf-8-sig")
-    fixture = tmp_path / "fake failure.ps1"
-    fixture.write_text(
-        "param([string]$Poe1Dir)\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\n[Console]::Error.WriteLine('模拟下载失败')\nexit 23\n",
-        encoding="utf-8-sig",
-    )
-    helpers = "\n".join(
-        powershell_function(gui, name)
-        for name in (
-            "Read-PoePatchProcessLogText",
-            "Get-PoePatchProcessLogTail",
-            "Stop-PoePatchProcessTree",
-            "Invoke-PoePatchMonitoredLocalization",
-        )
-    )
-    output = run_powershell(
-        f"$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; {helpers}; "
-        f"$result=Invoke-PoePatchMonitoredLocalization -ScriptPath {ps_quote(fixture)} "
-        f"-GameDirectory {ps_quote(tmp_path)} -PollMilliseconds 50 -TimeoutMilliseconds 5000; "
-        "$result | Select-Object ExitCode,StdErr | ConvertTo-Json -Compress"
-    )
-    result = json.loads(output)
-    assert result["ExitCode"] == 23
-    assert "模拟下载失败" in result["StdErr"]
 
 
-def test_poe1_gui_localization_timeout_stops_entire_process_tree(tmp_path: Path):
-    gui = GUI.read_text(encoding="utf-8-sig")
-    fixture = tmp_path / "fake hanging localization.ps1"
-    fixture.write_text(
-        "\n".join(
-            [
-                "param([string]$Poe1Dir)",
-                "$pidPath=Join-Path $Poe1Dir 'localization-child.pid'",
-                "$child=Start-Process powershell.exe -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -WindowStyle Hidden -PassThru",
-                "[IO.File]::WriteAllText($pidPath,[string]$child.Id)",
-                'Write-Output "子进程已启动"',
-                "Start-Sleep -Seconds 60",
-            ]
-        ),
-        encoding="utf-8-sig",
-    )
-    helpers = "\n".join(
-        powershell_function(gui, name)
-        for name in ("Stop-PoePatchProcessTree", "Invoke-PoePatchMonitoredLocalization")
-    )
-    output = run_powershell(
-        f"$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; {helpers}; "
-        "$timedOut=$false; try { "
-        f"Invoke-PoePatchMonitoredLocalization -ScriptPath {ps_quote(fixture)} "
-        f"-GameDirectory {ps_quote(tmp_path)} -PollMilliseconds 50 -TimeoutMilliseconds 2000 | Out-Null "
-        "} catch { $timedOut=$_.Exception.Message -match '已停止等待' }; "
-        f"$pidPath=Join-Path {ps_quote(tmp_path)} 'localization-child.pid'; "
-        "if(-not (Test-Path -LiteralPath $pidPath)){throw 'child pid was not written'}; "
-        "$childId=[int][IO.File]::ReadAllText($pidPath); Start-Sleep -Milliseconds 300; "
-        "$alive=Get-Process -Id $childId -ErrorAction SilentlyContinue; "
-        "if($alive){Stop-Process -Id $childId -Force -ErrorAction SilentlyContinue;throw 'child survived timeout'}; "
-        "if(-not $timedOut){throw 'timeout was not reported'}; 'PROCESS_TREE_STOPPED'"
-    )
-    assert "PROCESS_TREE_STOPPED" in output
 
 
-def test_poe1_gui_localization_uses_hidden_redirected_child_process():
-    gui = GUI.read_text(encoding="utf-8-sig")
-    helper = powershell_function(gui, "Invoke-PoePatchMonitoredLocalization")
-
-    assert "$StartInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden" in helper
-    assert "$StartInfo.RedirectStandardOutput = $true" in helper
-    assert "$StartInfo.RedirectStandardError = $true" in helper
-    assert "$Process.WaitForExit($PollMilliseconds)" in helper
-    assert "[System.Windows.Forms.Application]::DoEvents()" in helper
-    assert "-Wait -PassThru -WindowStyle Normal" not in gui
-    assert "taskkill.exe" in gui
-    assert "/T /F" in gui
-    assert "$Form.Add_FormClosing" in gui
-    assert "$EventArgs.Cancel = $true" in gui
-    localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
-    assert "Get-FileHash -LiteralPath $Target" not in localize
 
 
 def test_poe1_current_dat_extraction_uses_one_batch_and_requires_english_baseitems():
@@ -518,24 +400,6 @@ def test_poe1_current_dat_extraction_uses_one_batch_and_requires_english_baseite
     assert "进程无法访问文件|文件正由另一进程使用" in common
 
 
-def test_unified_gui_uses_cached_compact_client_switching_and_both_links():
-    gui = (TOOLS / "price_patch_gui.ps1").read_text(encoding="utf-8-sig")
-
-    assert "$CandidateCache" in gui
-    assert '$CandidateCache.ContainsKey("auto")' in gui
-    assert 'Label = "[$VersionText]$ClientText | $($Candidate.Path)"' in gui
-    assert "https://github.com/weixiao030/poe2_price" in gui
-    assert "https://www.caimogu.cc/post/2403703.html" in gui
-    assert "POE1 使用混沌石 / 神圣石计价；" in gui
-    assert "开始/更新物价补丁" in gui
-    assert "更新物价补丁" in gui
-    assert "还原物价补丁" in gui
-    assert "Operation" in gui
-    assert "restore_poe1_price_patch.ps1" in gui
-    assert "ScriptParameters[\"PatchScope\"]" in gui
-    assert "Poe1Dir = [string]$Selection.GameDirectory" in gui
-    assert "岛屿提示仅适用于 POE2" not in gui
-    assert "选择游戏、客户端和本次更新范围" not in gui
 
 
 def test_poe1_auto_language_detects_localization_from_latest_client_log(tmp_path: Path):
@@ -685,25 +549,19 @@ def test_poe1_official_registry_install_location_is_discovered(tmp_path: Path):
 
 
 def test_poe1_gui_and_scripts_forward_language_mode_and_isolate_restore_names():
-    gui = (TOOLS / "price_patch_gui.ps1").read_text(encoding="utf-8-sig")
+    gui = (ROOT / "desktop/src/renderer/App.vue").read_text(encoding="utf-8")
     update = (TOOLS / "update_poe1_price_patch.ps1").read_text(encoding="utf-8-sig")
     restore = (TOOLS / "restore_poe1_price_patch.ps1").read_text(encoding="utf-8-sig")
     common = (TOOLS / "poe1_patch_common.ps1").read_text(encoding="utf-8-sig")
 
     for expected in ("自动识别", "汉化补丁", "简体中文", "繁体中文", "跟随游戏配置"):
         assert expected in gui
-    assert 'Poe1LanguageMode = [string]$Selection.Poe1LanguageMode' in gui
     assert '[string]$Poe1LanguageMode = "auto"' in update
     assert '[string]$Poe1LanguageMode = "auto"' in restore
     assert "-LanguageMode $Poe1LanguageMode" in update
     assert "-LanguageMode $Poe1LanguageMode" in restore
     assert "EffectiveLanguageCode" in common
     assert '"POE1真实还原补丁_${Kind}.zip"' in common
-    assert "$LanguageCombo.Enabled = $ShowLanguage -and -not $IsChina" in gui
-    assert "$LanguageCombo.SelectedIndex = $AutoLanguageIndex" in gui
-    assert '$LocalizeButton.Visible = ($Version -eq "poe1" -and $IsInternational)' in gui
-    assert "$PathTextBox.Add_TextChanged" in gui
-    assert '$SelectedLanguageMode = "auto"' in gui
 
 
 def test_poe1_restore_baseline_manifest_and_self_heal_are_strictly_scoped():

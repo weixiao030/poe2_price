@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ROOT / "物价补丁" / "tools"
-PAYLOAD = ROOT / "build" / "payload"
+PAYLOAD = ROOT / "desktop" / ".runtime" / "tools"
 SCRIPT = TOOLS / "poe2_name_price_patch.py"
 UPDATE_SCRIPT = TOOLS / "update_price_patch.ps1"
 RESTORE_SCRIPT = TOOLS / "restore_price_patch.ps1"

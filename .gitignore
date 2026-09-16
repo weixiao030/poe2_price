@@ -16,3 +16,15 @@ build/downloads/*.zip
 # 本地编辑器配置
 .vscode/
 .idea/
+**/node_modules/
+desktop/out/
+desktop/dist/
+desktop/.runtime/
+desktop/test-results/
+desktop/playwright-report/
+.pytest_cache/
+build/downloads/
+verification/
+物价补丁/output/
+output/
+release-desktop/

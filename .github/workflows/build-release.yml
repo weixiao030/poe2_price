@@ -1,132 +1,87 @@
-name: Build Windows Release
-
+name: Build Desktop Release
 on:
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: "Release tag. Leave empty to use build-<run-number>."
-        required: false
-        default: ""
   pull_request:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/build-release.yml"
-      - "build/**"
-      - "物价补丁/**"
-      - "restore-seeds/**"
-      - "tests/**"
+    branches: [main]
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
-    paths:
-      - ".github/workflows/build-release.yml"
-      - "build/**"
-      - "物价补丁/**"
-      - "restore-seeds/**"
-      - "tests/**"
-
-concurrency:
-  group: build-release-${{ github.ref }}
-  cancel-in-progress: false
-
+    branches: [main]
+    tags: ['v*']
 permissions:
-  contents: write
-
+  contents: read
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  build-release:
-    name: Build release package
+  desktop:
     runs-on: windows-2022
     timeout-minutes: 45
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          dotnet-version: "8.x"
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
-
-      - name: Install test dependencies
-        shell: powershell
+          python-version: '3.13'
+      - uses: actions/cache@v4
+        with:
+          path: build/downloads
+          key: runtimes-python31314-dotnet8028
+      - name: Install dependencies
         run: |
-          python -m pip install --disable-pip-version-check pytest
-
-      - name: Build release folder
-        shell: powershell
+          npm ci --prefix desktop
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install pytest
+      - name: Prepare verified engine and runtimes
+        run: npm --prefix desktop run prepare:runtime
+      - name: Verify migration and core regression
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\build\make_release.ps1 -SkipDoc
-
-      # make_release.ps1 rebuilds payload.zip, payload.enc and the launcher
-      # from the checked-out source. Verify those generated artifacts after
-      # the rebuild so a stale committed binary cannot block publishing before
-      # the normal build has had a chance to synchronize it.
-      - name: Verify generated release assets
-        shell: powershell
+          npm --prefix desktop run test:migration
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest tests -q
+      - name: Check desktop contracts
         run: |
-          python -m pytest -q tests/test_release_payload_sync.py
-
-      - name: Run tests
-        shell: powershell
-        run: |
-          python -m pytest -q
-
-      - name: Pack release zip
+          npm --prefix desktop test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node desktop/scripts/verify-auto-lock.mjs
+      - name: Build desktop and packages
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm --prefix desktop run dist
+      - name: Verify packaged application
+        run: node desktop/scripts/verify-package.mjs --ci
+      - name: Check version tag and generate hashes
         shell: pwsh
         run: |
-          $zipPath = ".\poe2-economy-display-mod.zip"
-          if (Test-Path -LiteralPath $zipPath) {
-            Remove-Item -LiteralPath $zipPath -Force
-          }
-          Compress-Archive -LiteralPath ".\发布版\物价补丁" -DestinationPath $zipPath -Force
-
-      - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+          $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/package version mismatch' }
+          Get-ChildItem desktop/dist -Filter '*.exe' | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content desktop/dist/SHA256SUMS.txt -Encoding utf8
+      - uses: actions/upload-artifact@v4
         with:
-          name: poe2-economy-display-mod
-          path: poe2-economy-display-mod.zip
+          name: poe-price-patch-desktop
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/SHA256SUMS.txt
           if-no-files-found: error
-
-      - name: Resolve release tag
-        id: release
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
-        run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $tag = "${{ inputs.tag_name }}"
-            if ([string]::IsNullOrWhiteSpace($tag)) {
-              $tag = "build-${{ github.run_number }}"
-            }
-          } elseif ("${{ github.ref }}" -eq "refs/heads/main") {
-            $tag = "build-${{ github.run_number }}"
-          } else {
-            $tag = "${{ github.ref_name }}"
-          }
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-
-      - name: Publish GitHub release
-        if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
-        shell: pwsh
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: poe-price-patch-desktop
+          path: release
+      - name: Publish versioned desktop release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $tag = "${{ steps.release.outputs.tag }}"
-          $repo = "${{ github.repository }}"
-          gh release view $tag --repo $repo *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag ".\poe2-economy-display-mod.zip" --repo $repo --clobber
-          } else {
-            gh release create $tag ".\poe2-economy-display-mod.zip" `
-              --repo $repo `
-              --title "poe2-economy-display-mod $tag" `
-              --notes "Automated build from ${{ github.sha }}." `
-              --latest
-          }
+          gh release create "$RELEASE_TAG" release/* --verify-tag --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest

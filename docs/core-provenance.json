@@ -1,0 +1,296 @@
+{
+  "upstream": "https://github.com/weixiao030/poe2_price",
+  "commit": "23e6dd40c7786fdb06491ce5dabb5aceb2c7381f",
+  "files": [
+    {
+      "path": "物价补丁/tools/audit_price_sources.py",
+      "upstream_blob": "a85ef7a7296fca1d5550683acb3799a7bf5356e9c35107ecbe1c1b5abd5445fa",
+      "local_sha256": "0526ba904586bf767e6f407b8a595439c3f1759df644bb581954e94401d9a3ed",
+      "equivalent": true,
+      "normalized_sha256": "a85ef7a7296fca1d5550683acb3799a7bf5356e9c35107ecbe1c1b5abd5445fa"
+    },
+    {
+      "path": "物价补丁/tools/build_poe1_price_patch.py",
+      "upstream_blob": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3",
+      "local_sha256": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3",
+      "equivalent": true,
+      "normalized_sha256": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3"
+    },
+    {
+      "path": "物价补丁/tools/build_poe2scout_price_patch.py",
+      "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
+      "local_sha256": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
+      "equivalent": true,
+      "normalized_sha256": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0"
+    },
+    {
+      "path": "物价补丁/tools/data_source_contract_baseline.json",
+      "upstream_blob": "620d8014239a1b74ea46f3d52491fed171c607c4b6a4947ad540f874ebe9bb96",
+      "local_sha256": "8c67217c8af9ef5f9381bffc22713ff569734707b0b27ac4e8cd038ce9ea9869",
+      "equivalent": true,
+      "normalized_sha256": "620d8014239a1b74ea46f3d52491fed171c607c4b6a4947ad540f874ebe9bb96"
+    },
+    {
+      "path": "物价补丁/tools/localize_poe1.ps1",
+      "upstream_blob": "9b7dd21b04012d0d5f92cb43b22d22a9b90240820fb6ab0eb66c83a9d71b7606",
+      "local_sha256": "5bf54d0a085c95310abd606979d03a894217fcc813e67a4b7d9bf92e5cc9a0be",
+      "equivalent": true,
+      "normalized_sha256": "8ab7a97209817a6bf785e28c6c920178635531adb32646c25ca9ddd517712062"
+    },
+    {
+      "path": "物价补丁/tools/poe1_patch_common.ps1",
+      "upstream_blob": "4a02ee5e3450328d14616865b923325ccb80089972ed1404ecd277fa9dd4331b",
+      "local_sha256": "cbebd3e56f4f845c59fa8addabd666dfa0267d3158ffa3d98b1ef2e69adb2757",
+      "equivalent": true,
+      "normalized_sha256": "919a35e17b59698293f54b8d3b78269ebbe34d345043ba87ce54e542ad05a080"
+    },
+    {
+      "path": "物价补丁/tools/poe2_island_rumour_patch.py",
+      "upstream_blob": "4d660a0544d0219ad1492a07d7588f2828d7b808c9207b16de0ae0c68da5cefc",
+      "local_sha256": "4d660a0544d0219ad1492a07d7588f2828d7b808c9207b16de0ae0c68da5cefc",
+      "equivalent": true,
+      "normalized_sha256": "4d660a0544d0219ad1492a07d7588f2828d7b808c9207b16de0ae0c68da5cefc"
+    },
+    {
+      "path": "物价补丁/tools/poe2_name_price_patch.py",
+      "upstream_blob": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9",
+      "local_sha256": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9",
+      "equivalent": true,
+      "normalized_sha256": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9"
+    },
+    {
+      "path": "物价补丁/tools/poe2_patch_common.ps1",
+      "upstream_blob": "c2c07c23170ad9940128221ac5b9316e142ef646245642d6ac3cef154e46afd3",
+      "local_sha256": "c74b8a40824dd144eed866831e05c39839d5cea3512ccef5bd2a3bc3060b8e49",
+      "equivalent": true,
+      "normalized_sha256": "80e878b5a98927a407eaa5fdee561768c7c844efd0914e91d75bcdeb07ba5128"
+    },
+    {
+      "path": "物价补丁/tools/poe_patch_profiles.ps1",
+      "upstream_blob": "8d767831f77b74293a44267820baa0a5c74971ce2df96004b351b81ace64d614",
+      "local_sha256": "e4debc6ab3ad8f40589dc533de289f3e6bfb47557d6e6a3d2dca7b2502eb39d7",
+      "equivalent": true,
+      "normalized_sha256": "4b8400bed6f734896989805f90613c967eec387a65caea9c519f315a8cde9b75"
+    },
+    {
+      "path": "物价补丁/tools/restore_poe1_price_patch.ps1",
+      "upstream_blob": "04e4fb232f20d25f744f2ef5d8623fede25a9996cac235f3eb27049be8825c68",
+      "local_sha256": "a0d6b3f12137b6698bf2113eadc4c334477f5aa12e393ce08c9c5def5e72eaef",
+      "equivalent": true,
+      "normalized_sha256": "81bf858e8a3135d8cd829637cc55a089abdabc14f387cb00e25689663e3a0ce3"
+    },
+    {
+      "path": "物价补丁/tools/restore_price_patch.ps1",
+      "upstream_blob": "c6058a0c8e057a0d620758cc965c537d119ebf327cae1c5c1d4a4cdb44f402e9",
+      "local_sha256": "2051c1518fb8bbbe0e8bd5dcca98002546b6d863e18fd75d63c8617b3b235600",
+      "equivalent": true,
+      "normalized_sha256": "33f1774d2fe3e0f9d9f7d1f713c9db7744304247971f62451bdaf34ec6355202"
+    },
+    {
+      "path": "物价补丁/tools/update_poe1_price_patch.ps1",
+      "upstream_blob": "ff1174efa7e2884d507f675e133a791ac0595e86d40de9c291e211363e85e2f5",
+      "local_sha256": "0fce44f34c6eb838ce6af4bb8971e315abb4168f321ee3428a079cb16c6d129f",
+      "equivalent": true,
+      "normalized_sha256": "272a79d8f06e1383cbae5a90a3558c9cc6a24cd5c484a5a6b5e1b331d16d2865"
+    },
+    {
+      "path": "物价补丁/tools/update_price_patch.ps1",
+      "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
+      "local_sha256": "1b5a7c68253aff1e716cb78802e7257809e59e110f81475f923580fbcb0dafc0",
+      "equivalent": true,
+      "normalized_sha256": "981de561607ea4f609f829644715a4ec69ae4d2ccf9e75e7e3b14c32c0311d9e"
+    },
+    {
+      "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",
+      "upstream_blob": "68461a9d5763e9a59226a7e3816cab68a147a9aa4883176dc0d06ee7498b33d9",
+      "local_sha256": "68461a9d5763e9a59226a7e3816cab68a147a9aa4883176dc0d06ee7498b33d9",
+      "equivalent": true,
+      "normalized_sha256": "68461a9d5763e9a59226a7e3816cab68a147a9aa4883176dc0d06ee7498b33d9"
+    },
+    {
+      "path": "物价补丁/tools/BundleExtractor/oo2core.dll",
+      "upstream_blob": "4758c7901cbd68df1848b7afed48c1975ad59b509886c21b87c0e91d717446b5",
+      "local_sha256": "4758c7901cbd68df1848b7afed48c1975ad59b509886c21b87c0e91d717446b5",
+      "equivalent": true,
+      "normalized_sha256": "4758c7901cbd68df1848b7afed48c1975ad59b509886c21b87c0e91d717446b5"
+    },
+    {
+      "path": "物价补丁/tools/BundleExtractor/vcruntime140.dll",
+      "upstream_blob": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "local_sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "equivalent": true,
+      "normalized_sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/GGPKExtractor.deps.json",
+      "upstream_blob": "89228c13755fc9f746b00f522d06c1eaea65c1de29246343a7a22ddb08d036bc",
+      "local_sha256": "f3fd0568e0473371a7655dbc178ab96e051b4bcb32a552f2aefb6a122ac90def",
+      "equivalent": true,
+      "normalized_sha256": "89228c13755fc9f746b00f522d06c1eaea65c1de29246343a7a22ddb08d036bc"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/GGPKExtractor.dll",
+      "upstream_blob": "ddbdd4466637942bd183066f6252a69b774479798f228602a1331738db087ce4",
+      "local_sha256": "ddbdd4466637942bd183066f6252a69b774479798f228602a1331738db087ce4",
+      "equivalent": true,
+      "normalized_sha256": "ddbdd4466637942bd183066f6252a69b774479798f228602a1331738db087ce4"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/GGPKExtractor.exe",
+      "upstream_blob": "5c1c93bb7132f1674380502bfb24a3382178571008946237290f1fe2ebbac832",
+      "local_sha256": "5c1c93bb7132f1674380502bfb24a3382178571008946237290f1fe2ebbac832",
+      "equivalent": true,
+      "normalized_sha256": "5c1c93bb7132f1674380502bfb24a3382178571008946237290f1fe2ebbac832"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/GGPKExtractor.runtimeconfig.json",
+      "upstream_blob": "97c9700542b659150b230c3578b29530fd76ab01ec66a92cd16945e0245713df",
+      "local_sha256": "28329cf08f6505e73806b17558b187c02f0c1c516fe47ebfb7a013d082aaa306",
+      "equivalent": true,
+      "normalized_sha256": "97c9700542b659150b230c3578b29530fd76ab01ec66a92cd16945e0245713df"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/LibBundle3.dll",
+      "upstream_blob": "a8d00d1aee3ab4fe6fb29d94189c5ea70ec31857d7891062686bddeec1d493fb",
+      "local_sha256": "a8d00d1aee3ab4fe6fb29d94189c5ea70ec31857d7891062686bddeec1d493fb",
+      "equivalent": true,
+      "normalized_sha256": "a8d00d1aee3ab4fe6fb29d94189c5ea70ec31857d7891062686bddeec1d493fb"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/LibBundledGGPK3.dll",
+      "upstream_blob": "d0c1fbb846837d323ff0b53529a2edfc15dc56b9e452c2b3a70a3bb014e1f7f4",
+      "local_sha256": "d0c1fbb846837d323ff0b53529a2edfc15dc56b9e452c2b3a70a3bb014e1f7f4",
+      "equivalent": true,
+      "normalized_sha256": "d0c1fbb846837d323ff0b53529a2edfc15dc56b9e452c2b3a70a3bb014e1f7f4"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/LibGGPK3.dll",
+      "upstream_blob": "7d1546cacb4333109a77a2e25bb79a41f4729a264f40c0d95c90f570e15e0aaf",
+      "local_sha256": "7d1546cacb4333109a77a2e25bb79a41f4729a264f40c0d95c90f570e15e0aaf",
+      "equivalent": true,
+      "normalized_sha256": "7d1546cacb4333109a77a2e25bb79a41f4729a264f40c0d95c90f570e15e0aaf"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/oo2core.dll",
+      "upstream_blob": "4758c7901cbd68df1848b7afed48c1975ad59b509886c21b87c0e91d717446b5",
+      "local_sha256": "4758c7901cbd68df1848b7afed48c1975ad59b509886c21b87c0e91d717446b5",
+      "equivalent": true,
+      "normalized_sha256": "4758c7901cbd68df1848b7afed48c1975ad59b509886c21b87c0e91d717446b5"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/SystemExtensions.dll",
+      "upstream_blob": "fedde27c15716f2a14a6bc5763c0eefe308d531a8e0db78ebf25d3d4e828b2cc",
+      "local_sha256": "fedde27c15716f2a14a6bc5763c0eefe308d531a8e0db78ebf25d3d4e828b2cc",
+      "equivalent": true,
+      "normalized_sha256": "fedde27c15716f2a14a6bc5763c0eefe308d531a8e0db78ebf25d3d4e828b2cc"
+    },
+    {
+      "path": "物价补丁/tools/GGPKExtractor/vcruntime140.dll",
+      "upstream_blob": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "local_sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066",
+      "equivalent": true,
+      "normalized_sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+    },
+    {
+      "path": "物价补丁/tools/price_sources/health.py",
+      "upstream_blob": "d3c369d33e4053c1632143ec22ed7d9003d0ae90b64e135dbd7e1481b89e46e7",
+      "local_sha256": "d3c369d33e4053c1632143ec22ed7d9003d0ae90b64e135dbd7e1481b89e46e7",
+      "equivalent": true,
+      "normalized_sha256": "d3c369d33e4053c1632143ec22ed7d9003d0ae90b64e135dbd7e1481b89e46e7"
+    },
+    {
+      "path": "物价补丁/tools/price_sources/http_client.py",
+      "upstream_blob": "0fb4392f858c5f0118ca9e73be5fff7cde5fad377aedf0fd273b3bf906d8d09d",
+      "local_sha256": "0fb4392f858c5f0118ca9e73be5fff7cde5fad377aedf0fd273b3bf906d8d09d",
+      "equivalent": true,
+      "normalized_sha256": "0fb4392f858c5f0118ca9e73be5fff7cde5fad377aedf0fd273b3bf906d8d09d"
+    },
+    {
+      "path": "物价补丁/tools/price_sources/league.py",
+      "upstream_blob": "681297e512fb79b9af375d087d87b6509070f8635979a9ef6a4176d925cc0c64",
+      "local_sha256": "681297e512fb79b9af375d087d87b6509070f8635979a9ef6a4176d925cc0c64",
+      "equivalent": true,
+      "normalized_sha256": "681297e512fb79b9af375d087d87b6509070f8635979a9ef6a4176d925cc0c64"
+    },
+    {
+      "path": "物价补丁/tools/price_sources/models.py",
+      "upstream_blob": "844b4dd1b37af6bdbadc02f69ef4b629b0b0162e3e4902152e13fbe55708265f",
+      "local_sha256": "844b4dd1b37af6bdbadc02f69ef4b629b0b0162e3e4902152e13fbe55708265f",
+      "equivalent": true,
+      "normalized_sha256": "844b4dd1b37af6bdbadc02f69ef4b629b0b0162e3e4902152e13fbe55708265f"
+    },
+    {
+      "path": "物价补丁/tools/price_sources/__init__.py",
+      "upstream_blob": "8c5442b724c254a61fdd2f92a288439c2a79e8a8a45e67ab83b583c1f8064890",
+      "local_sha256": "8c5442b724c254a61fdd2f92a288439c2a79e8a8a45e67ab83b583c1f8064890",
+      "equivalent": true,
+      "normalized_sha256": "8c5442b724c254a61fdd2f92a288439c2a79e8a8a45e67ab83b583c1f8064890"
+    }
+  ],
+  "native_tools": [
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/LibBundle3.dll",
+      "sha256": "a8d00d1aee3ab4fe6fb29d94189c5ea70ec31857d7891062686bddeec1d493fb"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/LibBundledGGPK3.dll",
+      "sha256": "d0c1fbb846837d323ff0b53529a2edfc15dc56b9e452c2b3a70a3bb014e1f7f4"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/LibGGPK3.dll",
+      "sha256": "7d1546cacb4333109a77a2e25bb79a41f4729a264f40c0d95c90f570e15e0aaf"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/oo2core.dll",
+      "sha256": "4758c7901cbd68df1848b7afed48c1975ad59b509886c21b87c0e91d717446b5"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/PatchBundle3.dll",
+      "sha256": "74e80cf7a9baeb60247e851d33636e2b5f818a51e373624f66537a0e2f6195f5"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/PatchBundle3.exe",
+      "sha256": "9b8f4358bcc29a73731ed2315923eb9a32a625907cf5f0b7c1b0dc13f8d019e9"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/PatchBundle3.runtimeconfig.json",
+      "sha256": "d4a4baf4b68f6f83f400649b23abd48220825f64fe329b9668bbe3745d02b445"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/PatchBundledGGPK3.dll",
+      "sha256": "2ab6d920c4b173d4bbce034ff8a574648090a0575a9aedd995f7d71d292935ed"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/PatchBundledGGPK3.runtimeconfig.json",
+      "sha256": "d4a4baf4b68f6f83f400649b23abd48220825f64fe329b9668bbe3745d02b445"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/SystemExtensions.dll",
+      "sha256": "fedde27c15716f2a14a6bc5763c0eefe308d531a8e0db78ebf25d3d4e828b2cc"
+    },
+    {
+      "path": "物价补丁/一键安装特殊补丁工具/vcruntime140.dll",
+      "sha256": "d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066"
+    },
+    {
+      "path": "build/BundleExtractor/BundleExtractor.csproj",
+      "sha256": "b378727b593ff523e09cabe0b8ef10524b354008f7b276a621dcfd1aa4689bd6"
+    },
+    {
+      "path": "build/BundleExtractor/Program.cs",
+      "sha256": "292292e9f76e539af9d37e49ad74630e60a82e486ee6905144958d8ab54539b6"
+    },
+    {
+      "path": "restore-seeds/.gitkeep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "restore-seeds/国服还原包.zip",
+      "sha256": "8a907a876fa492232f5e442de48f593a0fccd67004b4c56fcba5caa6c81455d5"
+    },
+    {
+      "path": "restore-seeds/国际服还原补丁.zip",
+      "sha256": "e3fff5c1e556cdf133b8c7b1dc5ab724fec7f96c2b3479ec60faaed362dedfe2"
+    }
+  ]
+}

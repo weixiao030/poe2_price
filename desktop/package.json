@@ -1,0 +1,102 @@
+{
+  "name": "poe-price-patch-desktop",
+  "version": "0.7.2",
+  "description": "POE1 / POE2 物价补丁桌面应用",
+  "main": "out/main/index.js",
+  "author": "POE Price Patch",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "build": "npm run typecheck && electron-vite build",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "dist": "npm run prepare:runtime && npm run build && electron-builder",
+    "test:desktop": "node scripts/verify-desktop.mjs",
+    "preview": "electron-vite preview",
+    "test:runtime": "node scripts/verify-runtime.mjs",
+    "test:package": "node scripts/verify-package.mjs",
+    "format": "prettier --write src tests scripts",
+    "test:migration": "node scripts/verify-migration.mjs"
+  },
+  "dependencies": {
+    "electron-log": "^5.2.0",
+    "electron-store": "^10.0.0"
+  },
+  "devDependencies": {
+    "@iconify-json/ph": "^1.2.2",
+    "@iconify/vue": "^4.1.2",
+    "@types/node": "^22.0.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^5.0.0",
+    "naive-ui": "^2.41.0",
+    "pinia": "^3.0.3",
+    "playwright": "^1.55.0",
+    "prettier": "^3.9.6",
+    "sharp": "^0.34.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.3",
+    "unocss": "^66.5.1",
+    "vite": "^7.0.6",
+    "vue": "^3.5.18",
+    "vue-tsc": "^3.0.0"
+  },
+  "build": {
+    "appId": "com.poepricepatch.desktop",
+    "productName": "POE 物价补丁",
+    "directories": {
+      "output": "dist",
+      "buildResources": "resources"
+    },
+    "asar": true,
+    "compression": "maximum",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".runtime",
+        "to": "engine"
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "icon": "resources/icon.png",
+      "requestedExecutionLevel": "asInvoker",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "POE-Price-Patch-${version}-${arch}-Setup.${ext}"
+    },
+    "portable": {
+      "requestExecutionLevel": "user",
+      "artifactName": "POE-Price-Patch-${version}-${arch}-Portable.${ext}"
+    }
+  }
+}

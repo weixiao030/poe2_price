@@ -4,14 +4,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMON = ROOT / "物价补丁" / "tools" / "poe2_patch_common.ps1"
-PAYLOAD_COMMON = ROOT / "build" / "payload" / "poe2_patch_common.ps1"
+PAYLOAD_COMMON = ROOT / "desktop" / ".runtime" / "tools" / "poe2_patch_common.ps1"
 UPDATE = ROOT / "物价补丁" / "tools" / "update_price_patch.ps1"
-PAYLOAD_UPDATE = ROOT / "build" / "payload" / "update_price_patch.ps1"
+PAYLOAD_UPDATE = ROOT / "desktop" / ".runtime" / "tools" / "update_price_patch.ps1"
 RESTORE = ROOT / "物价补丁" / "tools" / "restore_price_patch.ps1"
-PAYLOAD_RESTORE = ROOT / "build" / "payload" / "restore_price_patch.ps1"
-GUI = ROOT / "物价补丁" / "tools" / "price_patch_gui.ps1"
-PAYLOAD_GUI = ROOT / "build" / "payload" / "price_patch_gui.ps1"
-LAUNCHER = ROOT / "build" / "Poe2PatchLauncher" / "Program.cs"
+PAYLOAD_RESTORE = ROOT / "desktop" / ".runtime" / "tools" / "restore_price_patch.ps1"
 
 
 def ps_quote(path: Path) -> str:
@@ -232,113 +229,17 @@ def test_restore_uses_the_shared_directory_selector_and_game_mutex():
 def test_launcher_and_scripts_use_game_scoped_concurrency_guards():
     common = COMMON.read_text(encoding="utf-8-sig")
     update = UPDATE.read_text(encoding="utf-8-sig")
-    launcher = LAUNCHER.read_text(encoding="utf-8-sig")
+    launcher = (ROOT / "desktop/src/main/index.ts").read_text(encoding="utf-8")
 
     assert '"Local\\Poe2PricePatch-Game-"' in common
-    assert "Poe2PricePatch-Launcher-Game-" in launcher
-    assert "Poe2PricePatch-Game-" not in launcher
-    assert "TryReadSavedGameDirectory" in launcher
-    assert '"Poe2PricePatch", "settings.json"' in launcher
-    assert "IsPoe2GameDirectory(patchParent)" in launcher
+    assert "requestSingleInstanceLock" in launcher
     assert "-SkipGameDirectoryMutex" in update
 
 
-def test_gui_controls_construct_without_opening_window(tmp_path: Path):
-    game = tmp_path / "gui game"
-    (game / "Bundles2").mkdir(parents=True)
-    (game / "Bundles2" / "_.index.bin").write_bytes(b"index")
-
-    output = run_powershell(
-        f". {ps_quote(COMMON)}; "
-        "$tokens = $null; $errors = $null; "
-        f"$ast = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(UPDATE)}, [ref]$tokens, [ref]$errors); "
-        'foreach ($name in @("New-Utf16Text", "Show-PatchScopeDialog")) { '
-        "$definition = $ast.FindAll({ param($node) "
-        "$node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true) | "
-        "Select-Object -First 1; "
-        "$text = $definition.Extent.Text; "
-        'if ($name -eq "Show-PatchScopeDialog") { '
-        "$text = $text.Replace('$Result = $Form.ShowDialog()', "
-        "'$Result = [System.Windows.Forms.DialogResult]::Cancel') }; "
-        ". ([scriptblock]::Create($text)) }; "
-        '$script:PatchWindowTitle = "GUI smoke test"; $Poe2DirWasExplicit = $false; '
-        f"try {{ Show-PatchScopeDialog -PreferredPoe2Dir {ps_quote(game)}; throw 'dialog did not cancel' }} "
-        'catch { if ($_.Exception.Message -ne "Patch scope selection was cancelled.") { throw } }; '
-        'Write-Output "GUI_OK"'
-    )
-
-    assert output == "GUI_OK"
 
 
-def test_gui_optional_directory_check_accepts_empty_and_invalid_paths(tmp_path: Path):
-    existing = tmp_path / "existing"
-    existing.mkdir()
-    missing = tmp_path / "missing"
-
-    output = run_powershell(
-        "$tokens = $null; $errors = $null; "
-        f"$ast = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(GUI)}, [ref]$tokens, [ref]$errors); "
-        "$definition = $ast.FindAll({ param($node) "
-        "$node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and "
-        "$node.Name -eq 'Test-PoePatchExistingDirectory' }, $true) | Select-Object -First 1; "
-        "if ($null -eq $definition) { throw 'missing optional directory guard' }; "
-        ". ([scriptblock]::Create($definition.Extent.Text)); "
-        "$results = @("
-        "(Test-PoePatchExistingDirectory -Path $null), "
-        "(Test-PoePatchExistingDirectory -Path ''), "
-        "(Test-PoePatchExistingDirectory -Path '   '), "
-        f"(Test-PoePatchExistingDirectory -Path {ps_quote(missing)}), "
-        f"(Test-PoePatchExistingDirectory -Path {ps_quote(existing)})"
-        "); Write-Output ($results -join ',')"
-    )
-
-    assert output == "False,False,False,False,True"
 
 
-def test_poe1_browse_and_language_handlers_ignore_empty_optional_paths():
-    output = run_powershell(
-        "Add-Type -AssemblyName System.Windows.Forms; "
-        "$tokens = $null; $errors = $null; "
-        f"$ast = [System.Management.Automation.Language.Parser]::ParseFile({ps_quote(GUI)}, [ref]$tokens, [ref]$errors); "
-        "$definition = $ast.FindAll({ param($node) "
-        "$node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and "
-        "$node.Name -eq 'Test-PoePatchExistingDirectory' }, $true) | Select-Object -First 1; "
-        "if ($null -ne $definition) { . ([scriptblock]::Create($definition.Extent.Text)) }; "
-        "function Get-GuiHandler([string]$Control, [string]$Member) { "
-        "$node = $ast.FindAll({ param($candidate) "
-        "$candidate -is [System.Management.Automation.Language.ScriptBlockExpressionAst] -and "
-        "$candidate.Parent -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and "
-        "$candidate.Parent.Expression.Extent.Text -eq $Control -and "
-        "$candidate.Parent.Member.Value -eq $Member }, $true) | Select-Object -First 1; "
-        "if ($null -eq $node) { throw \"missing handler: $Control.$Member\" }; "
-        "return $node.ScriptBlock.EndBlock.Extent.Text }; "
-        "$browseText = (Get-GuiHandler '$BrowseButton' 'Add_Click').Replace("
-        "'$Dialog.ShowDialog($Form)', '[System.Windows.Forms.DialogResult]::Cancel'); "
-        "$browseHandler = [scriptblock]::Create($browseText); "
-        "$languageHandler = [scriptblock]::Create("
-        "(Get-GuiHandler '$LanguageCombo' 'Add_SelectedIndexChanged')); "
-        "$PathTextBox = New-Object System.Windows.Forms.TextBox; $PathTextBox.Text = ''; "
-        "$PreferredGameRoot = ''; "
-        "$Form = New-Object System.Windows.Forms.Form; "
-        "$ClientCombo = New-Object System.Windows.Forms.ComboBox; "
-        "$ManualPathRadio = New-Object System.Windows.Forms.RadioButton; "
-        "$ManualPathRadio.Checked = $true; "
-        "$status = [pscustomobject]@{ Text = ''; IsError = $false }; "
-        "$SetStatus = { param([string]$Text, [bool]$IsError) "
-        "$status.Text = $Text; $status.IsError = $IsError }; "
-        "$GetRequestedGameVersion = { 'poe1' }; "
-        "$GetSelectedLanguageMode = { 'auto' }; "
-        "try { "
-        "& $browseHandler; "
-        "if ($status.IsError) { throw $status.Text }; "
-        "& $languageHandler; "
-        "if ($status.IsError) { throw $status.Text }; "
-        "Write-Output 'EMPTY_PATH_OK' "
-        "} finally { $Form.Dispose(); $PathTextBox.Dispose(); "
-        "$ClientCombo.Dispose(); $ManualPathRadio.Dispose() }"
-    )
-
-    assert output == "EMPTY_PATH_OK"
 
 
 def test_restore_directory_dialog_constructs_without_opening_window(tmp_path: Path):
@@ -368,20 +269,19 @@ def test_release_payload_copies_stay_in_sync():
     assert COMMON.read_bytes() == PAYLOAD_COMMON.read_bytes()
     assert UPDATE.read_bytes() == PAYLOAD_UPDATE.read_bytes()
     assert RESTORE.read_bytes() == PAYLOAD_RESTORE.read_bytes()
-    assert GUI.read_bytes() == PAYLOAD_GUI.read_bytes()
 
 
 def test_gui_and_update_scripts_forward_explicit_league_without_cross_season_fallback():
-    gui = GUI.read_text(encoding="utf-8-sig")
+    gui = (ROOT / "desktop/src/renderer/stores/app.ts").read_text(encoding="utf-8")
     update = UPDATE.read_text(encoding="utf-8-sig")
     common = COMMON.read_text(encoding="utf-8-sig")
 
     for expected in (
-        "Get-PoePatchLeagueOptions",
-        "SeasonCombo",
-        "Poe2League",
-        "Poe2NinjaLeague",
-        "LeagueIsCurrent",
+        "getLeagues",
+        "selectedLeague",
+        "ScoutLeague",
+        "PoeNinjaLeague",
+        "leagueIsCurrent",
     ):
         assert expected in gui
     assert '"--fallback-price-sources", "poe-ninja"' in update
@@ -396,16 +296,6 @@ def test_gui_and_update_scripts_forward_explicit_league_without_cross_season_fal
     assert "Get-PoePatchLeagueCacheToken" in common
 
 
-def test_gui_shows_season_for_auto_detected_version_and_refreshes_on_client_switch():
-    gui = GUI.read_text(encoding="utf-8-sig")
-    assert (
-        '$ShowSeason = ($OperationState.Value -eq "update") -and '
-        '($Version -in @("poe1", "poe2"))'
-    ) in gui
-    assert (
-        '$Version = [string]$ClientCombo.SelectedItem.Candidate.GameVersion'
-    ) in gui
-    assert '$RefreshSeasons $true' in gui
 
 
 def test_powershell_league_parser_handles_string_booleans_without_mixing_seasons():
@@ -483,19 +373,14 @@ def test_powershell_ggpk_installer_dependencies_are_repaired_from_extractor(tmp_
     assert output == "GGPK_DEPENDENCY_REPAIR_OK"
 
 
-def test_gui_forced_season_refresh_does_not_restore_stale_selection():
-    gui = GUI.read_text(encoding="utf-8-sig")
-    assert (
-        "$PreviousKey = if (-not $ForceRefresh -and $SeasonCombo.SelectedItem)"
-    ) in gui
 
 
 def test_explicit_poe1_league_uses_seasoned_fallback_chain():
     update = (ROOT / "物价补丁" / "tools" / "update_poe1_price_patch.ps1").read_text(
         encoding="utf-8-sig"
     )
-    gui = GUI.read_text(encoding="utf-8-sig")
-    assert "Poe1League" in gui
+    gui = (ROOT / "desktop/src/renderer/stores/app.ts").read_text(encoding="utf-8")
+    assert "PoeNinjaLeague" in gui
     assert '"--fallback-price-sources", "poe2scout"' in update
     assert '"--league-is-current"' in update
     assert "league_is_current" in update

@@ -1,9 +1,7 @@
-# Release payload synchronization is byte-exact. Keep script checkouts
-# deterministic on Windows so payload.zip matches the committed sources.
+# Keep engine scripts and desktop sources deterministic on Windows checkouts.
 poe2_patch_common.ps1 text eol=lf
 poe1_patch_common.ps1 text eol=lf
 poe_patch_profiles.ps1 text eol=lf
-price_patch_gui.ps1 text eol=lf
 restore_price_patch.ps1 text eol=lf
 restore_poe1_price_patch.ps1 text eol=lf
 update_price_patch.ps1 text eol=lf
@@ -14,4 +12,7 @@ build_poe2scout_price_patch.py text eol=lf
 poe2_name_price_patch.py text eol=lf
 poe2_island_rumour_patch.py text eol=lf
 物价补丁/tools/price_sources/** text eol=lf
-build/payload/price_sources/** text eol=lf
+desktop/** text eol=lf
+*.png binary
+*.ico binary
+*.zip binary
