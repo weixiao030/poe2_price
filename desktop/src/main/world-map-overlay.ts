@@ -1,7 +1,13 @@
-import { app, BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, screen, ipcMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { AtlasRoute, AtlasSnapshot, OverlayFrame, OverlayOptions } from '../shared/world-map'
+import type {
+  AtlasRoute,
+  AtlasSnapshot,
+  OverlayFrame,
+  OverlayOptions,
+  GridPoint
+} from '../shared/world-map'
 import { gridId } from '../shared/world-map'
 
 export class WorldMapOverlay {
@@ -12,6 +18,59 @@ export class WorldMapOverlay {
   private watchdog: NodeJS.Timeout | undefined
   private lastUpdate = 0
   private bounds = ''
+  private pickTimer: NodeJS.Timeout | undefined
+  private interactive = false
+  onSelected?: (point: GridPoint) => void
+  onPickingChanged?: () => void
+  get picking() {
+    return this.interactive
+  }
+  constructor() {
+    ipcMain.handle('map:overlay-pick', (event, id: unknown) => {
+      if (
+        !this.window ||
+        event.sender !== this.window.webContents ||
+        event.senderFrame !== this.window.webContents.mainFrame
+      )
+        throw new Error('无效覆盖层来源')
+      if (!this.interactive) throw new Error('当前未处于起点选择状态')
+      if (id === null) {
+        this.setPicking(false)
+        return
+      }
+      if (
+        typeof id !== 'string' ||
+        id.length > 40 ||
+        !this.lastFrame?.snapshot.available ||
+        !this.lastFrame.snapshot.gameWindow?.foreground ||
+        Date.now() - this.lastUpdate > 1000
+      )
+        throw new Error('地图状态已变化，请重新选择')
+      const node = this.lastFrame.snapshot.nodes.find((n) => n.id === id)
+      if (!node) throw new Error('节点已离开当前地图')
+      this.setPicking(false)
+      this.onSelected?.(node.grid)
+    })
+  }
+  setPicking(enabled: boolean) {
+    if (enabled && (!this.lastFrame?.snapshot.available || !this.lastFrame.options.visible))
+      throw new Error('请先开启游戏覆盖层并打开世界地图')
+    clearTimeout(this.pickTimer)
+    this.interactive = enabled
+    this.window?.setIgnoreMouseEvents(!enabled, { forward: true })
+    if (this.lastFrame) {
+      this.lastFrame = { ...this.lastFrame, picking: enabled }
+      if (this.ready) this.window?.webContents.send('map:overlay-frame', this.lastFrame)
+    }
+    if (enabled) this.pickTimer = setTimeout(() => this.setPicking(false), 20_000)
+    this.onPickingChanged?.()
+  }
+  hide() {
+    this.window?.hide()
+    if (this.interactive) this.setPicking(false)
+    this.route = null
+    this.lastFrame = null
+  }
   setRoute(route: AtlasRoute | null) {
     this.route = route
   }
@@ -19,10 +78,13 @@ export class WorldMapOverlay {
   update(snapshot: AtlasSnapshot, options: OverlayOptions) {
     this.lastUpdate = Date.now()
     const game = snapshot.gameWindow
+    this.lastFrame = { snapshot, route: this.route, options, picking: this.interactive }
+    if ((!snapshot.available || !options.visible) && this.interactive) this.setPicking(false)
     if (
       !options.visible ||
       !snapshot.available ||
-      !game?.foreground ||
+      !game ||
+      (!game.foreground && !options.allowBackground) ||
       ![game.left, game.top, game.width, game.height].every(Number.isFinite) ||
       game.width < 100 ||
       game.height < 100
@@ -60,7 +122,8 @@ export class WorldMapOverlay {
       window.setBounds(rectangle)
       this.bounds = key
     }
-    this.lastFrame = { snapshot, route: this.route, options }
+    this.lastFrame = { snapshot, route: this.route, options, picking: this.interactive }
+    window.setIgnoreMouseEvents(!this.interactive || !game.foreground, { forward: true })
     if (this.ready) {
       window.webContents.send('map:overlay-frame', this.lastFrame)
       if (!window.isVisible()) window.showInactive()
@@ -108,12 +171,13 @@ export class WorldMapOverlay {
     else void window.loadFile(path.join(here, '../renderer/overlay.html'))
     clearInterval(this.watchdog)
     this.watchdog = setInterval(() => {
-      if (Date.now() - this.lastUpdate > 1000) this.window?.hide()
+      if (Date.now() - this.lastUpdate > 1000) this.hide()
     }, 250)
     this.watchdog.unref()
   }
 
   stop() {
+    this.setPicking(false)
     clearInterval(this.watchdog)
     this.window?.destroy()
     this.window = null

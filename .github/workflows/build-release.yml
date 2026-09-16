@@ -57,6 +57,10 @@ jobs:
         run: npm --prefix desktop run dist
       - name: Verify packaged application
         run: |
+          node desktop/scripts/verify-map-audit.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node desktop/scripts/verify-overlay-renderer.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node desktop/scripts/verify-package.mjs --ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node desktop/scripts/verify-world-map-ui.mjs --packaged

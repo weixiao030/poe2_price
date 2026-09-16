@@ -17,6 +17,8 @@ if (args.Length != 2 || args[0] != "--directory")
 }
 using var reader = new GameMemoryReader();
 var atlas = new NativeAtlasReader();
+var session = new AtlasSession();
+long connectionGeneration = -1;
 var snapshot = NativeAtlasSnapshot.Disabled("等待游戏与世界地图");
 string? line;
 while ((line = Console.ReadLine()) != null)
@@ -30,11 +32,15 @@ while ((line = Console.ReadLine()) != null)
         id = input.GetProperty("id").GetString();
         if (id is null || id.Length > 80) throw new InvalidOperationException("请求编号无效");
         var action = input.GetProperty("action").GetString();
-        if (action == "reset") atlas.ResetLayout();
+        if (action == "reset") { atlas.ResetLayout(); session.Reset(); }
         if (action is not ("read" or "reset" or "search" or "route"))
             throw new InvalidOperationException("未知世界地图操作");
         if (!reader.TryConnect(args[1])) snapshot = NativeAtlasSnapshot.Disabled("等待所选目录的 POE2 国际服进程");
-        else snapshot = atlas.Read(reader);
+        else
+        {
+            if (connectionGeneration != reader.ConnectionGeneration) { session.Reset(); connectionGeneration = reader.ConnectionGeneration; }
+            snapshot = session.Accept(atlas.Read(reader));
+        }
         object result;
         if (action == "search")
         {
@@ -44,18 +50,10 @@ while ((line = Console.ReadLine()) != null)
         }
         else if (action == "route")
         {
-            var target = ReadGrid(input.GetProperty("target"));
-            var mode = input.GetProperty("mode").GetString();
-            result = mode switch
-            {
-                "accessible" => RuntimePathFinder.FindBestFromAccessible(snapshot, target),
-                "current" => snapshot.CurrentNode is { } current
-                    ? RuntimePathFinder.Find(snapshot, current, target) : RuntimeRoute.Missing("当前位置尚未确认"),
-                "manual" => RuntimePathFinder.Find(snapshot, ReadGrid(input.GetProperty("start")), target),
-                _ => throw new InvalidOperationException("无效路线模式")
-            };
+            result = session.Plan(snapshot, input) ?? RuntimeRoute.Missing(snapshot.Reason);
         }
-        else result = ToView(snapshot, reader);
+        else result = ToView(snapshot, reader, input.TryGetProperty("planning", out var planning) && planning.ValueKind == JsonValueKind.Object
+            ? session.Plan(snapshot, planning) : null);
         Console.WriteLine(JsonSerializer.Serialize(new { id, result }, json));
     }
     catch (Exception error)
@@ -66,15 +64,6 @@ while ((line = Console.ReadLine()) != null)
     }
 }
 
-static GridPoint ReadGrid(JsonElement value)
-{
-    var x = value.GetProperty("x").GetInt32();
-    var y = value.GetProperty("y").GetInt32();
-    if (Math.Abs((long)x) > 1000000 || Math.Abs((long)y) > 1000000)
-        throw new InvalidOperationException("节点坐标超限");
-    return new(x, y);
-}
-
 static object? GameWindow(GameMemoryReader reader)
 {
     var handle = reader.Process?.MainWindowHandle ?? IntPtr.Zero;
@@ -83,9 +72,11 @@ static object? GameWindow(GameMemoryReader reader)
         Foreground = WindowTracker.GetForegroundWindow() == handle };
 }
 
-static object ToView(NativeAtlasSnapshot value, GameMemoryReader reader) => new
+static object ToView(NativeAtlasSnapshot value, GameMemoryReader reader, RuntimeRoute? route) => new
 {
     value.Available,
+    value.Player,
+    Route = route,
     GameWindow = GameWindow(reader),
     Reason = Regex.Replace(value.Reason, @"0x[0-9A-Fa-f]+", "[address]"),
     Nodes = value.Nodes.Select(n => new

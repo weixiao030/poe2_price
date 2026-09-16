@@ -1,15 +1,20 @@
 import type { OverlayFrame, AtlasNode } from '../shared/world-map'
 import { gridId } from '../shared/world-map'
+import { safeAtlasSegment, safeAtlasEdge } from '../shared/atlas-geometry'
 import './overlay.css'
 declare global {
   interface Window {
-    atlasOverlay: { onFrame(callback: (frame: OverlayFrame) => void): () => void }
+    atlasOverlay: {
+      onFrame(callback: (frame: OverlayFrame) => void): () => void
+      pick(id: string | null): Promise<void>
+    }
   }
 }
 const canvas = document.getElementById('atlas') as HTMLCanvasElement
 let latest: OverlayFrame | null = null,
   scheduled = 0,
   lastFrame = 0
+let hitBoxes: { id: string; x: number; y: number; w: number; h: number }[] = []
 function paint() {
   scheduled = 0
   const ctx = canvas.getContext('2d')
@@ -23,9 +28,12 @@ function paint() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
+  hitBoxes = []
+  canvas.style.cursor = latest?.picking ? 'crosshair' : 'default'
+  canvas.style.pointerEvents = latest?.picking ? 'auto' : 'none'
   if (
     !latest?.snapshot.available ||
-    !latest.snapshot.gameWindow?.foreground ||
+    (!latest.snapshot.gameWindow?.foreground && !latest.options.allowBackground) ||
     Date.now() - lastFrame > 1000
   )
     return
@@ -47,10 +55,7 @@ function paint() {
   const safeLine = (a: AtlasNode, b: AtlasNode) => {
     const p = point(a),
       q = point(b)
-    return (
-      Number.isFinite(p.x + p.y + q.x + q.y) &&
-      Math.hypot(p.x - q.x, p.y - q.y) <= Math.hypot(width, height) * 2
-    )
+    return safeAtlasSegment(p, q, width, height) && safeAtlasEdge(a.grid, b.grid)
   }
   // Keep connections and labels out of the game's navigation and combat HUD.
   ctx.save()
@@ -85,6 +90,19 @@ function paint() {
     ctx.stroke()
   }
   if (route?.found) {
+    const first = route.path.length ? nodes.get(gridId(route.path[0])) : null
+    if (route.includePlayerGuide && snapshot.player && first) {
+      const p = { x: snapshot.player.x * sx, y: snapshot.player.y * sy },
+        q = point(first)
+      if (safeAtlasSegment(p, q, width, height)) {
+        ctx.beginPath()
+        ctx.moveTo(p.x, p.y)
+        ctx.lineTo(q.x, q.y)
+        ctx.strokeStyle = options.pathColor
+        ctx.lineWidth = options.pathWidth
+        ctx.stroke()
+      }
+    }
     for (let i = 1; i < route.path.length; i++) {
       const a = nodes.get(gridId(route.path[i - 1])),
         b = nodes.get(gridId(route.path[i]))
@@ -95,10 +113,10 @@ function paint() {
       ctx.moveTo(p.x, p.y)
       ctx.lineTo(q.x, q.y)
       ctx.strokeStyle = '#07140fed'
-      ctx.lineWidth = 7
+      ctx.lineWidth = options.pathWidth + 4
       ctx.stroke()
-      ctx.strokeStyle = '#74ffd0'
-      ctx.lineWidth = 3
+      ctx.strokeStyle = options.pathColor
+      ctx.lineWidth = options.pathWidth
       ctx.stroke()
       const angle = Math.atan2(q.y - p.y, q.x - p.x),
         mx = (p.x + q.x) / 2,
@@ -122,6 +140,7 @@ function paint() {
     if (n.isHidden && !options.hidden) continue
     const p = point(n)
     if (!inMap(p)) continue
+    hitBoxes.push({ id: n.id, x: p.x - 10, y: p.y - 10, w: 20, h: 20 })
     const current = n.id === currentId,
       inRoute = routeIds.has(n.id)
     const color = current
@@ -178,6 +197,7 @@ function paint() {
     )
     if (!box) continue
     boxes.push(box)
+    hitBoxes.push({ id: n.id, ...box })
     ctx.fillStyle = '#0b131bed'
     ctx.fillRect(box.x, box.y, box.w, box.h)
     ctx.strokeStyle = color + '80'
@@ -192,7 +212,38 @@ function paint() {
     ctx.restore()
   }
   ctx.restore()
+  if (latest.picking) {
+    ctx.fillStyle = '#111d2af2'
+    ctx.fillRect(width / 2 - 195, 58, 390, 34)
+    ctx.font = '14px "Microsoft YaHei UI", sans-serif'
+    ctx.fillStyle = '#e8f4ff'
+    ctx.textAlign = 'center'
+    ctx.fillText('点击节点设为起点 · 右键取消 · 20 秒后退出', width / 2, 80)
+    ctx.textAlign = 'start'
+  }
 }
+canvas.addEventListener('pointerdown', (event) => {
+  if (!latest?.picking || !latest.snapshot.gameWindow?.foreground || Date.now() - lastFrame > 1000)
+    return
+  event.preventDefault()
+  if (event.button === 2) {
+    void window.atlasOverlay.pick(null).catch(() => {})
+    return
+  }
+  if (event.button !== 0) return
+  const hit = hitBoxes
+    .slice()
+    .reverse()
+    .find(
+      (box) =>
+        event.clientX >= box.x &&
+        event.clientX <= box.x + box.w &&
+        event.clientY >= box.y &&
+        event.clientY <= box.y + box.h
+    )
+  if (hit) void window.atlasOverlay.pick(hit.id).catch(() => {})
+})
+canvas.addEventListener('contextmenu', (event) => event.preventDefault())
 function schedule() {
   if (!scheduled) scheduled = requestAnimationFrame(paint)
 }

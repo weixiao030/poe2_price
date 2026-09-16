@@ -137,7 +137,7 @@ try {
   await rejects(page, 'confirmMapConsent', cancelledToken)
   await rejects(page, 'cleanupFiles', 'cache')
   if (liveIndex < 0) {
-    const nodes = Array.from({ length: 42 }, (_, i) => ({
+    const nodes = Array.from({ length: 151 }, (_, i) => ({
       id: `${i % 7},${Math.floor(i / 7)}`,
       grid: { x: i % 7, y: Math.floor(i / 7) },
       number: i + 1,
@@ -172,13 +172,17 @@ try {
           .map((n) => n.id)
       )
       ipcMain.removeHandler('map:route')
-      ipcMain.handle('map:route', (_e, request) => ({
-        found: true,
-        path: [map.nodes[0].grid, request.target],
-        distance: 1,
-        message: 'OFFLINE UI FIXTURE',
-        includePlayerGuide: false
-      }))
+      ipcMain.handle(
+        'map:route',
+        (_e, request) =>
+          (map.route = {
+            found: true,
+            path: [map.nodes[0].grid, request.target],
+            distance: 1,
+            message: 'OFFLINE UI FIXTURE',
+            includePlayerGuide: false
+          })
+      )
     }, fixtureMap)
   }
   await page.getByRole('button', { name: '重新识别地图布局' }).click()
@@ -188,6 +192,35 @@ try {
   await page.locator('.atlas-result').first().click()
   await page.getByRole('button', { name: '规划路线', exact: true }).click()
   await page.locator('.atlas-route-result').waitFor()
+  if (!evidence.live) {
+    await page.locator('#atlas-search input').fill('草原')
+    await page.waitForFunction(() =>
+      document.querySelector('.atlas-search-header').textContent.includes('150 个')
+    )
+    assert.equal(await page.locator('.atlas-result').count(), 60)
+    await page.getByLabel('搜索结果分页').getByText('3', { exact: true }).click()
+    assert.equal(await page.locator('.atlas-result').count(), 30)
+    assert.match(await page.locator('.atlas-result').first().innerText(), /格.*X/)
+    evidence.checks.push('150 条搜索结果全部可分页浏览；距离和相对坐标展示')
+  }
+  const savedPlanning = {
+    query: '保存的搜索',
+    mode: 'manual',
+    start: { x: 1, y: 2 },
+    selected: { x: 3, y: 4 },
+    target: { x: 5, y: 6 }
+  }
+  await page.evaluate((state) => window.desktop.setMapPlanning(state), savedPlanning)
+  await page.getByRole('button', { name: '应用设置', exact: true }).click()
+  await page.getByRole('button', { name: '世界地图规划', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('#atlas-search input')?.value === '保存的搜索'
+  )
+  assert.deepEqual(
+    (await page.evaluate(() => window.desktop.getMapStatus())).planning,
+    savedPlanning
+  )
+  evidence.checks.push('真实主进程保存搜索/目标/手动起点/模式，切页恢复全部状态')
   await page.getByRole('button', { name: '放大地图' }).click()
   assert.equal(await page.locator('.atlas-zoom').innerText(), '130%')
   await page.getByRole('button', { name: '适应全部节点' }).click()
@@ -258,6 +291,8 @@ try {
   const resumed = await page.evaluate(() => window.desktop.getMapStatus())
   assert.equal(resumed.enabled, false)
   assert.equal(resumed.authorized, true)
+  assert.deepEqual(resumed.planning, savedPlanning)
+  evidence.checks.push('退出重启后路线工作状态完整恢复')
   await dialog(0)
   await page.evaluate(() => window.desktop.setMapEnabled(true))
   assert.equal(await application.evaluate(() => globalThis.__mapDialogCount), 0)

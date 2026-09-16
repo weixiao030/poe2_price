@@ -45,9 +45,15 @@ for (const expression of [
   /lastUpdate > 1000/
 ])
   assert.match(overlay, expression)
-assert.doesNotMatch(await source('desktop/src/preload/overlay.ts'), /ipcRenderer\.(invoke|send)\(/)
+const bridge = await source('desktop/src/preload/overlay.ts')
+assert.equal((bridge.match(/ipcRenderer\.invoke\(/g) || []).length, 1)
+assert.match(bridge, /ipcRenderer\.invoke\('map:overlay-pick', id\)/)
+assert.match(overlay, /event\.sender !== this\.window\.webContents/)
+assert.match(overlay, /event\.senderFrame !== this\.window\.webContents\.mainFrame/)
+assert.match(overlay, /if \(!this\.interactive\)/)
+assert.match(overlay, /20_000/)
 checks.push(
-  'Sandboxed, receive-only overlay bridge; no focus or mouse capture; stale-frame timeout'
+  'Sandboxed overlay with one sender-checked node-selection IPC; explicit temporary picking, 20-second cancellation, no game focus or input simulation; stale-frame timeout'
 )
 assert.match(
   await source('world-map/Upstream/GameReader.cs'),

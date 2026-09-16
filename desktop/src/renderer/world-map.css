@@ -450,3 +450,27 @@
   opacity: 0.65;
   font-size: 12px;
 }
+.atlas-distance-hint {
+  margin: 8px 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.atlas-route-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.atlas-route-color input {
+  width: 32px;
+  height: 25px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.atlas-planner > .n-pagination {
+  margin-top: 8px;
+}

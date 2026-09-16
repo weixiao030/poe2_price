@@ -24,6 +24,8 @@ export interface AtlasSnapshot {
   nodes: AtlasNode[]
   edges: { a: GridPoint; b: GridPoint }[]
   currentNode: GridPoint | null
+  player?: { x: number; y: number } | null
+  route?: AtlasRoute | null
   readMilliseconds: number
   capturedAt: string
   unknownNameCount: number
@@ -49,6 +51,9 @@ export interface OverlayOptions {
   hidden: boolean
   connections: boolean
   opacity: number
+  pathWidth: number
+  pathColor: string
+  allowBackground: boolean
 }
 export const overlayDefaults: OverlayOptions = {
   visible: true,
@@ -56,13 +61,31 @@ export const overlayDefaults: OverlayOptions = {
   names: true,
   hidden: true,
   connections: true,
-  opacity: 85
+  opacity: 85,
+  pathWidth: 3,
+  pathColor: '#74ffd0',
+  allowBackground: false
+}
+export interface MapPlanningState {
+  query: string
+  selected: GridPoint | null
+  start: GridPoint | null
+  target: GridPoint | null
+  mode: RouteRequest['mode']
+}
+export const planningDefaults: MapPlanningState = {
+  query: '',
+  selected: null,
+  start: null,
+  target: null,
+  mode: 'accessible'
 }
 export interface MapPreferences {
   directory: string
   consentVersion: number
   enabled?: boolean
   overlay?: OverlayOptions
+  planning?: MapPlanningState
 }
 export const MAP_RISK =
   '本功能需要读取游戏内存，会有封号风险，使用者自行承担全部风险。仅限 POE2 国际服使用，国服及其他服不能使用，也禁止使用。不写入游戏内存、不修改游戏文件。'
@@ -72,11 +95,14 @@ export interface MapStatus {
   directory: string
   overlay: OverlayOptions
   consentToken?: string
+  planning: MapPlanningState
+  picking: boolean
 }
 export interface OverlayFrame {
   snapshot: AtlasSnapshot
   route: AtlasRoute | null
   options: OverlayOptions
+  picking: boolean
 }
 export interface RouteRequest {
   mode: 'accessible' | 'current' | 'manual'

@@ -3,7 +3,9 @@ import type {
   AtlasRoute,
   MapStatus,
   RouteRequest,
-  OverlayOptions
+  OverlayOptions,
+  MapPlanningState,
+  GridPoint
 } from './world-map'
 export type GameVersion = 'poe1' | 'poe2'
 export type Operation = 'update' | 'restore' | 'localize'
@@ -88,6 +90,10 @@ export interface DesktopApi {
   planMapRoute(request: RouteRequest): Promise<AtlasRoute>
   clearMapRoute(): Promise<void>
   setMapOverlay(options: Partial<OverlayOptions>): Promise<MapStatus>
+  setMapPlanning(state: Partial<MapPlanningState>): Promise<MapStatus>
+  setMapPicking(enabled: boolean): Promise<MapStatus>
+  onMapSelection(callback: (point: GridPoint) => void): () => void
+  onMapPicking(callback: (picking: boolean) => void): () => void
   cleanupFiles(
     kind: 'cache' | 'logs',
     remove: boolean

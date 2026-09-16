@@ -7,6 +7,7 @@ import {
   NCheckbox,
   NInput,
   NModal,
+  NPagination,
   NSelect,
   NSlider,
   NSwitch,
@@ -22,7 +23,8 @@ import type {
   RouteRequest,
   OverlayOptions
 } from '../../shared/world-map'
-import { gridId, overlayDefaults, MAP_RISK } from '../../shared/world-map'
+import { gridId, overlayDefaults, planningDefaults, MAP_RISK } from '../../shared/world-map'
+import { rankAtlasNodes } from '../../shared/atlas-geometry'
 import '../world-map.css'
 const api = window.desktop,
   app = useAppStore(),
@@ -31,7 +33,9 @@ const status = ref<MapStatus>({
   enabled: false,
   authorized: false,
   directory: '',
-  overlay: { ...overlayDefaults }
+  overlay: { ...overlayDefaults },
+  planning: { ...planningDefaults },
+  picking: false
 })
 const map = shallowRef<AtlasSnapshot | null>(null),
   route = shallowRef<AtlasRoute | null>(null)
@@ -56,18 +60,62 @@ const nodes = computed(() => allNodes.value.filter((n) => hidden.value || !n.isH
 const selectedNode = computed(() => allNodes.value.find((n) => n.id === selected.value))
 const searchNodes = computed(() => {
   const matching = new Set(results.value)
-  return (
+  return rankAtlasNodes(
     query.value.trim()
       ? allNodes.value.filter((n) => matching.has(n.id))
-      : allNodes.value.filter((n) => n.canOpen)
-  ).slice(0, 120)
+      : allNodes.value.filter((n) => n.canOpen),
+    mode.value === 'manual' ? parseGrid(startId.value) : (map.value?.currentNode ?? null)
+  )
 })
+const resultPage = ref(1)
+const pageNodes = computed(() =>
+  searchNodes.value.slice((resultPage.value - 1) * 60, resultPage.value * 60)
+)
+const pageCount = computed(() => Math.max(1, Math.ceil(searchNodes.value.length / 60)))
+watch(pageCount, (count) => {
+  if (resultPage.value > count) resultPage.value = count
+})
+function parseGrid(value: string | null) {
+  if (!value) return null
+  const [x, y] = value.split(',').map(Number)
+  return { x, y }
+}
 const nodeIndex = computed(() => new Map(allNodes.value.map((n) => [n.id, n])))
 let timer: ReturnType<typeof setTimeout> | undefined,
   debounce: ReturnType<typeof setTimeout> | undefined
 let observer: ResizeObserver | undefined,
   disposed = false,
   queryGeneration = 0
+let restoring = true
+const unsubscribe: (() => void)[] = []
+async function persistPlanning() {
+  if (restoring || disposed) return
+  try {
+    const updated = await api.setMapPlanning({
+      query: query.value,
+      selected: parseGrid(selected.value),
+      start: parseGrid(startId.value),
+      mode: mode.value
+    })
+    status.value = updated
+  } catch (e) {
+    error.value = (e as Error).message
+  }
+}
+function restorePlanning() {
+  restoring = true
+  const state = status.value.planning
+  query.value = state.query
+  selected.value = state.selected ? gridId(state.selected) : null
+  startId.value = state.start ? gridId(state.start) : null
+  mode.value = state.mode
+  restoring = false
+}
+async function pickStart() {
+  await attempt(async () => {
+    status.value = await api.setMapPicking(!status.value.picking)
+  })
+}
 let pan = { x: 0, y: 0 },
   fitted = false,
   scale = 20,
@@ -94,7 +142,10 @@ async function attempt(action: () => Promise<void>) {
 async function chooseDirectory() {
   await attempt(async () => {
     const directory = await api.pickGameDirectory()
-    if (directory) status.value = await api.setMapDirectory(directory)
+    if (directory) {
+      status.value = await api.setMapDirectory(directory)
+      restorePlanning()
+    }
   })
 }
 async function enable(value: boolean) {
@@ -110,7 +161,6 @@ async function enable(value: boolean) {
     else {
       map.value = null
       route.value = null
-      selected.value = null
       fitted = false
     }
   })
@@ -145,27 +195,11 @@ async function read(reset = false) {
   const result = await api.readMap(reset)
   if (disposed) return
   map.value = result
+  route.value = result.route ?? null
   if (!result.available) results.value = []
   if (!result.available) {
     route.value = null
-    selected.value = null
     fitted = false
-  }
-  if (route.value) {
-    const ids = new Set(result.nodes.map((n) => n.id))
-    const edges = new Set(
-      result.edges.flatMap((e) => [
-        `${gridId(e.a)}|${gridId(e.b)}`,
-        `${gridId(e.b)}|${gridId(e.a)}`
-      ])
-    )
-    const path = route.value.path.map(gridId)
-    if (
-      path.some((id) => !ids.has(id)) ||
-      path.slice(1).some((id, i) => !edges.has(`${path[i]}|${id}`)) ||
-      (mode.value === 'accessible' && !result.nodes.find((n) => n.id === path[0])?.canOpen)
-    )
-      clearRoute()
   }
   if (!fitted && result.nodes.length) {
     await nextTick()
@@ -180,7 +214,7 @@ async function poll() {
       status.value = await api.getMapStatus()
       if (status.value.enabled) await read()
     })
-  if (!disposed) timer = setTimeout(poll, 1800)
+  if (!disposed) timer = setTimeout(poll, 800)
 }
 async function plan() {
   if (!selectedNode.value) return
@@ -190,9 +224,7 @@ async function plan() {
     route.value = await api.planMapRoute({
       mode: mode.value,
       target,
-      ...(mode.value === 'manual' && startId.value && nodeIndex.value.has(startId.value)
-        ? { start: nodeIndex.value.get(startId.value)!.grid }
-        : {})
+      ...(mode.value === 'manual' && startId.value ? { start: parseGrid(startId.value)! } : {})
     })
     if (!route.value.found) message.warning(route.value.message)
   })
@@ -375,8 +407,16 @@ function centerCurrent() {
   draw()
 }
 watch([map, route, selected, hidden, labels, results, () => app.settings.theme], draw)
-watch([mode, startId, selected], clearRoute)
+watch(
+  [mode, startId, selected],
+  () => {
+    void persistPlanning()
+  },
+  { flush: 'sync' }
+)
 watch(query, () => {
+  resultPage.value = 1
+  void persistPlanning()
   clearTimeout(debounce)
   const generation = ++queryGeneration
   if (!query.value.trim()) {
@@ -398,8 +438,22 @@ onMounted(async () => {
   if (host.value) observer.observe(host.value)
   await attempt(async () => {
     status.value = await api.getMapStatus()
+    restorePlanning()
     if (status.value.enabled) await read()
   })
+  unsubscribe.push(
+    api.onMapSelection((point) => {
+      restoring = true
+      startId.value = gridId(point)
+      mode.value = 'manual'
+      restoring = false
+      message.success(`已设置游戏内起点 ${gridId(point)}`)
+      void attempt(() => read())
+    }),
+    api.onMapPicking((picking) => {
+      status.value.picking = picking
+    })
+  )
   void poll()
   draw()
 })
@@ -409,6 +463,8 @@ onUnmounted(() => {
   clearTimeout(debounce)
   cancelAnimationFrame(frame)
   observer?.disconnect()
+  unsubscribe.forEach((stop) => stop())
+  if (status.value.picking) void api.setMapPicking(false)
   if (consentToken.value) void api.setMapEnabled(false)
 })
 </script>
@@ -521,20 +577,49 @@ onUnmounted(() => {
         ><span>不透明度</span
         ><n-slider
           :value="status.overlay.opacity"
-          :min="30"
+          :min="10"
           :max="100"
           :step="5"
           :disabled="busy"
           aria-label="覆盖层不透明度"
           @update:value="saveOverlay({ opacity: $event })"
       /></label>
+      <label class="atlas-opacity"
+        ><span>路线线宽</span
+        ><n-slider
+          :value="status.overlay.pathWidth"
+          :min="1"
+          :max="6"
+          :step="1"
+          :disabled="busy"
+          aria-label="路线线宽"
+          @update:value="saveOverlay({ pathWidth: $event })"
+      /></label>
+      <label class="atlas-route-color"
+        ><span>路线颜色</span
+        ><input
+          type="color"
+          :value="status.overlay.pathColor"
+          :disabled="busy"
+          aria-label="路线颜色"
+          @change="saveOverlay({ pathColor: ($event.target as HTMLInputElement).value })"
+      /></label>
+      <n-checkbox
+        :checked="status.overlay.allowBackground"
+        :disabled="busy"
+        size="small"
+        @update:checked="saveOverlay({ allowBackground: $event })"
+        >允许后台显示</n-checkbox
+      >
       <span class="atlas-overlay-state">{{
         !status.enabled
           ? '未启动'
           : !status.overlay.visible
             ? '已隐藏'
-            : map?.available && map.gameWindow?.foreground
-              ? '游戏内显示中 · 鼠标穿透'
+            : map?.available && (map.gameWindow?.foreground || status.overlay.allowBackground)
+              ? status.picking
+                ? '正在选择起点 · 右键取消'
+                : '游戏内显示中 · 鼠标穿透'
               : '等待游戏前台世界地图'
       }}</span>
     </div>
@@ -643,29 +728,49 @@ onUnmounted(() => {
         ></n-input>
         <div class="atlas-search-header">
           <span>{{ query.trim() ? '搜索结果' : '已开启节点' }}</span
-          ><span>{{ searchNodes.length }}{{ searchNodes.length === 120 ? '+' : '' }}</span>
+          ><span>{{ searchNodes.length }} 个</span>
         </div>
+        <p class="atlas-distance-hint">
+          {{ mode === 'manual' ? '以手动起点' : '以当前位置' }}计算直线距离 · 近到远
+        </p>
         <div class="atlas-results" aria-label="地图搜索结果">
           <button
-            v-for="node in searchNodes"
+            v-for="node in pageNodes"
             :key="node.id"
             :class="['atlas-result', { selected: selected === node.id }]"
             @click="selected = node.id"
+            @dblclick="plan"
           >
             <span class="atlas-node-number">{{ node.number }}</span
             ><span
               ><b>{{ node.displayName }}</b
-              ><small>{{ node.stateText }} · {{ node.id }}</small></span
+              ><small>{{ node.stateText }} · {{ node.id }}</small
+              ><small
+                >{{ node.distance === null ? '距离未确认' : `${node.distance.toFixed(1)} 格` }} ·
+                {{ node.delta }}</small
+              ></span
             ><Icon v-if="selected === node.id" icon="ph:check" />
           </button>
           <p v-if="!searchNodes.length" class="atlas-no-results">
             {{ status.enabled ? '暂无匹配节点' : '尚无地图数据' }}
           </p>
         </div>
+        <n-pagination
+          v-if="pageCount > 1"
+          v-model:page="resultPage"
+          :page-count="pageCount"
+          :page-slot="5"
+          size="small"
+          aria-label="搜索结果分页"
+        />
         <div class="atlas-target">
           <span class="atlas-field-label">目标节点</span
           ><b>{{
-            selectedNode ? `${selectedNode.number} · ${selectedNode.displayName}` : '未选择目标'
+            selectedNode
+              ? `${selectedNode.number} · ${selectedNode.displayName}`
+              : selected
+                ? `${selected} · 等待节点加载`
+                : '未选择目标'
           }}</b
           ><span v-if="selectedNode" class="atlas-target-meta"
             >{{ selectedNode.id }} · {{ selectedNode.stateText }}</span
@@ -680,6 +785,15 @@ onUnmounted(() => {
             >
           </div>
         </div>
+        <n-button
+          size="small"
+          :disabled="busy || !map?.available || !status.overlay.visible"
+          @click="pickStart"
+          >{{ status.picking ? '取消游戏内选起点' : '游戏内选起点' }}</n-button
+        >
+        <p v-if="status.picking" class="atlas-distance-hint">
+          切回游戏点击节点。右键取消，20 秒未选择会自动恢复鼠标穿透。
+        </p>
         <label class="atlas-field-label" for="atlas-mode">起点</label>
         <n-select
           id="atlas-mode"
@@ -709,14 +823,16 @@ onUnmounted(() => {
           @click="plan"
           ><template #icon><Icon icon="ph:path" /></template>规划路线</n-button
         >
-        <div v-if="route" class="atlas-route-result" role="status">
+        <div v-if="route || status.planning.target" class="atlas-route-result" role="status">
           <b>{{
-            route.found
+            route?.found
               ? `${route.path.length - 1} 段 · ${route.distance.toFixed(1)} 格`
-              : '无法规划'
+              : route
+                ? '无法规划'
+                : '等待地图恢复'
           }}</b>
-          <p>{{ route.message }}</p>
-          <ol v-if="route.found">
+          <p>{{ route?.message || '已保存目标，地图加载后自动规划' }}</p>
+          <ol v-if="route?.found">
             <li v-for="point in route.path" :key="gridId(point)">
               {{ nodeIndex.get(gridId(point))?.displayName || gridId(point) }}
               <small>{{ gridId(point) }}</small>

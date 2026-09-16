@@ -36,6 +36,9 @@ import {
   mapDirectory,
   mapRoute,
   overlayPatch,
+  planningPatch,
+  loadPlanning,
+  plannedRequest,
   MAP_CONSENT_VERSION,
   shouldResumeMap
 } from './world-map-policy'
@@ -69,6 +72,7 @@ const mapOverlay = new WorldMapOverlay()
 let mapSample: AtlasSnapshot | null = null
 let mapTimer: NodeJS.Timeout | undefined
 let sampleGeneration = 0
+let planningRevision = 0
 let mapGeneration = 0
 let mapChanging = false
 let pendingMapConsent: { token: string; expires: number; generation: number } | null = null
@@ -92,6 +96,44 @@ function stopMap() {
 function overlayOptions() {
   return { ...overlayDefaults, ...store.get('worldMap').overlay }
 }
+function planningState() {
+  return loadPlanning(store.get('worldMap').planning)
+}
+function savePlanning(input: unknown) {
+  const previous = planningState()
+  const planning = { ...previous, ...planningPatch(input) }
+  if (JSON.stringify(previous) === JSON.stringify(planning)) return planning
+  store.set('worldMap', { ...store.get('worldMap'), planning })
+  if (JSON.stringify(plannedRequest(previous)) !== JSON.stringify(plannedRequest(planning))) {
+    planningRevision++
+    mapOverlay.setRoute(null)
+    if (mapSample) {
+      mapSample = { ...mapSample, route: null }
+      mapOverlay.update(mapSample, overlayOptions())
+    }
+  }
+  return planning
+}
+async function sampleMap(reset = false): Promise<AtlasSnapshot> {
+  const generation = sampleGeneration,
+    revision = planningRevision
+  const planning = plannedRequest(planningState())
+  const sample = await worldMap.request<AtlasSnapshot>(
+    reset ? 'reset' : 'read',
+    planning ? { planning } : {}
+  )
+  if (generation !== sampleGeneration || revision !== planningRevision)
+    throw new Error('地图状态已变化，等待新快照')
+  mapSample = sample
+  mapOverlay.setRoute(sample.route ?? null)
+  mapOverlay.update(sample, overlayOptions())
+  return sample
+}
+mapOverlay.onSelected = (start) => {
+  savePlanning({ start, mode: 'manual' })
+  send('map:selection', start)
+}
+mapOverlay.onPickingChanged = () => send('map:picking', mapOverlay.picking)
 function startMapSampling(initial: AtlasSnapshot) {
   mapSample = initial
   const generation = ++sampleGeneration
@@ -103,17 +145,17 @@ function startMapSampling(initial: AtlasSnapshot) {
     }
     try {
       if (!worldMap.busy) {
-        const sample = await worldMap.request<AtlasSnapshot>('read')
-        if (generation !== sampleGeneration) return
-        mapSample = sample
-        mapOverlay.update(sample, overlayOptions())
+        await sampleMap()
       }
     } catch (error) {
-      if (generation === sampleGeneration) {
+      if (
+        generation === sampleGeneration &&
+        (error as Error).message !== '地图状态已变化，等待新快照'
+      ) {
         log.warn('世界地图读取停止', error)
         stopMap()
+        return
       }
-      return
     }
     if (generation === sampleGeneration)
       mapTimer = setTimeout(tick, mapSample?.gameWindow?.foreground ? 100 : 350)
@@ -451,7 +493,9 @@ else {
         enabled: worldMap.enabled,
         authorized: store.get('worldMap').consentVersion === MAP_CONSENT_VERSION,
         directory: store.get('worldMap').directory,
-        overlay: overlayOptions()
+        overlay: overlayOptions(),
+        planning: planningState(),
+        picking: mapOverlay.picking
       })
       handle('map:status', mapStatus)
       handle('map:directory', async (input: unknown) => {
@@ -473,7 +517,8 @@ else {
           store.set('worldMap', {
             ...store.get('worldMap'),
             directory: client.path,
-            enabled: false
+            enabled: false,
+            planning: loadPlanning(null)
           })
           return mapStatus()
         } finally {
@@ -548,20 +593,48 @@ else {
         if (!worldMap.enabled) throw new Error('世界地图规划尚未开启')
         if (!fresh && mapSample && Date.now() - Date.parse(mapSample.capturedAt) < 1500)
           return mapSample
-        return worldMap.request(fresh ? 'reset' : 'read')
+        if (fresh) {
+          planningRevision++
+          mapSample = null
+          mapOverlay.hide()
+        }
+        return sampleMap(fresh)
       })
       handle('map:search', (query: unknown) =>
         worldMap.request('search', { query: text(query, 80) })
       )
       handle('map:route', async (request: unknown) => {
-        const generation = sampleGeneration
-        const route = await worldMap.request<AtlasRoute>('route', { ...mapRoute(request) })
-        if (generation !== sampleGeneration) throw new Error('地图读取状态已变化，请重新规划')
-        mapOverlay.setRoute(route)
-        return route
+        if (!worldMap.enabled) throw new Error('世界地图规划尚未开启')
+        const input = mapRoute(request)
+        mapOverlay.setPicking(false)
+        savePlanning({
+          mode: input.mode,
+          target: input.target,
+          ...(input.start ? { start: input.start } : {})
+        })
+        const sample = await sampleMap()
+        return (
+          sample.route ?? {
+            found: false,
+            path: [],
+            distance: 0,
+            message: sample.reason,
+            includePlayerGuide: false
+          }
+        )
       })
       handle('map:route-clear', () => {
-        mapOverlay.setRoute(null)
+        mapOverlay.setPicking(false)
+        savePlanning({ target: null })
+      })
+      handle('map:planning', (input: unknown) => {
+        savePlanning(input)
+        return mapStatus()
+      })
+      handle('map:picking', (value: unknown) => {
+        if (!worldMap.enabled && value === true) throw new Error('世界地图规划尚未开启')
+        mapOverlay.setPicking(boolean(value))
+        return mapStatus()
       })
       handle('map:overlay-options', (input: unknown) => {
         const overlay = { ...overlayOptions(), ...overlayPatch(input) }
