@@ -6,7 +6,9 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const packageVersion = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version
+const packageVersion = JSON.parse(
+  await fs.readFile(path.join(root, 'package.json'), 'utf8')
+).version
 const packaged = process.argv.includes('--packaged')
 const appDirectory = process.argv.includes('--app-dir')
   ? path.resolve(process.argv[process.argv.indexOf('--app-dir') + 1])
@@ -55,14 +57,12 @@ let application
 async function metrics() {
   return application.evaluate(({ app, BrowserWindow }) => ({
     windows: BrowserWindow.getAllWindows().length,
-    processes: app
-      .getAppMetrics()
-      .map((m) => ({
-        type: m.type,
-        workingSetKB: m.memory.workingSetSize,
-        privateKB: m.memory.privateBytes,
-        cpu: m.cpu.percentCPUUsage
-      }))
+    processes: app.getAppMetrics().map((m) => ({
+      type: m.type,
+      workingSetKB: m.memory.workingSetSize,
+      privateKB: m.memory.privateBytes,
+      cpu: m.cpu.percentCPUUsage
+    }))
   }))
 }
 async function readyPage() {
@@ -91,7 +91,12 @@ try {
     false
   )
   const saved = JSON.parse(await fs.readFile(config, 'utf8'))
-  assert.deepEqual(Object.keys(saved).sort(), ['confirmed', 'history', 'settings'])
+  assert.deepEqual(Object.keys(saved).sort(), [
+    'autoUpdateSchedule',
+    'confirmed',
+    'history',
+    'settings'
+  ])
   assert.deepEqual(saved.history, [record])
   assert.equal(saved.settings.autoUpdate, true)
   evidence.checks.push('后台自启零窗口、零渲染进程、不释放引擎；旧配置只保留当前字段与历史')
@@ -155,6 +160,10 @@ try {
     await page.screenshot({
       path: path.join(output, `startup-${packaged ? 'packaged' : 'dev'}-${width}.png`)
     })
+    await page.getByRole('switch', { name: '每小时自动更新', exact: true }).scrollIntoViewIfNeeded()
+    await page.screenshot({
+      path: path.join(output, `startup-settings-${packaged ? 'packaged' : 'dev'}-${width}.png`)
+    })
   }
   await page.getByRole('button', { name: /运行记录/ }).click()
   await page.getByText('运行记录', { exact: true }).last().waitFor()
@@ -166,7 +175,12 @@ try {
   evidence.tray = await metrics()
   assert.equal(evidence.tray.windows, 0)
   assert.ok(evidence.tray.processes.every((m) => m.type !== 'Tab'))
-  await application.evaluate(({ app }) => app.emit('second-instance'))
+  await application.evaluate(({ app }) =>
+    app.emit('second-instance', {}, [app.getPath('exe'), '--hidden'])
+  )
+  assert.equal((await metrics()).windows, 0)
+  evidence.checks.push('重复后台启动保留托盘，不弹出窗口')
+  await application.evaluate(({ app }) => app.emit('second-instance', {}, [app.getPath('exe')]))
   page = await readyPage()
   assert.equal((await page.evaluate(() => window.desktop.getSnapshot())).history.length, 1)
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize())

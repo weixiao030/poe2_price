@@ -133,25 +133,30 @@ try {
   await app.evaluate(() => {
     const original = globalThis.setTimeout
     globalThis.setTimeout = (callback, delay, ...args) => {
-      if (delay === 3_600_000) {
+      if (delay <= 60_000) {
         globalThis.__qaHourly = callback
-        globalThis.setTimeout = original
       }
       return original(callback, delay, ...args)
     }
   })
   await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: true }))
+  await app.evaluate(() => {
+    globalThis.__qaDateNow = Date.now
+    const current = Date.now()
+    Date.now = () => current + 3_600_001
+  })
   await app.evaluate(() => globalThis.__qaHourly())
   const autoResult = (await page.evaluate(() => window.desktop.getSnapshot())).history[0]
   assert.equal(autoResult.automatic, true)
   assert.equal(autoResult.exitCode, 0)
-  evidence.checks.push(
-    '触发真实每小时回调执行自动补丁成功'
-  )
+  evidence.checks.push('触发真实每小时回调执行自动补丁成功')
   const due = (await page.evaluate(() => window.desktop.getSnapshot())).nextUpdate
   assert.ok(due)
   await page.evaluate(() => window.desktop.saveSettings({ backgroundOpacity: 25 }))
   assert.equal((await page.evaluate(() => window.desktop.getSnapshot())).nextUpdate, due)
+  await app.evaluate(() => {
+    Date.now = globalThis.__qaDateNow
+  })
   evidence.checks.push('成功手动任务后每小时调度建立；其他设置不推迟原定时间')
   await app.evaluate(({ dialog }, directory) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] })
@@ -236,11 +241,21 @@ try {
   const closed = page.waitForEvent('close')
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
   await closed
+  await app.evaluate(() => {
+    globalThis.__qaTrayDateNow = Date.now
+    const current = Date.now()
+    Date.now = () => current + 3_600_001
+  })
   await app.evaluate(() => globalThis.__qaHourly())
-  const backgroundState = JSON.parse(await fs.readFile(path.join(userData, 'desktop-settings.json'), 'utf8'))
+  const backgroundState = JSON.parse(
+    await fs.readFile(path.join(userData, 'desktop-settings.json'), 'utf8')
+  )
   assert.equal(backgroundState.history[0].automatic, true)
   assert.equal(backgroundState.history[0].exitCode, 0)
   assert.equal(backgroundState.settings.autoUpdate, true)
+  await app.evaluate(() => {
+    Date.now = globalThis.__qaTrayDateNow
+  })
   evidence.checks.push('窗口销毁后真实每小时回调仍完成补丁并保存历史，无需渲染进程')
   evidence.metrics.trayProcesses = await app.evaluate(({ app }) =>
     app.getAppMetrics().map((m) => ({

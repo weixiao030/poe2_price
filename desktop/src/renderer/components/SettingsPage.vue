@@ -128,6 +128,7 @@ async function cleanup(kind: 'cache' | 'logs') {
       <div>
         <b>开机自动启动</b>
         <p>登录 Windows 后在托盘中启动。</p>
+        <p v-if="app.state.autoStartStatus">{{ app.state.autoStartStatus }}</p>
       </div>
       <n-switch
         :value="app.settings.autoStart"
@@ -139,12 +140,15 @@ async function cleanup(kind: 'cache' | 'logs') {
     <div class="settings-row">
       <div>
         <b>每小时自动更新</b>
-        <p>沿用最近一次成功更新的配置，每小时检查；仅手动关闭才停用。</p>
-        <p>游戏运行、目录占用或本轮失败时，下个小时继续尝试。</p>
+        <p>沿用最近一次成功更新的配置，成功后间隔一小时；重启和唤醒会补更到期任务。</p>
+        <p>游戏运行或目录占用时每 2 分钟重查；失败后按 1、5、15 分钟间隔重试。</p>
+        <p v-if="app.settings.autoUpdate">{{ app.state.autoUpdateStatus }}</p>
         <span v-if="app.settings.autoUpdate" class="schedule-note">{{
           app.state.nextUpdate
             ? `下次执行：${localeDate(app.state.nextUpdate)}`
-            : '等待首次手动更新成功后开始计时。'
+            : app.state.active
+              ? '当前任务完成后安排下次执行。'
+              : '等待首次手动更新成功。'
         }}</span>
       </div>
       <n-switch

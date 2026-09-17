@@ -27,7 +27,9 @@ export const useAppStore = defineStore('app', () => {
     history: [],
     active: null,
     version: '',
-    nextUpdate: null
+    nextUpdate: null,
+    autoUpdateStatus: '',
+    autoStartStatus: ''
   })
   const loading = ref(true),
     busy = ref(false),

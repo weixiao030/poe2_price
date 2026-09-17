@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 test('release metadata agrees and only the price engine is packaged', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'))
-  assert.equal(pkg.version, '0.8.1')
+  assert.equal(pkg.version, '0.8.2')
   assert.equal(lock.version, pkg.version)
   assert.equal(lock.packages[''].version, pkg.version)
   assert.deepEqual(

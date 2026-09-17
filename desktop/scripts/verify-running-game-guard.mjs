@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const directory = process.argv[2]
+const expectClosed = process.argv.includes('--closed')
 if (!directory) throw Error('Pass the authorized, currently running game directory')
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-running-guard-'))
 const request = path.join(temporary, 'request.json')
@@ -51,5 +52,11 @@ await fs.writeFile(
   JSON.stringify(evidence, null, 2)
 )
 console.log(JSON.stringify(evidence, null, 2))
-assert.equal(result.status, 2)
-assert.match(result.stdout, /当前游戏正在运行/)
+if (expectClosed) {
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /无效脚本/)
+  assert.doesNotMatch(result.stdout, /当前游戏正在运行/)
+} else {
+  assert.equal(result.status, 2)
+  assert.match(result.stdout, /当前游戏正在运行/)
+}

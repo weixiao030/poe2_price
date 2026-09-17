@@ -80,6 +80,30 @@ try {
       app.getLoginItemSettings({ path: app.getPath('exe'), args: ['--hidden'] })
     )
     assert.equal(enabled.openAtLogin, true)
+    await app.evaluate(({ app }) =>
+      app.setLoginItemSettings({
+        openAtLogin: true,
+        enabled: false,
+        path: app.getPath('exe'),
+        args: ['--hidden']
+      })
+    )
+    await page.evaluate(() => window.desktop.saveSettings({ autoStart: true }))
+    assert.match(
+      (await page.evaluate(() => window.desktop.getSnapshot())).autoStartStatus,
+      /Windows 禁用/
+    )
+    assert.equal(
+      await app.evaluate(
+        ({ app }) =>
+          app.getLoginItemSettings({
+            path: app.getPath('exe'),
+            args: ['--hidden']
+          }).executableWillLaunchAtLogin
+      ),
+      false
+    )
+    evidence.checks.push('真实 Windows StartupApproved 禁用可见，普通核对不会擅自重新启用')
     await page.evaluate(() => window.desktop.saveSettings({ autoStart: false }))
     assert.equal(
       await app.evaluate(
@@ -88,6 +112,62 @@ try {
       ),
       false
     )
+    const oldExecutable = path.join(sandbox, 'previous-location', '物价补丁.exe')
+    await app.evaluate(
+      ({ app }, oldPath) =>
+        app.setLoginItemSettings({
+          openAtLogin: true,
+          path: oldPath,
+          args: ['--hidden']
+        }),
+      oldExecutable
+    )
+    await page.evaluate(() => window.desktop.saveSettings({ autoStart: false }))
+    assert.equal(
+      await app.evaluate(
+        ({ app }, oldPath) =>
+          app.getLoginItemSettings({
+            path: oldPath,
+            args: ['--hidden']
+          }).openAtLogin,
+        oldExecutable
+      ),
+      false
+    )
+    evidence.checks.push('关闭自启会删除同一启动项的历史路径，移动免安装目录后无残留')
+    await app.evaluate(
+      ({ app }, oldPath) =>
+        app.setLoginItemSettings({
+          openAtLogin: true,
+          path: oldPath,
+          args: ['--hidden']
+        }),
+      oldExecutable
+    )
+    await page.evaluate(() => window.desktop.saveSettings({ autoStart: true }))
+    assert.equal(
+      await app.evaluate(
+        ({ app }) =>
+          app.getLoginItemSettings({
+            path: app.getPath('exe'),
+            args: ['--hidden']
+          }).openAtLogin
+      ),
+      true
+    )
+    assert.equal(
+      await app.evaluate(
+        ({ app }, oldPath) =>
+          app.getLoginItemSettings({
+            path: oldPath,
+            args: ['--hidden']
+          }).openAtLogin,
+        oldExecutable
+      ),
+      false
+    )
+    await page.evaluate(() => window.desktop.saveSettings({ autoStart: false }))
+    evidence.checks.push('开启自启自动迁移同一启动项到当前 EXE 和 --hidden 参数')
     evidence.checks.push('发布 EXE 开机启动设置真实写入、读回、关闭通过；未重启 Windows')
   } finally {
     await page.evaluate((autoStart) => window.desktop.saveSettings({ autoStart }), initialLogin)

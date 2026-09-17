@@ -70,6 +70,8 @@ export interface AppSnapshot {
   active: { runId: string; request: PatchRequest; startedAt: string; logTail?: string } | null
   version: string
   nextUpdate: string | null
+  autoUpdateStatus: string
+  autoStartStatus: string
 }
 export interface DesktopApi {
   cleanupFiles(

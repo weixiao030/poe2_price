@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  powerMonitor,
   session,
   shell,
   Tray
@@ -31,6 +32,14 @@ import { query, stopTree, worker, workers } from './engine'
 import { dataRoot } from './runtime'
 import { getBackground, chooseBackground, clearBackground } from './background'
 import { cleanupOldFiles } from './maintenance'
+import {
+  BUSY_RETRY,
+  restoreAutoUpdateSchedule,
+  restoreConfirmedUpdate,
+  scheduleAfterUpdate
+} from './auto-update'
+import type { AutoUpdateSchedule, ConfirmedUpdate } from './auto-update'
+import { reconcileAutoStart, shouldShowSecondInstance } from './startup'
 import type {
   AppSettings,
   AppSnapshot,
@@ -52,11 +61,16 @@ let processChild: ChildProcessWithoutNullStreams | null = null
 let cancellationRequested = false
 let timer: NodeJS.Timeout | undefined
 let nextUpdate: string | null = null
+let scheduleGeneration = 0
+let autoStartStatus = ''
+let autoUpdatePausedReason = ''
+let pendingShowWindow = false
 let maintenanceRunning = false
 let store: Store<{
   settings: AppSettings
   history: OperationResult[]
-  confirmed: { request: PatchRequest; installKind: string } | null
+  confirmed: ConfirmedUpdate | null
+  autoUpdateSchedule: AutoUpdateSchedule | null
 }>
 const pendingQueries = new Map<string, Promise<unknown>>()
 
@@ -66,7 +80,9 @@ function snapshot(): AppSnapshot {
     history: store.get('history'),
     active,
     version: app.getVersion(),
-    nextUpdate
+    nextUpdate,
+    autoUpdateStatus: autoUpdateStatus(),
+    autoStartStatus
   }
 }
 function send(channel: string, value: unknown) {
@@ -97,6 +113,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     start = Date.now()
   active = { runId, request, startedAt }
   cancellationRequested = false
+  schedule()
   refresh()
   const report = (stream: ProgressEvent['stream'], message: string) => {
     if (!message) return
@@ -115,26 +132,34 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     exitCode = 1,
     kind = ''
   try {
-    const client = await queryOnce<GameClient>({
-      action: 'inspect',
-      gameVersion: request.gameVersion,
-      directory: request.gameDirectory,
-      language: request.languageMode
-    })
-    kind = client.installKind
-    if (automatic && kind !== store.get('confirmed')?.installKind)
-      throw new Error('客户端类型已变化，请重新手动更新')
+    const confirmed = store.get('confirmed')
+    const client = automatic
+      ? null
+      : await queryOnce<GameClient>({
+          action: 'inspect',
+          gameVersion: request.gameVersion,
+          directory: request.gameDirectory,
+          language: request.languageMode
+        })
+    kind = automatic ? confirmed?.installKind || '' : client!.installKind
+    if (automatic && !confirmed) throw new Error('请先完成一次手动更新')
     if (request.operation === 'update') {
       if (request.patchScope === 'none' && !request.islandRumourHints)
         throw new Error('没有选中任何补丁内容')
       if (
+        !automatic &&
         request.patchScope !== 'none' &&
-        !(client.isChina ? request.poeCurrencySeason : request.league)
+        !(client!.isChina ? request.poeCurrencySeason : request.league)
       )
         throw new Error('请选择价格赛季后再执行')
     }
     if (cancellationRequested) throw new Error('任务已取消，尚未执行补丁')
-    report('system', `${client.displayName}\n目标目录：${client.path}\n`)
+    report(
+      'system',
+      automatic
+        ? `自动更新检查\n目标目录：${request.gameDirectory}\n`
+        : `${client!.displayName}\n目标目录：${client!.path}\n`
+    )
     const result = await worker(
       {
         action: 'run',
@@ -194,11 +219,15 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
         )
           nextState.settings = { ...nextState.settings, languageMode: 'localization' }
       }
-      if (request.operation === 'update') nextState.confirmed = { request, installKind: kind }
+      if (request.operation === 'update')
+        nextState.confirmed = { request, installKind: kind, successAt: new Date().toISOString() }
     }
+    nextState.autoUpdateSchedule =
+      scheduleAfterUpdate(nextState.autoUpdateSchedule, result, Date.now()) ?? null
     store.store = nextState
   } catch (error) {
     log.error('保存运行记录失败', error)
+    autoUpdatePausedReason = '保存运行记录失败，自动更新已暂停；请检查磁盘空间后重新开启自动更新。'
     report('stderr', '无法保存运行记录，请检查磁盘空间。\n')
   }
   active = null
@@ -210,21 +239,69 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
   )
   return result
 }
+function cancelSchedule() {
+  clearTimeout(timer)
+  timer = undefined
+  nextUpdate = null
+  scheduleGeneration++
+}
+function autoUpdateStatus(): string {
+  if (!store.get('settings').autoUpdate) return '自动更新已关闭。'
+  if (autoUpdatePausedReason) return autoUpdatePausedReason
+  if (!store.get('confirmed')) return '等待首次手动更新成功，以确认游戏目录和更新配置。'
+  if (active) return '任务正在执行，完成后继续安排自动更新。'
+  const reason = store.get('autoUpdateSchedule')?.reason
+  if (reason === 'game') return '游戏运行或目录占用，每 2 分钟重查；本轮未下载或写入补丁。'
+  if (reason === 'busy') return '后台任务占用，1 分钟后重查。'
+  if (reason === 'retry') return '上次更新失败，按 1、5、15 分钟间隔重试；详情见运行记录。'
+  if (reason === 'cancelled') return '本次任务已取消，5 分钟后重试；关闭开关可停止后续自动更新。'
+  return '按上次成功时间每小时更新；启动和休眠恢复后会补做已到期的更新。'
+}
 function schedule() {
-  if (!store.get('settings').autoUpdate || !store.get('confirmed')) {
-    clearTimeout(timer)
-    timer = undefined
-    nextUpdate = null
+  if (
+    quitting ||
+    autoUpdatePausedReason ||
+    !store.get('settings').autoUpdate ||
+    !store.get('confirmed') ||
+    active
+  ) {
+    cancelSchedule()
     return
   }
-  // Settings changes and manual operations must not postpone an existing hourly check.
-  if (timer) return
-  nextUpdate = new Date(Date.now() + 3_600_000).toISOString()
+  const saved = store.get('autoUpdateSchedule')
+  const plan = restoreAutoUpdateSchedule(
+    saved,
+    store.get('confirmed'),
+    store.get('history'),
+    Date.now()
+  )!
+  if (JSON.stringify(saved) !== JSON.stringify(plan) && !saveAutoUpdateSchedule(plan)) return
+  if (timer && nextUpdate === plan.nextAttemptAt) return
+  cancelSchedule()
+  nextUpdate = plan.nextAttemptAt
+  const generation = scheduleGeneration
+  // This wake-up only compares timestamps. It does not spawn workers until the persisted deadline.
+  const delay = Math.min(60_000, Math.max(1000, Date.parse(nextUpdate) - Date.now()))
   timer = setTimeout(async () => {
+    if (generation !== scheduleGeneration || quitting) return
     timer = undefined
     nextUpdate = null
     const confirmed = store.get('confirmed')
-    if (active || maintenanceRunning || !confirmed || !store.get('settings').autoUpdate) {
+    if (!confirmed || !store.get('settings').autoUpdate) {
+      schedule()
+      refresh()
+      return
+    }
+    if (Date.now() < Date.parse(plan.nextAttemptAt)) {
+      schedule()
+      return
+    }
+    if (active || maintenanceRunning) {
+      saveAutoUpdateSchedule({
+        ...plan,
+        nextAttemptAt: new Date(Date.now() + BUSY_RETRY).toISOString(),
+        reason: 'busy'
+      })
       schedule()
       refresh()
       return
@@ -233,11 +310,28 @@ function schedule() {
       await runOperation(confirmed.request, true)
     } catch (error) {
       log.error(error)
+      saveAutoUpdateSchedule({
+        ...plan,
+        nextAttemptAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+        reason: 'retry'
+      })
       schedule()
       refresh()
     }
-  }, 3_600_000)
+  }, delay)
   timer.unref()
+}
+function saveAutoUpdateSchedule(plan: AutoUpdateSchedule): boolean {
+  try {
+    store.set('autoUpdateSchedule', plan)
+    return true
+  } catch (error) {
+    log.error('保存自动更新计划失败', error)
+    autoUpdatePausedReason =
+      '保存自动更新计划失败，自动更新已暂停；请检查磁盘空间后重新开启自动更新。'
+    cancelSchedule()
+    return false
+  }
 }
 function showWindow() {
   if (!app.isReady() || !store) return
@@ -266,7 +360,7 @@ function updateTray() {
       },
       {
         label: '立即自动更新',
-        enabled: !active && !!store.get('confirmed'),
+        enabled: !active && !maintenanceRunning && !!store.get('confirmed'),
         click: () => {
           const c = store.get('confirmed')
           if (c) void runOperation(c.request, true).catch(log.error)
@@ -368,7 +462,11 @@ function handle(channel: string, fn: (...args: any[]) => unknown) {
 }
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
-  app.on('second-instance', showWindow)
+  app.on('second-instance', (_event, argv) => {
+    if (!shouldShowSecondInstance(argv)) return
+    if (!store) pendingShowWindow = true
+    else showWindow()
+  })
   app
     .whenReady()
     .then(async () => {
@@ -380,21 +478,55 @@ else {
         defaults: {
           settings: defaults,
           history: [] as OperationResult[],
-          confirmed: null as { request: PatchRequest; installKind: string } | null
+          confirmed: null as ConfirmedUpdate | null,
+          autoUpdateSchedule: null as AutoUpdateSchedule | null
         },
         clearInvalidConfig: true
       })
       try {
         const saved = store.store
+        const confirmed = restoreConfirmedUpdate(saved.confirmed)
+        const history = Array.isArray(saved.history)
+          ? saved.history
+              .filter(
+                (item) =>
+                  item && typeof item.runId === 'string' && typeof item.gameDirectory === 'string'
+              )
+              .slice(0, 50)
+          : []
         // Keep only active application data when migrating older profiles.
         store.store = {
           settings: { ...defaults, ...settingsPatch(saved.settings) },
-          history: saved.history,
-          confirmed: saved.confirmed
+          history,
+          confirmed,
+          autoUpdateSchedule: restoreAutoUpdateSchedule(
+            saved.autoUpdateSchedule,
+            confirmed,
+            history,
+            Date.now()
+          )
         }
       } catch (error) {
         log.error('配置格式无效', error)
         store.set('settings', defaults)
+      }
+      const syncAutoStart = (enabled: boolean) => {
+        if (!app.isPackaged) {
+          autoStartStatus = '开机启动仅在发布版本中可用。'
+          return
+        }
+        autoStartStatus = reconcileAutoStart(
+          app,
+          process.env.PORTABLE_EXECUTABLE_FILE || app.getPath('exe'),
+          enabled
+        )
+        log.info(`开机启动检查：${autoStartStatus}`)
+      }
+      try {
+        syncAutoStart(store.get('settings').autoStart)
+      } catch (error) {
+        autoStartStatus = `开机启动检查失败：${error instanceof Error ? error.message : String(error)}`
+        log.error(autoStartStatus)
       }
       Menu.setApplicationMenu(null)
       handle('app:snapshot', snapshot)
@@ -437,6 +569,8 @@ else {
           )
         } finally {
           maintenanceRunning = false
+          schedule()
+          refresh()
         }
       })
       handle('settings:save', (input: unknown) => {
@@ -445,13 +579,16 @@ else {
           throw new Error('任务执行中不能修改设置')
         if (patch.autoStart !== undefined) {
           if (!app.isPackaged) throw new Error('开机启动仅在发布版本中可用')
-          app.setLoginItemSettings({
-            openAtLogin: patch.autoStart,
-            path: process.env.PORTABLE_EXECUTABLE_FILE || app.getPath('exe'),
-            args: ['--hidden']
-          })
+          try {
+            syncAutoStart(patch.autoStart)
+          } catch (error) {
+            autoStartStatus = String(error)
+            refresh()
+            throw error
+          }
         }
         store.set('settings', { ...store.get('settings'), ...patch })
+        if (patch.autoUpdate === true) autoUpdatePausedReason = ''
         if (patch.autoUpdate !== undefined)
           log.info(`用户设置每小时自动更新：${patch.autoUpdate ? '开启' : '关闭'}`)
         schedule()
@@ -514,8 +651,13 @@ else {
         return true
       })
       schedule()
+      powerMonitor.on('resume', () => {
+        cancelSchedule()
+        schedule()
+        refresh()
+      })
       createTray()
-      if (!process.argv.includes('--hidden')) createWindow()
+      if (pendingShowWindow || !process.argv.includes('--hidden')) createWindow()
       app.on('activate', showWindow)
     })
     .catch((error) => {
@@ -533,12 +675,12 @@ app.on('before-quit', (event) => {
   if (!quitting && workers.size) {
     event.preventDefault()
     quitting = true
-    clearTimeout(timer)
+    cancelSchedule()
     void Promise.allSettled([...workers].map(stopTree)).then(() => app.quit())
     return
   }
   quitting = true
-  clearTimeout(timer)
+  cancelSchedule()
 })
 app.on('window-all-closed', () => {
   if (!active && (!tray || !store.get('settings').closeToTray)) app.quit()
