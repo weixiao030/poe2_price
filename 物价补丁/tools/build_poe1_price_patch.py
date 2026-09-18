@@ -228,20 +228,9 @@ def discover_poe_ninja_league(
             ):
                 continue
             return name, "poe.ninja-index", warnings
-        for row in leagues:
-            if not isinstance(row, dict):
-                continue
-            name = str(row.get("name") or row.get("displayName") or "").strip()
-            if name and "hardcore" not in name.lower():
-                return name, "poe.ninja-index-fallback", warnings
-        raise ValueError("no usable economy league was listed")
+        raise ValueError("no current softcore economy league was listed")
     except Exception as exc:
-        warning = (
-            "poe.ninja league discovery failed; using Standard: "
-            f"{type(exc).__name__}: {exc}"
-        )
-        warnings.append(warning)
-        return DEFAULT_POE_NINJA_LEAGUE, "known-fallback", warnings
+        raise ValueError(f"poe.ninja league discovery failed: {exc}") from exc
 
 
 def _validate_exchange_payload(
@@ -557,32 +546,19 @@ def discover_poe2scout_poe1_league(
             }
             if preferred in values:
                 return str(row.get("Value") or preferred_league), leagues, warnings
+        raise ValueError(f"poe2scout does not list the selected POE1 league: {preferred_league}")
 
     current_softcore = [
         row
         for row in leagues
         if _bool_value(row.get("IsCurrent"))
+        and not _bool_value(row.get("IsHardcore"))
         and "hardcore" not in str(row.get("Value") or "").casefold()
+        and str(row.get("Value") or "").strip().casefold() != "standard"
     ]
     if current_softcore:
         selected = str(current_softcore[0].get("Value") or "").strip()
-        if preferred and selected.casefold() != preferred:
-            warnings.append(
-                f"poe2scout current league {selected} differs from poe.ninja {preferred_league}"
-            )
         return selected, leagues, warnings
-
-    standard = next(
-        (
-            str(row.get("Value") or "").strip()
-            for row in leagues
-            if str(row.get("Value") or "").strip().casefold() == "standard"
-        ),
-        "",
-    )
-    if standard:
-        warnings.append("poe2scout has no current softcore POE1 league; using Standard")
-        return standard, leagues, warnings
     raise ValueError("poe2scout returned no usable POE1 league")
 
 
@@ -1168,6 +1144,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Comma-separated POE1 base-item fallback chain or none.",
     )
     parser.add_argument("--league")
+    parser.add_argument("--no-international-reference", action="store_true",
+                        help="Keep CN prices usable when no international reference league is known.")
     parser.add_argument(
         "--league-is-current",
         choices=("true", "false"),
@@ -1257,7 +1235,8 @@ def main(argv: list[str]) -> int:
         timeout=max(1.0, args.timeout),
         total_timeout=max(1.0, args.request_time_budget),
     )
-    if fetch_prices:
+    use_international = not (args.price_source == "poecurrency-cn" and args.no_international_reference)
+    if fetch_prices and use_international:
         league, league_source, league_warnings = discover_poe_ninja_league(
             client, args.poe_ninja_index_url, args.league
         )
@@ -1290,20 +1269,21 @@ def main(argv: list[str]) -> int:
     if fetch_prices:
         source_futures: dict[Any, str] = {}
         with ThreadPoolExecutor(max_workers=4) as pool:
-            source_futures[
-                pool.submit(
-                    fetch_poe_ninja_prices,
-                    client,
-                    args.poe_ninja_exchange_api,
-                    args.poe_ninja_item_api,
-                    league,
-                    patch_unique_words,
-                    POE_NINJA_EXCHANGE_TYPES,
-                    POE_NINJA_BASE_ITEM_TYPES if patch_base_items else (),
-                    POE_NINJA_UNIQUE_TYPES,
-                )
-            ] = "poe-ninja"
-            if patch_base_items and "poe2scout" in args.fallback_price_sources:
+            if use_international:
+                source_futures[
+                    pool.submit(
+                        fetch_poe_ninja_prices,
+                        client,
+                        args.poe_ninja_exchange_api,
+                        args.poe_ninja_item_api,
+                        league,
+                        patch_unique_words,
+                        POE_NINJA_EXCHANGE_TYPES,
+                        POE_NINJA_BASE_ITEM_TYPES if patch_base_items else (),
+                        POE_NINJA_UNIQUE_TYPES,
+                    )
+                ] = "poe-ninja"
+            if use_international and patch_base_items and "poe2scout" in args.fallback_price_sources:
                 source_futures[
                     pool.submit(
                         fetch_poe2scout_poe1_prices,
@@ -1313,7 +1293,7 @@ def main(argv: list[str]) -> int:
                         args.poe2scout_realm,
                     )
                 ] = "poe2scout"
-            if patch_base_items and "poedb-economy" in args.fallback_price_sources:
+            if use_international and patch_base_items and "poedb-economy" in args.fallback_price_sources:
                 source_futures[
                     pool.submit(
                         fetch_poedb_poe1_prices,

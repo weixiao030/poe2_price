@@ -75,6 +75,13 @@ class PoecurrencyPricingTests(unittest.TestCase):
                 "https://poecurrency.top/api/summary?version=2&season=standard",
             )
 
+    def test_resolved_ninja_only_selection_does_not_fetch_a_default_scout_season(self):
+        args = self.price_patch.parse_args(["--resolved-leagues", "--poe-ninja-league", "New League"])
+        with patch.object(self.price_patch, "build_scout_prices") as scout:
+            with self.assertRaisesRegex(ValueError, "Scout"):
+                self.price_patch.fetch_price_source("poe2scout", None, args, False)
+            scout.assert_not_called()
+
     def test_international_matching_keeps_all_same_name_metadata_aliases(self):
         pairs = [
             self.price_patch.BaseItemPair(
@@ -1549,6 +1556,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
 
         for source, function_name, error_file in (
             ("poe2scout", "build_scout_prices", "poe2scout_fallback_error.json"),
+            ("none", "build_scout_prices", ""),
             (
                 "poe2db-economy",
                 "build_poe2db_economy_prices",
@@ -1566,6 +1574,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
                     self.price_patch, "fetch_poecurrency_summary", return_value=summary
                 ), patch.object(
                     self.price_patch, function_name, side_effect=RuntimeError("blocked")
+                ), patch.object(
+                    self.price_patch, "resolve_current_leagues", side_effect=AssertionError("Unexpected rediscovery")
                 ):
                     rc = self.price_patch.main(
                         [
@@ -1573,6 +1583,9 @@ class PoecurrencyPricingTests(unittest.TestCase):
                             "poecurrency-cn",
                             "--cn-reference-source",
                             source,
+                            "--resolved-leagues",
+                            "--league",
+                            "pinned-id" if source == "poe2scout" else "",
                             "--patch-scope",
                             "currency",
                             "--fallback-price-sources",
@@ -1590,6 +1603,11 @@ class PoecurrencyPricingTests(unittest.TestCase):
 
                 self.assertEqual(rc, 0)
                 summary_json = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
+                self.assertEqual(summary_json["league_selection_source"], "resolved")
+                if source == "none":
+                    self.assertEqual(summary_json["cn_reference_status"], "disabled")
+                    self.assertEqual(summary_json["cn_reference_warnings"], [])
+                    continue
                 self.assertEqual(summary_json["cn_reference_status"], "failed")
                 self.assertEqual(len(summary_json["cn_reference_warnings"]), 1)
                 self.assertIn(source, summary_json["cn_reference_warnings"][0])

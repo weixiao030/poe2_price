@@ -5,9 +5,10 @@ ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = ROOT / 'desktop'
 RUNTIME = DESKTOP / '.runtime'
 
-def test_bundled_core_matches_pinned_upstream_and_current_source():
+def test_bundled_core_matches_recorded_provenance_and_current_source():
     provenance = json.loads((ROOT / 'docs/core-provenance.json').read_text(encoding='utf-8'))
-    assert len(provenance['files']) == 32
+    assert len(provenance['files']) == 33
+    assert any(record['path'].endswith('/poe_patch_leagues.ps1') and not record['equivalent'] for record in provenance['files'])
     for record in provenance['files']:
         source = ROOT / record['path']
         data = source.read_bytes()

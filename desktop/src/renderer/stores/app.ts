@@ -5,6 +5,7 @@ import type {
   AppSnapshot,
   GameClient,
   LeagueOption,
+  LeagueScope,
   OperationResult,
   PatchRequest,
   ProgressEvent
@@ -39,13 +40,29 @@ export const useAppStore = defineStore('app', () => {
   const client = ref<GameClient | null>(null),
     clients = ref<GameClient[]>([]),
     leagues = ref<LeagueOption[]>([]),
-    selectedLeague = ref<string | null>(null)
+    selectedLeague = ref<string>('__auto__')
+  const leagueNotice = ref('')
+  const leagueSaving = ref(false)
   const events = shallowRef<ProgressEvent[]>([])
   const background = ref<string | null>(null)
   const running = computed(() => busy.value || !!state.value.active)
   const settings = computed(() => state.value.settings)
   const directory = computed(() => settings.value.directories[settings.value.gameVersion])
-  const league = computed(() => leagues.value.find((x) => x.Value === selectedLeague.value))
+  const leagueScope = computed<LeagueScope>(
+    () => `${settings.value.gameVersion}-${client.value?.isChina ? 'china' : 'international'}`
+  )
+  const league = computed(() =>
+    selectedLeague.value === '__auto__'
+      ? leagues.value.find((x) => x.IsCurrent)
+      : leagues.value.find((x) => x.Value === selectedLeague.value)
+  )
+  const leagueOptions = computed(() => [
+    {
+      label: `自动跟随最新赛季${league.value && selectedLeague.value === '__auto__' ? `（${league.value.Value}）` : ''}`,
+      value: '__auto__'
+    },
+    ...leagues.value.map((x) => ({ label: x.Label, value: x.Value }))
+  ])
   const logText = computed(() => events.value.map((e) => e.message).join(''))
   let generation = 0,
     leagueGeneration = 0,
@@ -118,7 +135,34 @@ export const useAppStore = defineStore('app', () => {
     clearTimeout(flush)
   }
   async function save(patch: Partial<AppSettings>) {
-    state.value.settings = await window.desktop.saveSettings(patch)
+    // Settings are JSON data; remove nested Vue proxies before crossing Electron IPC.
+    state.value.settings = await window.desktop.saveSettings(JSON.parse(JSON.stringify(patch)))
+  }
+  function restoreLeagueSelection() {
+    const preference = settings.value.leagueSelections?.[leagueScope.value]
+    selectedLeague.value =
+      preference?.mode === 'fixed' && preference.option ? preference.option.Value : '__auto__'
+    leagues.value = preference?.mode === 'fixed' && preference.option ? [preference.option] : []
+    leagueNotice.value = ''
+  }
+  async function selectLeague(value: string) {
+    const scope = leagueScope.value
+    const option = leagues.value.find((item) => item.Value === value)
+    if (value !== '__auto__' && !option) return
+    leagueSaving.value = true
+    try {
+      await save({
+        leagueSelections: {
+          ...settings.value.leagueSelections,
+          [scope]: value === '__auto__' ? { mode: 'auto' } : { mode: 'fixed', option }
+        }
+      })
+      if (scope === leagueScope.value) selectedLeague.value = value
+    } catch (e) {
+      error.value = String((e as Error).message || e)
+    } finally {
+      leagueSaving.value = false
+    }
   }
   async function inspect() {
     const token = ++generation
@@ -126,7 +170,8 @@ export const useAppStore = defineStore('app', () => {
     leagueLoading.value = false
     client.value = null
     leagues.value = []
-    selectedLeague.value = null
+    selectedLeague.value = '__auto__'
+    leagueNotice.value = ''
     error.value = ''
     if (!directory.value) return
     querying.value = true
@@ -138,6 +183,7 @@ export const useAppStore = defineStore('app', () => {
       )
       if (token !== generation) return
       client.value = result
+      restoreLeagueSelection()
       void refreshLeagues()
     } finally {
       if (token === generation) querying.value = false
@@ -167,7 +213,7 @@ export const useAppStore = defineStore('app', () => {
       ++leagueGeneration
       client.value = result
       leagues.value = []
-      selectedLeague.value = null
+      restoreLeagueSelection()
       error.value = ''
       void refreshLeagues()
     } finally {
@@ -180,19 +226,25 @@ export const useAppStore = defineStore('app', () => {
     const version = settings.value.gameVersion,
       china = client.value.isChina
     leagueLoading.value = true
-    error.value = ''
+    leagueNotice.value = ''
     try {
       const result = await window.desktop.getLeagues(version, china)
       if (token !== leagueGeneration) return
+      const previous = league.value
       leagues.value = result
-      selectedLeague.value = result.some((x) => x.Value === selectedLeague.value)
-        ? selectedLeague.value
-        : result[0]?.Value || null
+      if (
+        selectedLeague.value !== '__auto__' &&
+        previous &&
+        !result.some((x) => x.Value === selectedLeague.value)
+      )
+        leagues.value = [...result, previous]
+      if (result.some((x) => x.DiscoveryFallback))
+        leagueNotice.value = '赛季列表刷新失败，已保留上次获取的赛季。'
     } catch (e) {
       if (token === leagueGeneration) {
-        error.value = String((e as Error).message || e)
-        leagues.value = []
-        selectedLeague.value = null
+        leagueNotice.value = leagues.value.length
+          ? '赛季列表刷新失败，已保留当前选择。'
+          : '赛季列表暂不可用，执行更新时将自动重试。'
       }
     } finally {
       if (token === leagueGeneration) leagueLoading.value = false
@@ -201,6 +253,7 @@ export const useAppStore = defineStore('app', () => {
   async function run(operation: PatchRequest['operation']): Promise<OperationResult> {
     if (running.value) throw new Error('已有任务正在执行')
     if (!client.value) throw new Error('请先选择有效的游戏目录')
+    if (leagueSaving.value) throw new Error('正在保存赛季选择，请稍候')
     clearLog()
     busy.value = true
     error.value = ''
@@ -217,7 +270,8 @@ export const useAppStore = defineStore('app', () => {
           : league.value?.ScoutLeague || '',
       poeNinjaLeague: league.value?.PoeNinjaLeague || '',
       poeCurrencySeason: league.value?.PoeCurrencySeason || '',
-      leagueIsCurrent: league.value?.IsCurrent ?? true
+      leagueIsCurrent: league.value?.IsCurrent ?? true,
+      leagueMode: selectedLeague.value === '__auto__' ? 'auto' : 'fixed'
     }
     try {
       const result = await window.desktop.runOperation(request)
@@ -240,6 +294,9 @@ export const useAppStore = defineStore('app', () => {
     error,
     querying,
     leagueLoading,
+    leagueSaving,
+    leagueNotice,
+    leagueOptions,
     client,
     clients,
     leagues,
@@ -256,6 +313,7 @@ export const useAppStore = defineStore('app', () => {
     discover,
     selectDirectory,
     refreshLeagues,
+    selectLeague,
     run,
     clearLog,
     background

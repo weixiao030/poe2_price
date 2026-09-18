@@ -100,8 +100,18 @@ try {
   evidence.checks.push('错误目录失败可见，任务锁释放，保存失败记录')
   // Only replace a disposable user-data engine script; production sources remain intact.
   const fixtureScript =
-    '\ufeffparam([string]$Poe2Dir,[string]$PatchScope,[string]$League,[string]$PoeNinjaLeague,[string]$PoeCurrencySeason,[bool]$LeagueIsCurrent,[switch]$IslandRumourHints,[switch]$SkipGameDirectoryMutex)\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\nWrite-Output "中文开始：$League|$LeagueIsCurrent|$IslandRumourHints"\nStart-Sleep -Seconds 2\nWrite-Output "中文完成"\nexit 0\n'
+    '\ufeffparam([string]$Poe2Dir,[string]$PatchScope,[string]$League,[string]$PoeNinjaLeague,[string]$PoeCurrencySeason,[string]$LeagueMode,[bool]$LeagueIsCurrent,[switch]$IslandRumourHints,[switch]$SkipGameDirectoryMutex)\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\nWrite-Output "中文开始：$League|$LeagueIsCurrent|$IslandRumourHints"\nStart-Sleep -Seconds 2\nWrite-Output "中文完成"\nexit 0\n'
   await fs.writeFile(path.join(userData, 'engine/tools/update_price_patch.ps1'), fixtureScript)
+  // The fixture never opens game files. Isolate its process names from real clients
+  // whose executable paths may be inaccessible to a non-elevated test process.
+  const fixtureWorker = path.join(userData, 'engine/worker.ps1')
+  const originalWorker = await fs.readFile(fixtureWorker, 'utf8')
+  const isolatedWorker = originalWorker.replace(
+    /\$Names = @\([^\r\n]+\)/,
+    "$Names = @('PoeDesktopFixtureOnly')"
+  )
+  assert.notEqual(isolatedWorker, originalWorker)
+  await fs.writeFile(fixtureWorker, isolatedWorker)
   request.gameDirectory = game
   await page.evaluate((r) => {
     window.__qaTask = window.desktop.runOperation(r)

@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.2</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.3</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -23,7 +23,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.8.2` 优化开机自启动与每小时物价自动更新：重启、开机和休眠恢复会补更到期任务，失败退避重试，游戏运行时每 2 分钟重新检查。修复免安装版移动后的旧自启项残留、重复后台启动弹窗及写盘失败重复执行。继续保留独立“一键汉化 POE1”、托盘及还原功能。
+`v0.8.3` 默认自动识别并跟随最新赛季，同时保留手动固定选择，按游戏和服区分别记住设置。修复国服当前赛季接口参数错误，增加国际服备用目录和赛季缓存，目录故障时保留选择，不再提示玩家自行核实版本。获取价格失败时保留已有补丁，继续保留每小时自动更新、独立“一键汉化 POE1”、托盘及还原功能。
 
 [下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
@@ -38,12 +38,15 @@
 当前**没有**使用官方 Trade 接口。
 
 - POE2 国际服：通货和可交易分类继续使用 poe2scout（全量 SnapshotPairs）并保留 poe.ninja / poe2db 补缺；传奇护甲单独优先使用 [poe.ninja UniqueArmours](https://poe.ninja/poe2/economy/forbiddenrites/unique-armours) 对应的 JSON 接口，运行时自动替换为当前所选赛季，只有接口缺失或无有效报价时才回退到其它来源。
-- POE2 国服：主源 `poecurrency.top/api/summary?version=2&season=<所选赛季>`，没有国服价的条目再用国际参考源补。
+- POE2 国服：当前赛季主源 `poecurrency.top/api/summary?version=2`，历史赛季追加 `&season=<所选赛季>`，没有国服价的条目再用可用的国际参考源补。
 - POE1 国际服：主源 poe.ninja，备用 poe2scout / poedb。
-- POE1 国服：主源 `poecurrency.top/api/summary?version=1&season=<所选赛季>`，再用 poe.ninja / scout / poedb 补缺。
+- POE1 国服：当前赛季主源 `poecurrency.top/api/summary?version=1`，历史赛季追加 `&season=<所选赛季>`，再用可用的国际参考源补缺。
 - 构建时会对照 poe2scout `Items/Categories` 做分类健康检查：新分类只报警并继续抓取，不会默默丢掉。
 - 只读契约审计见 `物价补丁/tools/audit_price_sources.py`，覆盖 POE1/POE2。
-- 国际服赛季目录由 `https://api.poe2scout.com/poe2/Leagues`（POE2）和 `/pc/Leagues`（POE1）运行时发现；国服则从 `https://poecurrency.top/api/season_list?version=poe1|poe2` 同步网站可选赛季。每次打开工具或手动刷新都会重新读取，默认选中列表第一项（当前最新通常为 POE2 `0.5.5`），国服更新请求严格携带所选 `season`；国际源只补缺，不覆盖国服已有价格。历史赛季分别隔离缓存，不会复用无赛季参数的当前数据。
+- 默认“自动跟随最新赛季”，更新时重新解析当前赛季；也可在下拉框固定选择历史赛季。选择按 POE1 / POE2、国服 / 国际服分别保存，重启后保留。已有自动更新任务继续保留原先的固定赛季，成功手动执行一次自动模式后才改为跟随最新。
+- 国际服目录使用 Scout 与 Ninja 独立接口：POE2 优先 `https://api.poe2scout.com/poe2/Leagues`，POE1 优先 `https://poe.ninja/poe1/api/data/index-state`，目录故障时尝试另一来源。国服使用 `https://poecurrency.top/api/season_list?version=poe1|poe2`；价格接口的 `version` 则是数字 `1` / `2`，当前赛季省略 `season`，历史赛季才传该参数。
+- 打开工具或手动刷新时联网获取目录，执行任务可复用 5 分钟内的目录缓存；联网失败可回退到 7 天内的记录。固定选择不会因刷新失败切换赛季，历史赛季补丁缓存独立。国服自动模式无法确认赛季名称时仍尝试当前价格接口，但不读写赛季补丁缓存、不附带猜测的国际参考赛季。价格不可用时保留已有补丁。
+- 国际参考源只补缺，不覆盖国服已有价格；国服历史赛季按名称对应国际赛季，当前赛季没有同名项时独立使用国际服当前赛季参考。没有可用参考时继续尝试国服主价。
 - poe.ninja 请求使用站点专用的低并发和 403/429 退避重试；核心分类仍需成功返回，失败时只进入同赛季备用源，不会回退到其它赛季。
 - UniqueArmours 读取 `core.primary`、`primaryValue`、`listingCount` 和 `corrupted` 字段：接口声明 Exalted 时不再乘 Divine 汇率，腐化、零挂牌和无效价格行会被过滤；同名多底材优先保留挂牌更多、价格更低的稳定行。
 
@@ -57,6 +60,15 @@
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/9/18 更新（v0.8.3）
+
+- 新增“自动跟随最新赛季”，更新时自动解析当前赛季；手动选择可固定赛季，重启后仍保留，POE1 / POE2 和国服 / 国际服互不影响。
+- 修复国服当前赛季请求：价格接口使用数字版本 `1` / `2`，当前赛季不传 `season`，历史赛季才携带对应参数。
+- 国际服赛季目录增加 Scout / Ninja 备用来源；目录不可用时使用有效缓存，刷新失败保留选择，取消“请核实后执行”的提示。
+- 不再使用写死的旧赛季兜底；修复补充源找不到固定赛季时切到其他赛季、历史项误标最新及损坏缓存混用的问题。
+- 历史赛季缓存独立；价格与兼容缓存都不可用时保留已有补丁并报告失败，供自动更新稍后重试。
+- 修复手动赛季选择保存失败；已有每小时任务仍保留原固定赛季，选择自动模式并成功手动更新一次后，后续任务跟随最新赛季。
 
 ### 26/9/17 更新（v0.8.2）
 
@@ -209,8 +221,8 @@
 
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
-- `POE-Price-Patch-0.8.2-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.2-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
+- `POE-Price-Patch-0.8.3-x64-Setup.exe`：安装版，推荐日常使用。
+- `POE-Price-Patch-0.8.3-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装

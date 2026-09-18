@@ -2,6 +2,12 @@ export type GameVersion = 'poe1' | 'poe2'
 export type Operation = 'update' | 'restore' | 'localize'
 export type PatchScope = 'all' | 'currency' | 'uniques' | 'none'
 export type LanguageMode = 'auto' | 'localization' | 'zh-CN' | 'zh-TW' | 'config'
+export type LeagueMode = 'auto' | 'fixed'
+export type LeagueScope = `${GameVersion}-${'china' | 'international'}`
+export interface LeaguePreference {
+  mode: LeagueMode
+  option?: LeagueOption
+}
 export interface PatchRequest {
   operation: Operation
   gameVersion: GameVersion
@@ -12,6 +18,7 @@ export interface PatchRequest {
   poeNinjaLeague: string
   poeCurrencySeason: string
   leagueIsCurrent: boolean
+  leagueMode?: LeagueMode
   islandRumourHints: boolean
 }
 export interface GameClient {
@@ -63,6 +70,7 @@ export interface AppSettings {
   closeToTray: boolean
   theme: 'light' | 'dark' | 'system'
   backgroundOpacity: number
+  leagueSelections?: Partial<Record<LeagueScope, LeaguePreference>>
 }
 export interface AppSnapshot {
   settings: AppSettings

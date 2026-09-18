@@ -114,7 +114,7 @@ try {
               ? league.PoeCurrencySeason
               : gameVersion === 'poe1'
                 ? league.PoeNinjaLeague
-                : league.ScoutLeague
+                : league.ScoutLeague || league.PoeNinjaLeague
           )
         evidence.leagues.push({ gameVersion, china, leagues, coverage: 'live-read-only' })
       }

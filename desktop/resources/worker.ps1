@@ -29,7 +29,7 @@ try {
             $Result = Client (Resolve-PoePatchManualSelection -RequestedGameVersion $Request.gameVersion -Path $Request.directory -Poe1LanguageMode $Request.language)
         }
         'leagues' {
-            $Result = @(Get-PoePatchLeagueOptions -GameVersion $Request.gameVersion -China:([bool]$Request.china) -TimeoutSeconds 10)
+            $Result = @(Get-PoePatchLeagueOptions -GameVersion $Request.gameVersion -China:([bool]$Request.china) -TimeoutSeconds 10 -ForceRefresh)
         }
         'run' {
             $r = $Request.request

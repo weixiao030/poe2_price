@@ -284,23 +284,24 @@ def test_gui_and_update_scripts_forward_explicit_league_without_cross_season_fal
         "leagueIsCurrent",
     ):
         assert expected in gui
-    assert '"--fallback-price-sources", "poe-ninja"' in update
+    assert '"--fallback-price-sources"' in update
+    assert '"--resolved-leagues"' in update
     assert '"--league-is-current"' in update
     assert "PoeCurrencySeason" in update
-    assert "season=" in update
+    assert "Get-PoePatchChinaSummaryUrl" in update
     assert "$UseChinaPriceSource = $IsChinaClient" in update
     assert "Resolve-PoePatchLeagueSelection" in update
-    assert "--poe2db-fallback" in update
-    assert "-not $IsChinaClient" in update
+    assert "$CanUseSeasonCache" in update
     assert "ConvertTo-PoePatchBoolean" in common
     assert "Get-PoePatchLeagueCacheToken" in common
 
 
 
 
-def test_powershell_league_parser_handles_string_booleans_without_mixing_seasons():
+def test_powershell_league_parser_handles_string_booleans_without_mixing_seasons(tmp_path):
     output = run_powershell(
         f". {ps_quote(COMMON)}; "
+        f"$env:POE2_PATCH_ROOT={ps_quote(tmp_path)}; "
         "function global:Invoke-RestMethod { "
         "param([string]$Uri,[hashtable]$Headers,[int]$TimeoutSec); "
         "return @("
@@ -315,9 +316,10 @@ def test_powershell_league_parser_handles_string_booleans_without_mixing_seasons
     assert output == "STRING_BOOLEAN_SEASON_PARSE_OK"
 
 
-def test_powershell_league_parser_keeps_newest_current_first_during_transition():
+def test_powershell_league_parser_keeps_newest_current_first_during_transition(tmp_path):
     output = run_powershell(
         f". {ps_quote(COMMON)}; "
+        f"$env:POE2_PATCH_ROOT={ps_quote(tmp_path)}; "
         "function global:Invoke-RestMethod { "
         "param([string]$Uri,[hashtable]$Headers,[int]$TimeoutSec); "
         "return @("
@@ -332,17 +334,16 @@ def test_powershell_league_parser_keeps_newest_current_first_during_transition()
     assert output == "NEWEST_CURRENT_SEASON_FIRST_OK"
 
 
-def test_powershell_league_parser_uses_builtin_current_season_when_discovery_fails():
+def test_powershell_league_parser_does_not_invent_a_season_when_discovery_fails(tmp_path):
     output = run_powershell(
         f". {ps_quote(COMMON)}; "
+        f"$env:POE2_PATCH_ROOT={ps_quote(tmp_path)}; "
         "function global:Invoke-RestMethod { throw 'simulated timeout' }; "
-        "$items=@(Get-PoePatchLeagueOptions -GameVersion poe2); "
-        "if($items.Count -ne 1 -or $items[0].ScoutLeague -ne 'runes' -or "
-        "$items[0].PoeNinjaLeague -ne 'Runes of Aldur' -or -not $items[0].IsCurrent -or "
-        "-not $items[0].DiscoveryFallback) { throw 'builtin season fallback mismatch' }; "
-        "Write-Output 'BUILTIN_SEASON_FALLBACK_OK'"
+        "$failed=$false; try { $null=@(Get-PoePatchLeagueOptions -GameVersion poe2) } catch { $failed=$true }; "
+        "if(-not $failed) { throw 'fabricated league' }; "
+        "Write-Output 'NO_FABRICATED_SEASON_OK'"
     )
-    assert output == "BUILTIN_SEASON_FALLBACK_OK"
+    assert output == "NO_FABRICATED_SEASON_OK"
 
 
 def test_powershell_ggpk_installer_dependencies_are_repaired_from_extractor(tmp_path: Path):

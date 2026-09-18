@@ -1680,6 +1680,8 @@ def fetch_price_source(
     include_uniques: bool,
 ) -> PriceSourceResult:
     if source == "poe2scout":
+        if not args.league:
+            raise ValueError("所选赛季没有可用的 Scout 标识，已跳过该来源")
         raw, prices, unique_categories, unique_items = build_scout_prices(
             client,
             args.api_base.rstrip("/"),
@@ -1697,6 +1699,8 @@ def fetch_price_source(
             warning=str(raw.get("warning") or ""),
         )
     if source == "poe-ninja":
+        if not args.poe_ninja_league:
+            raise ValueError("所选赛季没有可用的 Ninja 标识，已跳过该来源")
         raw, prices = build_poe_ninja_currency_prices(
             client,
             args.poe_ninja_currency_url,
@@ -3452,6 +3456,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--price-source", choices=PRICE_SOURCES, default="poe2scout")
     parser.add_argument("--api-base", default=DEFAULT_SCOUT_API)
+    parser.add_argument("--resolved-leagues", action="store_true",
+                        help="Use the worker's resolved provider IDs without another discovery request.")
     parser.add_argument("--poecurrency-summary-url", default=DEFAULT_POECURRENCY_SUMMARY_API)
     parser.add_argument("--poe-ninja-currency-url", default=DEFAULT_POE_NINJA_CURRENCY_URL)
     parser.add_argument(
@@ -3469,7 +3475,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help=(
             "poe.ninja league name. By default the current softcore league is "
-            "discovered from poe2scout, with a known-good fallback."
+            "discovered from poe2scout or the independent poe.ninja directory."
         ),
     )
     parser.add_argument("--poe2db-economy-us-url", default=DEFAULT_POE2DB_ECONOMY_US_URL)
@@ -3702,14 +3708,16 @@ def main(argv: list[str]) -> int:
     needs_market_league = fetch_prices and bool(
         league_sources.intersection({"poe2scout", "poe-ninja"})
     )
-    if needs_market_league:
+    if args.resolved_leagues:
+        args.league = args.league or ""
+        args.poe_ninja_league = args.poe_ninja_league or ""
+        league_selection_source = "resolved"
+    elif needs_market_league:
         selection = resolve_current_leagues(
             client,
             args.api_base,
             explicit_scout=args.league,
             explicit_ninja=args.poe_ninja_league,
-            fallback_scout=DEFAULT_LEAGUE,
-            fallback_ninja=DEFAULT_POE_NINJA_LEAGUE,
         )
         args.league = selection.scout
         args.poe_ninja_league = selection.poe_ninja
@@ -3724,8 +3732,8 @@ def main(argv: list[str]) -> int:
         for warning in league_warnings:
             print(f"[警告] {warning}", file=sys.stderr, flush=True)
     else:
-        args.league = args.league or DEFAULT_LEAGUE
-        args.poe_ninja_league = args.poe_ninja_league or DEFAULT_POE_NINJA_LEAGUE
+        args.league = args.league or ""
+        args.poe_ninja_league = args.poe_ninja_league or ""
     fallback_labels = ", ".join(
         price_source_label(source) for source in fallback_price_sources
     ) or "none"

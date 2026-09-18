@@ -1,8 +1,7 @@
 """Discover and resolve softcore leagues shared by poe2scout and poe.ninja.
 
-The discovery endpoint belongs to poe2scout.  Callers may override either
-provider independently; an unavailable or incompatible endpoint must never
-prevent the existing, known-good defaults from being used.
+Provider identities stay paired by league. A missing directory must never
+silently select a hard-coded historical league.
 """
 
 from __future__ import annotations
@@ -25,7 +24,8 @@ class LeagueSelection:
     - ``auto``: both values came from the discovery endpoint;
     - ``explicit``: both values were supplied by the caller;
     - ``explicit+auto``: one value was supplied and the other was discovered;
-    - ``fallback`` / ``explicit+fallback``: discovery was unusable.
+    - ``ninja``: the independent Ninja directory supplied the league;
+    - ``explicit+fallback``: only the supplied provider identity is available.
     """
 
     scout: str
@@ -89,7 +89,7 @@ def discover_league_options(
     # still presents the newest one first instead of reviving an older league.
     ordered = sorted(options, key=lambda item: (not item.is_current, item.order))
     return tuple(
-        replace(item, is_latest=index == 0)
+        replace(item, is_latest=index == 0 and item.is_current)
         for index, item in enumerate(ordered)
     )
 
@@ -105,21 +105,15 @@ def resolve_current_leagues(
     api_base: str,
     explicit_scout: str | None = None,
     explicit_ninja: str | None = None,
-    *,
-    fallback_scout: str = DEFAULT_SCOUT_LEAGUE,
-    fallback_ninja: str = DEFAULT_POE_NINJA_LEAGUE,
 ) -> LeagueSelection:
     """Resolve provider-specific identifiers for the current softcore league.
 
-    Explicit non-empty values always win.  If both are explicit no network
-    request is made.  Discovery failures are converted to a warning and the
-    known-good fallback identifiers, keeping offline/manual use functional.
+    Explicit identities are retained during outages. Partial identities are
+    completed only from a matching league, never from another current league.
     """
 
-    scout_override = _clean_text(explicit_scout)
-    ninja_override = _clean_text(explicit_ninja)
-    fallback_scout_value = _clean_text(fallback_scout) or DEFAULT_SCOUT_LEAGUE
-    fallback_ninja_value = _clean_text(fallback_ninja) or DEFAULT_POE_NINJA_LEAGUE
+    scout_override = _clean_text(explicit_scout) or ""
+    ninja_override = _clean_text(explicit_ninja) or ""
     url = f"{str(api_base).rstrip('/')}/poe2/Leagues"
 
     if scout_override and ninja_override:
@@ -130,41 +124,44 @@ def resolve_current_leagues(
             discovery_url=url,
         )
 
-    warnings: list[str] = []
-    discovered: tuple[str, str] | None = None
     try:
         options = discover_league_options(client, api_base, realm="poe2")
-        current = [item for item in options if item.is_current]
-        if len(current) != 1:
-            raise ValueError("赛季响应包含多个或没有当前软核赛季")
-        discovered = (current[0].scout, current[0].poe_ninja)
-    except Exception as exc:  # Discovery is advisory; preserve the old path.
-        detail = str(exc).strip()
-        if detail:
-            warnings.append(f"当前赛季自动发现失败，已使用内置回退值：{detail}")
+        if scout_override or ninja_override:
+            matches = [item for item in options if
+                       (scout_override and item.scout.casefold() == scout_override.casefold()) or
+                       (ninja_override and item.poe_ninja.casefold() == ninja_override.casefold())]
         else:
-            warnings.append("当前赛季自动发现失败，已使用内置回退值")
-
-    used_explicit = bool(scout_override or ninja_override)
-    if discovered is None:
-        source = "explicit+fallback" if used_explicit else "fallback"
+            matches = [item for item in options if item.is_current]
+        if not matches:
+            raise ValueError("赛季目录没有匹配的赛季")
+        selected = matches[0]
         return LeagueSelection(
-            scout=scout_override or fallback_scout_value,
-            poe_ninja=ninja_override or fallback_ninja_value,
-            source=source,
-            warnings=tuple(warnings),
+            scout=scout_override or selected.scout,
+            poe_ninja=ninja_override or selected.poe_ninja,
+            source="explicit+auto" if scout_override or ninja_override else "auto",
             discovery_url=url,
         )
-
-    discovered_scout, discovered_ninja = discovered
-    source = "explicit+auto" if used_explicit else "auto"
-    return LeagueSelection(
-        scout=scout_override or discovered_scout,
-        poe_ninja=ninja_override or discovered_ninja,
-        source=source,
-        warnings=tuple(warnings),
-        discovery_url=url,
-    )
+    except Exception as exc:
+        warning = f"Scout 赛季目录暂不可用：{exc}"
+        if scout_override or ninja_override:
+            return LeagueSelection(
+                scout=scout_override, poe_ninja=ninja_override, source="explicit+fallback",
+                warnings=(warning,), discovery_url=url,
+            )
+    ninja_url = "https://poe.ninja/poe2/api/data/index-state"
+    try:
+        payload = client.get_json(ninja_url)
+        for row in payload["economyLeagues"]:
+            name = _clean_text(row.get("name"))
+            if not name or _is_hardcore(row) or any(
+                marker in name.casefold() for marker in ("hardcore", "ssf", "ruthless", "standard")
+            ):
+                continue
+            return LeagueSelection(scout="", poe_ninja=name, source="ninja",
+                                   warnings=(warning,), discovery_url=ninja_url)
+    except Exception as exc:
+        raise ValueError(f"赛季目录暂不可用，请稍后重试：{exc}") from exc
+    raise ValueError("当前赛季尚未公布，请稍后重试")
 
 
 def _current_softcore_pair(payload: Any) -> tuple[str, str]:

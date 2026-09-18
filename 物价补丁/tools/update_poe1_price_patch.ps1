@@ -9,6 +9,7 @@
     [string]$PatchScope = "",
     [string]$League = "",
     [string]$PoeCurrencySeason = "",
+    [ValidateSet("", "auto", "fixed")][string]$LeagueMode = "",
     [bool]$LeagueIsCurrent = $true
 )
 
@@ -408,11 +409,16 @@ try {
     $IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "POE1-CN-*"
     if ($PatchScope -ne "none") {
         $SelectedLeague = Resolve-PoePatchLeagueSelection -GameVersion "poe1" `
-            -League $League -China:$IsChinaClient -TimeoutSeconds 20
+            -League $League -PoeCurrencySeason $PoeCurrencySeason -LeagueMode $LeagueMode `
+            -LeagueIsCurrent $LeagueIsCurrent -China:$IsChinaClient -TimeoutSeconds 10
         $League = [string]$SelectedLeague.PoeNinjaLeague
-        $PoeCurrencySeason = if (-not [string]::IsNullOrWhiteSpace([string]$SelectedLeague.PoeCurrencySeason)) { [string]$SelectedLeague.PoeCurrencySeason } else { $League }
-        $LeagueIsCurrent = [bool]$SelectedLeague.IsCurrent
+        $PoeCurrencySeason = [string]$SelectedLeague.PoeCurrencySeason
+        $LeagueIsCurrent = if ($IsChinaClient) { [bool]$SelectedLeague.UseCurrentEndpoint } else { [bool]$SelectedLeague.IsCurrent }
+        Write-Host "价格赛季：$(if ($SelectedLeague.Value) { $SelectedLeague.Value } else { '国服当前赛季' })" -ForegroundColor Cyan
+        if ($SelectedLeague.DiscoveryFallback) { Write-Warning $SelectedLeague.DiscoveryMessage }
+        if ($IsChinaClient -and $League) { Write-Host "国际服补缺参考：$League" -ForegroundColor Cyan }
     }
+    $CanUseSeasonCache = -not $IsChinaClient -or -not [string]::IsNullOrWhiteSpace($PoeCurrencySeason)
     $PriceSource = if ($IsChinaClient) {
         "poecurrency-cn"
     }
@@ -528,7 +534,7 @@ try {
 
     Write-Poe1Step "获取实时 POE1 价格并生成 C/D 补丁"
     $Python = Ensure-PythonRequests -RepoRoot $RepoRoot
-    $LeagueCacheToken = Get-PoePatchLeagueCacheToken -ScoutLeague $League -PoeNinjaLeague $League
+    $LeagueCacheToken = Get-PoePatchLeagueCacheToken -ScoutLeague $League -PoeNinjaLeague $League -PoeCurrencySeason $PoeCurrencySeason
     $CacheKey = [string]::Join("_", @(
             ([string]$InstallInfo.InstallKind -replace '[^A-Za-z0-9_-]+', '_'),
             ([string]$InstallInfo.EffectiveLanguageCode -replace '[^A-Za-z0-9_-]+', '_'),
@@ -578,7 +584,8 @@ try {
             )
         }
         if ($PriceSource -eq "poecurrency-cn") {
-            $BuilderArgs += @("--poecurrency-summary-url", $(if ([string]::IsNullOrWhiteSpace($PoeCurrencySeason)) { "https://poecurrency.top/api/summary?version=1" } else { "https://poecurrency.top/api/summary?version=1&season=" + [Uri]::EscapeDataString($PoeCurrencySeason) }))
+            $BuilderArgs += @("--poecurrency-summary-url", (Get-PoePatchChinaSummaryUrl -GameVersion poe1 -Season $PoeCurrencySeason -UseCurrentEndpoint $LeagueIsCurrent))
+            if (-not $League) { $BuilderArgs += @("--no-international-reference", "--fallback-price-sources", "none") }
         }
         $Result = Invoke-Poe2Python -Python $Python -ArgumentList $BuilderArgs
         if ($Result.ExitCode -ne 0) {
@@ -596,28 +603,30 @@ try {
     if (-not $BuildFailed) {
         Assert-Poe1File -Path (Join-Path $BuildStage "POE1物价补丁.zip") -Name "POE1物价补丁.zip"
         Publish-Poe1BuildStage -Stage $BuildStage -Destination $OutDir
-        New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
-        Copy-Poe2FileAtomically -Source $PatchZip -Destination $CachedPatchZip | Out-Null
-        $Signature = Get-Poe1BaseItemsSignature -SourceDat $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot
-        Write-Poe1JsonAtomically -Path $CacheMetadata -Value ([ordered]@{
-                game_version = "poe1"
-                patch_scope = $PatchScope
-                price_source = $PriceSource
-                league = $League
-                league_is_current = [bool]$LeagueIsCurrent
-                install_kind = [string]$InstallInfo.InstallKind
-                baseitems_path = [string]$InstallInfo.TcBaseItemsPath
-                words_path = [string]$InstallInfo.TcWordsPath
-                compatibility_sha256 = [string]$Signature.compatibility_sha256
-                saved_at_utc = (Get-Date).ToUniversalTime().ToString("o")
-            })
+        if ($CanUseSeasonCache) {
+            New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+            Copy-Poe2FileAtomically -Source $PatchZip -Destination $CachedPatchZip | Out-Null
+            $Signature = Get-Poe1BaseItemsSignature -SourceDat $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot
+            Write-Poe1JsonAtomically -Path $CacheMetadata -Value ([ordered]@{
+                    game_version = "poe1"
+                    patch_scope = $PatchScope
+                    price_source = $PriceSource
+                    league = $League
+                    league_is_current = [bool]$LeagueIsCurrent
+                    install_kind = [string]$InstallInfo.InstallKind
+                    baseitems_path = [string]$InstallInfo.TcBaseItemsPath
+                    words_path = [string]$InstallInfo.TcWordsPath
+                    compatibility_sha256 = [string]$Signature.compatibility_sha256
+                    saved_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+                })
+        }
     }
     else {
         Write-Warning "实时构建失败：$BuildFailure"
-        if (Test-Poe1CacheUsable -CacheZip $CachedPatchZip -CacheMetadata $CacheMetadata `
+        if ($CanUseSeasonCache -and (Test-Poe1CacheUsable -CacheZip $CachedPatchZip -CacheMetadata $CacheMetadata `
             -CurrentBaseItems $Extracted.LocalizedBaseItems -CurrentWords $Extracted.LocalizedWords `
             -Scope $PatchScope -Source $PriceSource -Python $Python `
-            -InstallInfo $InstallInfo -RepoRoot $RepoRoot) {
+            -InstallInfo $InstallInfo -RepoRoot $RepoRoot)) {
             Write-Warning "已使用当前客户端、语言和范围完全匹配的 POE1 缓存。"
             Copy-Poe2FileAtomically -Source $CachedPatchZip -Destination $PatchZip | Out-Null
         }

@@ -45,9 +45,10 @@ const canUpdate = computed(
     !!app.client &&
     !app.running &&
     !app.querying &&
+    !app.leagueSaving &&
     (app.settings.patchScope === 'none'
       ? app.settings.gameVersion === 'poe2' && app.settings.islandRumourHints
-      : !!app.league)
+      : app.selectedLeague === '__auto__' || !!app.league)
 )
 const sourceLabel = computed(() =>
   app.client?.isChina
@@ -309,10 +310,11 @@ onUnmounted(() => app.dispose())
                 <div class="field-inline">
                   <n-select
                     id="league"
-                    v-model:value="app.selectedLeague"
-                    :options="app.leagues.map((x) => ({ label: x.Label, value: x.Value }))"
+                    :value="app.selectedLeague"
+                    @update:value="app.selectLeague"
+                    :options="app.leagueOptions"
                     :loading="app.leagueLoading"
-                    :disabled="app.running || !app.client || app.leagueLoading"
+                    :disabled="app.running || !app.client || app.leagueLoading || app.leagueSaving"
                     :placeholder="app.client ? '选择价格赛季' : '先选择客户端'"
                   /><n-button
                     quaternary
@@ -331,9 +333,9 @@ onUnmounted(() => app.dispose())
                   }}
                 </p>
               </div>
-              <n-alert v-if="app.league?.DiscoveryFallback" type="warning" class="mb-4"
-                >赛季目录暂不可用，当前使用内置候选；请核实后执行或重新刷新。</n-alert
-              >
+              <n-alert v-if="app.leagueNotice" type="info" class="mb-4">{{
+                app.leagueNotice
+              }}</n-alert>
               <fieldset class="scope-field" :disabled="app.running">
                 <legend>更新范围</legend>
                 <div class="scope-list">

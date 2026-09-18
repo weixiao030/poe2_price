@@ -6,6 +6,9 @@ import re
 import subprocess
 import sys
 import zipfile
+from unittest.mock import Mock
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +63,28 @@ def test_poe1_display_units_use_chaos_and_divine_with_small_price_guard():
     assert poe1.format_price(Decimal("1"), Decimal("159.5")) == "1C"
     assert poe1.format_price(Decimal("15.95"), Decimal("159.5")) == "0.1D"
     assert poe1.format_price(Decimal("159.5"), Decimal("159.5")) == "1D"
+
+
+def test_poe1_scout_never_replaces_a_missing_pinned_season():
+    client = Mock()
+    client.get_json.return_value = [
+        {"Value": "New", "ShortName": "new", "IsCurrent": True},
+        {"Value": "Standard", "ShortName": "standard", "IsCurrent": False},
+    ]
+    with pytest.raises(ValueError, match="selected POE1 league: Old"):
+        poe1.discover_poe2scout_poe1_league(client, "https://example.invalid", "Old")
+    assert poe1.discover_poe2scout_poe1_league(client, "https://example.invalid", "Standard")[0] == "Standard"
+    client.get_json.return_value = [{"Value": "Standard", "IsCurrent": False}]
+    with pytest.raises(ValueError, match="no usable POE1 league"):
+        poe1.discover_poe2scout_poe1_league(client, "https://example.invalid", "")
+
+
+def test_poe1_ninja_discovery_failure_does_not_invent_standard():
+    client = Mock()
+    client.get_json.side_effect = RuntimeError("offline")
+    with pytest.raises(ValueError, match="league discovery failed"):
+        poe1.discover_poe_ninja_league(client, "https://example.invalid", None)
+    assert poe1.discover_poe_ninja_league(client, "https://example.invalid", "Old")[0] == "Old"
 
 
 def test_poecurrency_v1_summary_normalizes_units_and_reference_orbs():
@@ -583,7 +608,7 @@ def test_poe1_restore_baseline_manifest_and_self_heal_are_strictly_scoped():
     assert "自动清理迁移" in restore
     builder = (TOOLS / "build_poe1_price_patch.py").read_text(encoding="utf-8")
     main = builder[builder.index("def main(") :]
-    assert main.index("if fetch_prices:") < main.index("discover_poe_ninja_league(")
+    assert main.index("if fetch_prices and use_international:") < main.index("discover_poe_ninja_league(")
     assert 'league_source = "not-required"' in builder
 
 

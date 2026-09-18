@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { AppSettings, PatchRequest } from '../shared/types'
+import type { AppSettings, LeagueOption, LeagueScope, PatchRequest } from '../shared/types'
 export const defaults: AppSettings = {
   gameVersion: 'poe2',
   directories: { poe1: '', poe2: '' },
@@ -24,6 +24,20 @@ export function choice<const T extends string>(value: unknown, allowed: readonly
 export function boolean(value: unknown): boolean {
   if (typeof value !== 'boolean') throw new Error('参数必须为布尔值')
   return value
+}
+function leagueOption(value: unknown): LeagueOption {
+  if (!value || typeof value !== 'object') throw new Error('无效赛季选择')
+  const option = value as LeagueOption
+  const id = text(option.Value, 160)
+  if (!id) throw new Error('赛季标识不能为空')
+  return {
+    Value: id,
+    Label: text(option.Label, 180),
+    ScoutLeague: text(option.ScoutLeague, 160),
+    PoeNinjaLeague: text(option.PoeNinjaLeague, 160),
+    PoeCurrencySeason: text(option.PoeCurrencySeason ?? '', 160),
+    IsCurrent: boolean(option.IsCurrent)
+  }
 }
 export function settingsPatch(input: unknown): Partial<AppSettings> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('无效设置')
@@ -64,6 +78,25 @@ export function settingsPatch(input: unknown): Partial<AppSettings> {
         out.directories = { poe1: text(dirs.poe1), poe2: text(dirs.poe2) }
         break
       }
+      case 'leagueSelections': {
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+          throw new Error('无效赛季配置')
+        out.leagueSelections = {}
+        for (const [scope, preference] of Object.entries(value)) {
+          const key: LeagueScope = choice(scope, [
+            'poe1-china',
+            'poe1-international',
+            'poe2-china',
+            'poe2-international'
+          ])
+          if (!preference || typeof preference !== 'object') throw new Error('无效赛季配置')
+          const saved = preference as Record<string, unknown>
+          const mode = choice(saved.mode, ['auto', 'fixed'])
+          out.leagueSelections[key] =
+            mode === 'auto' ? { mode } : { mode, option: leagueOption(saved.option) }
+        }
+        break
+      }
       default:
         throw new Error(`未知设置：${key}`)
     }
@@ -93,6 +126,7 @@ export function validateRequest(input: unknown): PatchRequest {
     poeNinjaLeague: text(r.poeNinjaLeague, 160),
     poeCurrencySeason: text(r.poeCurrencySeason, 160),
     leagueIsCurrent: boolean(r.leagueIsCurrent),
+    leagueMode: r.leagueMode === undefined ? 'fixed' : choice(r.leagueMode, ['auto', 'fixed']),
     islandRumourHints: gameVersion === 'poe2' && boolean(r.islandRumourHints)
   }
 }
@@ -111,6 +145,7 @@ export function argsFor(r: PatchRequest): Record<string, string | boolean> {
     args.League = r.league
     args.PoeCurrencySeason = r.poeCurrencySeason
     args.LeagueIsCurrent = r.leagueIsCurrent
+    if (r.leagueMode) args.LeagueMode = r.leagueMode
     if (r.gameVersion === 'poe2') {
       args.PoeNinjaLeague = r.poeNinjaLeague
       args.IslandRumourHints = r.islandRumourHints

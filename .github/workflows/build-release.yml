@@ -52,6 +52,8 @@ jobs:
         run: npm --prefix desktop run dist
       - name: Verify independent localization entry
         run: node desktop/scripts/verify-localize-entry.mjs
+      - name: Verify automatic and fixed league selection
+        run: node desktop/scripts/verify-leagues.mjs
       - name: Verify packaged application
         run: |
           node desktop/scripts/verify-package.mjs --ci

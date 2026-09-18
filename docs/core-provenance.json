@@ -12,16 +12,18 @@
     {
       "path": "物价补丁/tools/build_poe1_price_patch.py",
       "upstream_blob": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3",
-      "local_sha256": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3",
-      "equivalent": true,
-      "normalized_sha256": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3"
+      "local_sha256": "d83e468c4035b9793ec45177400c61951a57520a9bc34d3e193ad1336561d0b1",
+      "equivalent": false,
+      "normalized_sha256": "d83e468c4035b9793ec45177400c61951a57520a9bc34d3e193ad1336561d0b1",
+      "local_changes": "赛季解析失败不使用 Standard；固定赛季补缺禁止切季；允许国服主价独立构建。"
     },
     {
       "path": "物价补丁/tools/build_poe2scout_price_patch.py",
       "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "local_sha256": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "equivalent": true,
-      "normalized_sha256": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0"
+      "local_sha256": "89d561a5a6d88102bfeb74e3d9234c0e0bd737d997c2b195765ebd54c61d60d9",
+      "equivalent": false,
+      "normalized_sha256": "89d561a5a6d88102bfeb74e3d9234c0e0bd737d997c2b195765ebd54c61d60d9",
+      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。"
     },
     {
       "path": "物价补丁/tools/data_source_contract_baseline.json",
@@ -61,9 +63,10 @@
     {
       "path": "物价补丁/tools/poe2_patch_common.ps1",
       "upstream_blob": "c2c07c23170ad9940128221ac5b9316e142ef646245642d6ac3cef154e46afd3",
-      "local_sha256": "c74b8a40824dd144eed866831e05c39839d5cea3512ccef5bd2a3bc3060b8e49",
-      "equivalent": true,
-      "normalized_sha256": "80e878b5a98927a407eaa5fdee561768c7c844efd0914e91d75bcdeb07ba5128"
+      "local_sha256": "b98647ed8e132c975c3f9464fda6b650bf3cfad0a53dcfff6547968f61445f2d",
+      "equivalent": false,
+      "normalized_sha256": "4956761328d9b9768f0498558607efff056b4e34a67742940852ef93729dffb1",
+      "local_changes": "赛季解析移入独立模块，国服赛季加入补丁缓存身份。"
     },
     {
       "path": "物价补丁/tools/poe_patch_profiles.ps1",
@@ -89,16 +92,18 @@
     {
       "path": "物价补丁/tools/update_poe1_price_patch.ps1",
       "upstream_blob": "ff1174efa7e2884d507f675e133a791ac0595e86d40de9c291e211363e85e2f5",
-      "local_sha256": "0fce44f34c6eb838ce6af4bb8971e315abb4168f321ee3428a079cb16c6d129f",
-      "equivalent": true,
-      "normalized_sha256": "272a79d8f06e1383cbae5a90a3558c9cc6a24cd5c484a5a6b5e1b331d16d2865"
+      "local_sha256": "42559863eb5725ede43e57aa1cc6f483eba53d9ec9d43fb8721c2b12d263aa8a",
+      "equivalent": false,
+      "normalized_sha256": "c015815968c7f8e2ff9ddd687e59d35f8c9af2a498c2622b00d186b5b0b848c1",
+      "local_changes": "接入自动与固定模式、正确国服当前和历史接口、独立国服价格路径及缓存隔离。"
     },
     {
       "path": "物价补丁/tools/update_price_patch.ps1",
       "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
-      "local_sha256": "1b5a7c68253aff1e716cb78802e7257809e59e110f81475f923580fbcb0dafc0",
-      "equivalent": true,
-      "normalized_sha256": "981de561607ea4f609f829644715a4ec69ae4d2ccf9e75e7e3b14c32c0311d9e"
+      "local_sha256": "555c3675720b6e462ab6d523f51119084261a83f76ef335e7a99da990ee3c919",
+      "equivalent": false,
+      "normalized_sha256": "d2db52da024e8633c8268c5ccc408881c28976db634af57e80b9e85d6b281fd5",
+      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",
@@ -208,9 +213,10 @@
     {
       "path": "物价补丁/tools/price_sources/league.py",
       "upstream_blob": "681297e512fb79b9af375d087d87b6509070f8635979a9ef6a4176d925cc0c64",
-      "local_sha256": "681297e512fb79b9af375d087d87b6509070f8635979a9ef6a4176d925cc0c64",
-      "equivalent": true,
-      "normalized_sha256": "681297e512fb79b9af375d087d87b6509070f8635979a9ef6a4176d925cc0c64"
+      "local_sha256": "1054c6a388b46e3a9f85f221b0386204f33b4187c2f34c263a7c994140c9596e",
+      "equivalent": false,
+      "normalized_sha256": "1054c6a388b46e3a9f85f221b0386204f33b4187c2f34c263a7c994140c9596e",
+      "local_changes": "动态选择最新，Scout 故障时尝试 Ninja；部分来源标识只匹配同赛季。"
     },
     {
       "path": "物价补丁/tools/price_sources/models.py",
@@ -225,6 +231,14 @@
       "local_sha256": "8c5442b724c254a61fdd2f92a288439c2a79e8a8a45e67ab83b583c1f8064890",
       "equivalent": true,
       "normalized_sha256": "8c5442b724c254a61fdd2f92a288439c2a79e8a8a45e67ab83b583c1f8064890"
+    },
+    {
+      "path": "物价补丁/tools/poe_patch_leagues.ps1",
+      "upstream_blob": null,
+      "local_sha256": "941bbe71bdd2437285284e5afeea678b7e26978ce47bf1d408a2c8c164a36a04",
+      "equivalent": false,
+      "normalized_sha256": "e6365776b9193031849ec57a7ac506a84e0e5a60287cd3a5f26a266fc3bdc0b2",
+      "local_changes": "新增统一赛季目录、缓存、自动与固定选择及国服价格地址解析。"
     }
   ],
   "native_tools": [

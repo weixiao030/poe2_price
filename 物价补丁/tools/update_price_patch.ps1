@@ -11,6 +11,7 @@
     [string]$League = "",
     [string]$PoeNinjaLeague = "",
     [string]$PoeCurrencySeason = "",
+    [ValidateSet("", "auto", "fixed")][string]$LeagueMode = "",
     [string]$PoeNinjaUniqueArmoursUrl = "https://poe.ninja/poe2/economy/forbiddenrites/unique-armours",
     [bool]$LeagueIsCurrent = $true
 )
@@ -3028,12 +3029,17 @@ if ($InstallInfo.LanguageDefaulted) {
 $IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*"
 if ($PatchPriceFetchEnabled) {
     $SelectedLeague = Resolve-PoePatchLeagueSelection -GameVersion "poe2" `
-        -League $League -PoeNinjaLeague $PoeNinjaLeague -China:$IsChinaClient -TimeoutSeconds 20
+        -League $League -PoeNinjaLeague $PoeNinjaLeague -PoeCurrencySeason $PoeCurrencySeason `
+        -LeagueMode $LeagueMode -LeagueIsCurrent $LeagueIsCurrent -China:$IsChinaClient -TimeoutSeconds 10
     $League = [string]$SelectedLeague.ScoutLeague
     $PoeNinjaLeague = [string]$SelectedLeague.PoeNinjaLeague
-    $PoeCurrencySeason = if (-not [string]::IsNullOrWhiteSpace([string]$SelectedLeague.PoeCurrencySeason)) { [string]$SelectedLeague.PoeCurrencySeason } else { $PoeNinjaLeague }
-    $LeagueIsCurrent = [bool]$SelectedLeague.IsCurrent
+    $PoeCurrencySeason = [string]$SelectedLeague.PoeCurrencySeason
+    $LeagueIsCurrent = if ($IsChinaClient) { [bool]$SelectedLeague.UseCurrentEndpoint } else { [bool]$SelectedLeague.IsCurrent }
+    Write-Host "价格赛季：$(if ($SelectedLeague.Value) { $SelectedLeague.Value } else { '国服当前赛季' })" -ForegroundColor Cyan
+    if ($SelectedLeague.DiscoveryFallback) { Write-Warning $SelectedLeague.DiscoveryMessage }
+    if ($IsChinaClient -and $PoeNinjaLeague) { Write-Host "国际服补缺参考：$PoeNinjaLeague" -ForegroundColor Cyan }
 }
+$CanUseSeasonCache = -not $IsChinaClient -or -not [string]::IsNullOrWhiteSpace($PoeCurrencySeason)
 $UseChinaPriceSource = $IsChinaClient
 $PriceSourceName = if ($UseChinaPriceSource) { "国服 poecurrency.top" } else { "POE2 Scout" }
 
@@ -3189,7 +3195,7 @@ if (-not $SkipExtract) {
         $EnglishBaseItemsUnavailable = -not $FoundByPath.ContainsKey([string]$InstallInfo.EnBaseItemsPath)
         $EnglishWordsUnavailable = $SupportsUniqueWords -and -not $FoundByPath.ContainsKey("data/balance/words.datc64")
         if ($EnglishBaseItemsUnavailable -and $IsChinaClient) {
-            Write-Warning "国服 Bundles2 未包含英文 BaseItemTypes，将改用 Poe2DB Economy 做国际服价格参考。"
+            Write-Warning "国服 Bundles2 未包含英文 BaseItemTypes，将使用本地中文表匹配国服价格。"
         }
         if ($EnglishWordsUnavailable -and $IsChinaClient) {
             Write-Warning "国服 Bundles2 未包含英文 Words，将跳过依赖英文 Words 的传奇英文兜底。"
@@ -3217,7 +3223,7 @@ elseif (Test-Path -LiteralPath $EnBaseItems -PathType Leaf) {
     $EnglishBaseItemsUnavailable = $false
 }
 else {
-    Write-Host "英文 BaseItemTypes 不可用：国服将使用 Poe2DB Economy 作为国际服参考源。" -ForegroundColor Yellow
+    Write-Host "英文 BaseItemTypes 不可用：将使用本地中文表，并按所选赛季启用国际服补缺。" -ForegroundColor Yellow
 }
 Assert-File $TcBaseItems "$($InstallInfo.LanguageName) BaseItemTypes"
 if ($PatchIslandRumourHintsEnabled) {
@@ -3273,7 +3279,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:POE2_PATCH_BUILD_MODE)) {
         throw "Invalid POE2_PATCH_BUILD_MODE '$($env:POE2_PATCH_BUILD_MODE)'. Use append or fixed."
     }
 }
-$LeagueCacheToken = Get-PoePatchLeagueCacheToken -ScoutLeague $League -PoeNinjaLeague $PoeNinjaLeague
+$LeagueCacheToken = Get-PoePatchLeagueCacheToken -ScoutLeague $League -PoeNinjaLeague $PoeNinjaLeague -PoeCurrencySeason $PoeCurrencySeason
 $PriceCacheKey = [string]::Concat(
     ($InstallInfo.InstallKind -replace '[^A-Za-z0-9._-]', '_'),
     "_",
@@ -3373,31 +3379,33 @@ else {
     }
     $BuildArgs += "--no-uniques"
 }
-if (-not [string]::IsNullOrWhiteSpace($League)) {
+if ($PatchPriceFetchEnabled) {
     $BuildArgs += @(
-        "--league", $League,
-        "--poe-ninja-league", $(if ([string]::IsNullOrWhiteSpace($PoeNinjaLeague)) { $League } else { $PoeNinjaLeague }),
-        "--poe-ninja-unique-armours-url", $PoeNinjaUniqueArmoursUrl,
+        "--resolved-leagues",
         "--league-is-current", $(if ($LeagueIsCurrent) { "true" } else { "false" }),
-        "--fallback-price-sources", "poe-ninja"
+        "--fallback-price-sources", $(if ($PoeNinjaLeague) { "poe-ninja" } else { "none" })
     )
 }
-elseif (-not $NoPoe2dbFallback -and -not $IsChinaClient) {
-    $BuildArgs += "--poe2db-fallback"
+if (-not [string]::IsNullOrWhiteSpace($League)) {
+    $BuildArgs += @("--league", $League)
+}
+if (-not [string]::IsNullOrWhiteSpace($PoeNinjaLeague)) {
+    $BuildArgs += @(
+        "--poe-ninja-league", $PoeNinjaLeague,
+        "--poe-ninja-unique-armours-url", $PoeNinjaUniqueArmoursUrl
+    )
 }
 if ($UseChinaPriceSource) {
-    $CnReferenceSource = if ($EnglishBaseItemsUnavailable) { "poe2db-economy" } else { "poe2scout" }
+    $CnReferenceSource = if ($League) { "poe2scout" } elseif ($PoeNinjaLeague) { "poe-ninja" } else { "none" }
+    if ($EnglishBaseItemsUnavailable -and $LeagueIsCurrent -and $PoeCurrencySeason -and $PoeNinjaLeague) {
+        $CnReferenceSource = "poe2db-economy"
+    }
     $BuildArgs += @(
         "--price-source", "poecurrency-cn",
-        "--poecurrency-summary-url", $(if ([string]::IsNullOrWhiteSpace($PoeCurrencySeason)) { "https://poecurrency.top/api/summary?version=2" } else { "https://poecurrency.top/api/summary?version=2&season=" + [Uri]::EscapeDataString($PoeCurrencySeason) }),
+        "--poecurrency-summary-url", (Get-PoePatchChinaSummaryUrl -GameVersion poe2 -Season $PoeCurrencySeason -UseCurrentEndpoint $LeagueIsCurrent),
         "--cn-reference-source", $CnReferenceSource
     )
-    if ($EnglishBaseItemsUnavailable) {
-        Write-Host "国服国际服参考源：Poe2DB Economy（英文 BaseItemTypes 不可用）" -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "国服国际服参考源：POE2 Scout（本地英文 BaseItemTypes 可用）" -ForegroundColor Cyan
-    }
+    Write-Host "国服国际服参考源：$CnReferenceSource" -ForegroundColor Cyan
 }
 
 $UsingCachedPatch = $false
@@ -3459,10 +3467,12 @@ try {
     Assert-File $PatchZip $PricePatchZipName
     Copy-Poe2FileAtomically -Source $PatchZip -Destination $PatchFolderZip | Out-Null
     try {
-        New-Item -ItemType Directory -Force -Path $PriceCacheDir | Out-Null
-        Copy-Poe2FileAtomically -Source $PatchZip -Destination $CachedPatchZip | Out-Null
-        if (Test-Path -LiteralPath $SummaryJson -PathType Leaf) {
-            Copy-Poe2FileAtomically -Source $SummaryJson -Destination $CachedSummaryJson | Out-Null
+        if ($CanUseSeasonCache) {
+            New-Item -ItemType Directory -Force -Path $PriceCacheDir | Out-Null
+            Copy-Poe2FileAtomically -Source $PatchZip -Destination $CachedPatchZip | Out-Null
+            if (Test-Path -LiteralPath $SummaryJson -PathType Leaf) {
+                Copy-Poe2FileAtomically -Source $SummaryJson -Destination $CachedSummaryJson | Out-Null
+            }
         }
     }
     catch {
@@ -3474,7 +3484,7 @@ catch {
     $CompatibleFallbackPatch = ""
     try {
         if (
-            $BuildPatchScope -in @("all", "currency") -and
+            $CanUseSeasonCache -and $BuildPatchScope -in @("all", "currency") -and
             (Test-PricePatchZipCompatible -Path $CachedPatchZip -ReferenceDat $TcBaseItems)
         ) {
             $SafeFallbackZip = Join-Path $BuildStageDir "safe-core-cache.zip"
@@ -3496,8 +3506,7 @@ catch {
             Copy-Poe2FileAtomically -Source $CompatibleFallbackPatch -Destination $PatchFolderZip | Out-Null
         }
         catch {
-            Write-Warning "兼容缓存无法安全发布，本次未修改游戏文件：$($_.Exception.Message)"
-            return
+            throw "兼容缓存无法安全发布，本次未修改游戏文件：$($_.Exception.Message)"
         }
         try {
             Write-JsonAtomically -Path $SummaryJson -Value ([ordered]@{
@@ -3518,8 +3527,7 @@ catch {
     else {
         $NoInstall = $true
         Write-Warning "实时构建和兼容缓存均不可用，本次保持游戏与现有补丁原状。原因：$BuildFailure"
-        Write-Host "完成：未修改游戏文件。请稍后联网重试；现有已安装补丁不会被空结果覆盖。" -ForegroundColor Yellow
-        return
+        throw "所选赛季价格暂不可用，现有补丁保持不变，请稍后重试。原因：$BuildFailure"
     }
 }
 finally {

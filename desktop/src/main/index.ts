@@ -149,7 +149,8 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
       if (
         !automatic &&
         request.patchScope !== 'none' &&
-        !(client!.isChina ? request.poeCurrencySeason : request.league)
+        request.leagueMode !== 'auto' &&
+        !(client!.isChina ? request.poeCurrencySeason : request.league || request.poeNinjaLeague)
       )
         throw new Error('请选择价格赛季后再执行')
     }

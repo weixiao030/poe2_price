@@ -91,6 +91,14 @@ class LeagueDiscoveryTests(unittest.TestCase):
         self.assertEqual(options[0].scout, "pc-league")
         self.assertEqual(client.urls, ["https://api.poe2scout.com/pc/Leagues"])
 
+    def test_history_only_directory_does_not_label_history_as_latest(self):
+        options = self.league.discover_league_options(
+            FakeClient([{"Value": "Old", "ShortName": "old", "IsCurrent": False}]),
+            "https://api.poe2scout.com",
+        )
+        self.assertFalse(options[0].is_latest)
+        self.assertEqual(options[0].label, "Old")
+
     def test_accepts_wrapped_response_and_field_aliases(self):
         client = FakeClient(
             {
@@ -138,24 +146,18 @@ class LeagueDiscoveryTests(unittest.TestCase):
         selected = self.league.resolve_current_leagues(
             client,
             "https://example.invalid/",
-            explicit_scout="manual",
+            explicit_scout="new",
         )
 
-        self.assertEqual(selected.scout, "manual")
+        self.assertEqual(selected.scout, "new")
         self.assertEqual(selected.poe_ninja, "New League")
         self.assertEqual(selected.source, "explicit+auto")
 
-    def test_request_failure_uses_known_good_defaults(self):
+    def test_request_failure_does_not_invent_a_current_league(self):
         client = FakeClient(error=TimeoutError("deadline"))
 
-        selected = self.league.resolve_current_leagues(client, "https://example.invalid")
-
-        self.assertEqual(selected.scout, "runes")
-        self.assertEqual(selected.poe_ninja, "Runes of Aldur")
-        self.assertEqual(selected.source, "fallback")
-        self.assertTrue(selected.used_fallback)
-        self.assertEqual(len(selected.warnings), 1)
-        self.assertIn("deadline", selected.warnings[0])
+        with self.assertRaisesRegex(ValueError, "deadline"):
+            self.league.resolve_current_leagues(client, "https://example.invalid")
 
     def test_partial_explicit_value_survives_discovery_failure(self):
         selected = self.league.resolve_current_leagues(
@@ -164,36 +166,48 @@ class LeagueDiscoveryTests(unittest.TestCase):
             explicit_ninja="Manual Ninja",
         )
 
-        self.assertEqual(selected.scout, "runes")
+        self.assertEqual(selected.scout, "")
         self.assertEqual(selected.poe_ninja, "Manual Ninja")
         self.assertEqual(selected.source, "explicit+fallback")
 
-    def test_bad_schema_variants_fail_closed_to_defaults(self):
+    def test_bad_schema_variants_do_not_revive_a_historical_default(self):
         payloads = (
             None,
             "not-json-object",
             {},
             {"data": [{"Value": "Old", "ShortName": "old", "IsCurrent": False}]},
             {"data": [{"Value": "Missing Short Name", "IsCurrent": True}]},
-            {
-                "data": [
-                    {"Value": "League One", "ShortName": "one", "IsCurrent": True},
-                    {"Value": "League Two", "ShortName": "two", "IsCurrent": True},
-                ]
-            },
         )
 
         for payload in payloads:
             with self.subTest(payload=payload):
-                selected = self.league.resolve_current_leagues(
-                    FakeClient(payload=payload), "https://example.invalid"
-                )
-                self.assertEqual(
-                    (selected.scout, selected.poe_ninja),
-                    ("runes", "Runes of Aldur"),
-                )
-                self.assertEqual(selected.source, "fallback")
-                self.assertEqual(len(selected.warnings), 1)
+                with self.assertRaises(ValueError):
+                    self.league.resolve_current_leagues(FakeClient(payload=payload), "https://example.invalid")
+
+    def test_multiple_current_leagues_keep_the_provider_order(self):
+        selected = self.league.resolve_current_leagues(FakeClient(payload=[
+            {"Value": "New", "ShortName": "new", "IsCurrent": True},
+            {"Value": "Old", "ShortName": "old", "IsCurrent": True},
+        ]), "https://example.invalid")
+        self.assertEqual((selected.scout, selected.poe_ninja), ("new", "New"))
+
+    def test_partial_manual_identity_never_borrows_another_league(self):
+        selected = self.league.resolve_current_leagues(FakeClient(payload=[
+            {"Value": "New", "ShortName": "new", "IsCurrent": True},
+        ]), "https://example.invalid", explicit_ninja="Old")
+        self.assertEqual((selected.scout, selected.poe_ninja), ("", "Old"))
+
+    def test_ninja_directory_can_supply_latest_without_scout(self):
+        class NinjaClient:
+            def get_json(self, url):
+                if url.endswith('/Leagues'):
+                    raise TimeoutError('Scout offline')
+                return {"economyLeagues": [
+                    {"name": "HC New", "hardcore": True},
+                    {"name": "New", "hardcore": False, "indexed": False},
+                ]}
+        selected = self.league.resolve_current_leagues(NinjaClient(), "https://example.invalid")
+        self.assertEqual((selected.scout, selected.poe_ninja, selected.source), ("", "New", "ninja"))
 
     def test_duplicate_identical_softcore_rows_are_not_ambiguous(self):
         row = {"Value": "Runes of Aldur", "ShortName": "runes", "IsCurrent": True}
