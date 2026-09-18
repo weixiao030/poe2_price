@@ -12,18 +12,18 @@
     {
       "path": "物价补丁/tools/build_poe1_price_patch.py",
       "upstream_blob": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3",
-      "local_sha256": "d83e468c4035b9793ec45177400c61951a57520a9bc34d3e193ad1336561d0b1",
+      "local_sha256": "89c9c379b879c38f75c459d9ace723c24ddd7b029e2dc3d8876a06a490ef62fa",
       "equivalent": false,
-      "normalized_sha256": "d83e468c4035b9793ec45177400c61951a57520a9bc34d3e193ad1336561d0b1",
-      "local_changes": "赛季解析失败不使用 Standard；固定赛季补缺禁止切季；允许国服主价独立构建。"
+      "normalized_sha256": "89c9c379b879c38f75c459d9ace723c24ddd7b029e2dc3d8876a06a490ef62fa",
+      "local_changes": "赛季解析失败不使用 Standard；固定赛季补缺禁止切季；允许国服主价独立构建。接入普通汇总 OCR 分侧历史校验；禁止国际汇率换算国服报价。"
     },
     {
       "path": "物价补丁/tools/build_poe2scout_price_patch.py",
       "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "local_sha256": "89d561a5a6d88102bfeb74e3d9234c0e0bd737d997c2b195765ebd54c61d60d9",
+      "local_sha256": "974811ec4270d268583bc320a63eb47511a6f71e1ca795ff85fbfc452d324692",
       "equivalent": false,
-      "normalized_sha256": "89d561a5a6d88102bfeb74e3d9234c0e0bd737d997c2b195765ebd54c61d60d9",
-      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。"
+      "normalized_sha256": "974811ec4270d268583bc320a63eb47511a6f71e1ca795ff85fbfc452d324692",
+      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。"
     },
     {
       "path": "物价补丁/tools/data_source_contract_baseline.json",
@@ -239,6 +239,14 @@
       "equivalent": false,
       "normalized_sha256": "e6365776b9193031849ec57a7ac506a84e0e5a60287cd3a5f26a266fc3bdc0b2",
       "local_changes": "新增统一赛季目录、缓存、自动与固定选择及国服价格地址解析。"
+    },
+    {
+      "path": "物价补丁/tools/price_sources/poecurrency_pricing.py",
+      "upstream_blob": null,
+      "local_sha256": "d552b1b6ede008f671ae5fac8d4b823e7b6abeae3d06bf6f630a16cc647b5852",
+      "equivalent": false,
+      "normalized_sha256": "d552b1b6ede008f671ae5fac8d4b823e7b6abeae3d06bf6f630a16cc647b5852",
+      "local_changes": "新增 POE1/POE2 共用普通汇总 OCR 校验，仅本地算法，无额外请求。"
     }
   ],
   "native_tools": [

@@ -28,6 +28,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import build_poe2scout_price_patch as shared
 from price_sources.http_client import DEFAULT_REQUEST_TIME_BUDGET, RetryingRequests
 from price_sources.models import BaseItemPair, PriceObservation
+from price_sources.poecurrency_pricing import Decision
 
 
 DEFAULT_POECURRENCY_SUMMARY_API = "https://poecurrency.top/api/summary?version=1"
@@ -804,33 +805,17 @@ def _bool_value(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _choose_pair(left: Decimal, right: Decimal) -> Decimal:
-    if left > 0 and right > 0:
-        high = max(left, right)
-        low = min(left, right)
-        if high / low <= Decimal("5"):
-            return (left * right).sqrt()
-        return low
-    return left if left > 0 else right
-
-
 def _poecurrency_raw_price(item: dict[str, Any]) -> tuple[Decimal, str]:
-    is_error = _bool_value(item.get("error"))
-    candidate_pairs: list[tuple[str, str]] = []
-    if not is_error:
-        candidate_pairs.append(("latest_buy1", "latest_sell1"))
-    candidate_pairs.extend(
-        (
-            ("buy_avg_12h", "sell_avg_12h"),
-            ("buy_avg", "sell_avg"),
-            ("buy_avg_yesterday", "sell_avg_yesterday"),
-        )
+    decision = _poecurrency_decision(item)
+    return decision.price, decision.field
+
+
+def _poecurrency_decision(item: dict[str, Any]) -> Decision:
+    is_divine = (
+        normalize_english(str(item.get("engname") or "")) == "divineorb"
+        or str(item.get("item_name") or "").strip() in CN_DIVINE_NAMES
     )
-    for buy_key, sell_key in candidate_pairs:
-        value = _choose_pair(to_decimal(item.get(buy_key)), to_decimal(item.get(sell_key)))
-        if value > 0:
-            return value, f"{buy_key}/{sell_key}"
-    return Decimal("0"), ""
+    return shared.select_cn_price(item, divine=is_divine)
 
 
 def _poecurrency_unit(item: dict[str, Any]) -> str:
@@ -846,6 +831,8 @@ def collect_poecurrency_prices(
     payload: Any,
     fallback_divine_chaos: Decimal,
 ) -> tuple[dict[str, Poe1Price], Decimal, dict[str, Any]]:
+    # Keep the historical argument for callers; international exchange rates
+    # must not be used to convert domestic D quotes.
     categories = shared.normalize_poecurrency_summary(payload)
     flattened: list[tuple[str, dict[str, Any]]] = []
     for category in categories:
@@ -867,19 +854,24 @@ def collect_poecurrency_prices(
             divine_chaos = raw_value
             break
     if divine_chaos <= 0:
-        divine_chaos = fallback_divine_chaos
-    if divine_chaos <= 0:
-        raise ValueError("cannot determine poecurrency Divine/Chaos ratio")
+        raise ValueError("cannot determine domestic poecurrency Divine/Chaos ratio")
 
     prices: dict[str, Poe1Price] = {}
     skipped_errors = 0
     missing_units = 0
+    pricing_reasons: dict[str, int] = {}
+    adjusted_items = 0
     for category, item in flattened:
         en_name = str(item.get("engname") or "").strip()
         localized = str(item.get("item_name") or "").strip()
         if not en_name and not localized:
             continue
-        raw_value, field = _poecurrency_raw_price(item)
+        decision = _poecurrency_decision(item)
+        raw_value, field = decision.price, decision.field
+        if decision.flags:
+            adjusted_items += 1
+        for reason in decision.flags:
+            pricing_reasons[reason] = pricing_reasons.get(reason, 0) + 1
         unit = _poecurrency_unit(item)
         if not unit:
             missing_units += 1
@@ -907,7 +899,8 @@ def collect_poecurrency_prices(
             category=category,
             price_chaos=price_chaos,
             volume=Decimal("0"),
-            source_pair=f"poecurrency.top/{category}/{field}; unit={unit}",
+            source_pair=(f"poecurrency.top/{category}/{field}; unit={unit}"
+                         + (f"; quality={','.join(decision.flags)}" if decision.flags else "")),
         )
     if len(prices) < 10:
         raise ValueError(f"poecurrency version=1 produced too few prices: {len(prices)}")
@@ -917,6 +910,8 @@ def collect_poecurrency_prices(
         "price_count": len(prices),
         "missing_unit_items": missing_units,
         "skipped_error_items": skipped_errors,
+        "price_flagged_items": adjusted_items,
+        "pricing_reasons": pricing_reasons,
         "divine_price_chaos": str(divine_chaos),
     }
     return prices, divine_chaos, quality

@@ -281,7 +281,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
 
         sleep.assert_called_once_with(2)
 
-    def test_latest_buy_price_wins_over_avg_price(self):
+    def test_extreme_single_quote_falls_back_to_history(self):
         price, field = self.price_patch.poecurrency_item_price(
             {
                 "item_name": "Kalandra's Mirror",
@@ -292,8 +292,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(price, Decimal("15000"))
-        self.assertEqual(field, "latest_buy1_only")
+        self.assertEqual(price, Decimal("1721.62962962963"))
+        self.assertIn("history_fallback", field)
 
     def test_avg_price_is_fallback_when_latest_price_is_missing(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -306,7 +306,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price, Decimal("1721.62962962963"))
-        self.assertEqual(field, "buy_avg_only")
+        self.assertEqual(field, "buy_avg_only_history_fallback")
 
     def test_latest_spread_keeps_conservative_side(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -319,7 +319,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price, Decimal("73"))
-        self.assertEqual(field, "latest_buy1_closest_to_geo_buy_avg_sell_avg_spread_gt_5x")
+        self.assertEqual(field, "latest_buy1_only")
 
     def test_latest_spread_uses_average_reference_when_available(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -333,7 +333,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price.quantize(Decimal("0.0001")), Decimal("2.5084"))
-        self.assertEqual(field, "geo_latest_buy1_latest_sell1_d_digit_shift_100x")
+        self.assertEqual(field, "geo_latest_buy1_latest_sell1")
 
     def test_latest_spread_falls_back_to_average_when_both_sides_are_far(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -347,7 +347,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price.quantize(Decimal("0.0001")), Decimal("41.7651"))
-        self.assertEqual(field, "geo_buy_avg_sell_avg_latest_spread_avg_fallback")
+        self.assertEqual(field, "geo_buy_avg_sell_avg_history_fallback")
 
     def test_poecurrency_summary_accepts_wrapped_response_and_field_aliases(self):
         class FakeClient:
@@ -420,7 +420,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price.quantize(Decimal("0.0001")), Decimal("26.4953"))
-        self.assertEqual(field, "geo_buy_avg_sell_avg_error_fallback")
+        self.assertEqual(field, "geo_buy_avg_sell_avg_history_fallback")
 
     def test_error_flag_falls_back_to_average(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -434,7 +434,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price.quantize(Decimal("0.0001")), Decimal("69.2820"))
-        self.assertEqual(field, "geo_buy_avg_sell_avg_error_fallback")
+        self.assertEqual(field, "geo_buy_avg_sell_avg_history_fallback")
 
     def test_error_flag_falls_back_to_previous_buy_only_without_average(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -449,7 +449,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price, Decimal("240"))
-        self.assertEqual(field, "prev_buy1_error_fallback")
+        self.assertEqual(field, "prev_buy1_only_history_fallback")
 
     def test_nightmare_simulacrum_ocr_error_does_not_use_prev_buy(self):
         best = self.price_patch.collect_poecurrency_observations(
@@ -490,7 +490,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
 
         self.assertEqual(divine, Decimal("316"))
         self.assertEqual(row.display_price, "2.27D")
-        self.assertIn("d_digit_shift_100x", row.source_pair)
+        self.assertIn("sell_decimal_shift", row.quality_flags)
         self.assertNotIn("prev_buy1", row.source_pair)
 
     def test_divine_ratio_uses_latest_buy1(self):
@@ -521,7 +521,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price, Decimal("314"))
-        self.assertEqual(field, "latest_sell1_divine_spread_fallback")
+        self.assertEqual(field, "latest_sell1_only")
 
     def test_divine_ratio_uses_average_when_latest_buy_outlier_has_no_sell(self):
         price, field = self.price_patch.poecurrency_divine_price(
@@ -536,7 +536,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price, Decimal("316"))
-        self.assertEqual(field, "buy_avg_divine_latest_outlier_fallback")
+        self.assertEqual(field, "buy_avg_divine_ratio_history_fallback")
 
     def test_stale_error_can_still_extract_average_price(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -552,7 +552,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price.quantize(Decimal("0.0001")), Decimal("10.9545"))
-        self.assertEqual(field, "geo_buy_avg_sell_avg_error_fallback")
+        self.assertEqual(field, "geo_buy_avg_sell_avg_history_fallback")
 
     def test_ocr_error_without_average_can_still_extract_previous_buy(self):
         price, field = self.price_patch.poecurrency_item_price(
@@ -569,7 +569,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(price, Decimal("8"))
-        self.assertEqual(field, "prev_buy1_error_fallback")
+        self.assertEqual(field, "prev_buy1_only_history_fallback")
 
     def test_ocr_error_without_any_price_is_skipped(self):
         best = self.price_patch.collect_poecurrency_observations(
@@ -653,7 +653,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
         self.assertEqual(row.price_exalted, Decimal("1234"))
         self.assertIn("e_api_exalted/e", row.source_pair)
 
-    def test_high_value_outlier_uses_poe2scout_reference(self):
+    def test_international_difference_does_not_replace_domestic_price(self):
         primary = [
             {
                 "metadata_path": "Metadata/Items/Currency/CurrencyMirror",
@@ -679,7 +679,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
             }
         ]
 
-        rows, count = self.price_patch.apply_high_value_reference_rows(
+        rows, count = self.price_patch.annotate_high_value_reference_rows(
             primary=primary,
             fallback=fallback,
             primary_divine_exalted=Decimal("277"),
@@ -689,8 +689,9 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
 
         self.assertEqual(count, 1)
-        self.assertEqual(rows[0]["price"], "4264.31D")
-        self.assertIn("high_value_reference=poe2scout", rows[0]["source_pair"])
+        self.assertEqual(rows[0]["price"], "54.15D")
+        self.assertEqual(rows[0]["price_exalted"], "15000")
+        self.assertIn("international_price_deviation=", rows[0]["source_pair"])
 
     def test_high_value_reference_keeps_close_cn_price(self):
         primary = [
@@ -718,7 +719,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
             }
         ]
 
-        rows, count = self.price_patch.apply_high_value_reference_rows(
+        rows, count = self.price_patch.annotate_high_value_reference_rows(
             primary=primary,
             fallback=fallback,
             primary_divine_exalted=Decimal("279"),
@@ -756,7 +757,7 @@ class PoecurrencyPricingTests(unittest.TestCase):
             }
         ]
 
-        rows, count = self.price_patch.apply_high_value_reference_rows(
+        rows, count = self.price_patch.annotate_high_value_reference_rows(
             primary=primary,
             fallback=fallback,
             primary_divine_exalted=Decimal("279"),
@@ -1891,7 +1892,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
             self.assertEqual(summary_json["cn_reference_status"], "degraded")
             self.assertEqual(summary_json["fallback_status"]["poe2scout"], "failed")
             self.assertEqual(summary_json["fallback_status"]["poe-ninja"], "ok")
-            self.assertEqual(summary_json["high_value_reference_items"], 1)
+            self.assertEqual(summary_json["high_value_reference_items"], 0)
+            self.assertEqual(summary_json["high_value_reference_warnings"], 1)
 
     def test_scout_category_health_reports_ninja_gaps(self):
         unique = [

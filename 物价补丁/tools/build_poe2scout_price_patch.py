@@ -55,6 +55,11 @@ from price_sources.http_client import (
     compact_text,
 )
 from price_sources.models import BaseItemPair, PriceObservation, PriceSourceResult
+from price_sources.poecurrency_pricing import (
+    has_error as cn_has_error,
+    positive as cn_positive,
+    select_price as select_cn_price,
+)
 
 def progress(message: str) -> None:
     print(f"[进度] {message}", flush=True)
@@ -178,7 +183,6 @@ WORDS_DISPLAY_NAME_OFFSET = 48
 UNIQUE_GOLD_PRICES_ROW_SIZE = 20
 CN_DIVINE_NAMES = ("神圣石", "神圣宝珠", "Divine Orb")
 CN_EXALTED_NAMES = ("崇高石", "崇高宝珠", "Exalted Orb")
-CN_TRUSTED_BUY_SELL_RATIO = Decimal("5")
 CN_HIGH_VALUE_FALLBACK_THRESHOLD_DIVINE = Decimal("10")
 CN_HIGH_VALUE_FALLBACK_MAX_RATIO = Decimal("5")
 
@@ -2295,93 +2299,8 @@ def poecurrency_explicit_exalted_price(item: dict[str, Any]) -> tuple[Decimal, s
     return Decimal("0"), ""
 
 
-def choose_poecurrency_pair_price(
-    buy_price: Decimal,
-    sell_price: Decimal,
-    buy_field: str,
-    sell_field: str,
-) -> tuple[Decimal, str]:
-    if buy_price > 0 and sell_price > 0:
-        high = max(buy_price, sell_price)
-        low = min(buy_price, sell_price)
-        ratio = high / low
-        if ratio <= CN_TRUSTED_BUY_SELL_RATIO:
-            return (buy_price * sell_price).sqrt(), f"geo_{buy_field}_{sell_field}"
-        if buy_price <= sell_price:
-            return buy_price, f"{buy_field}_conservative_spread_gt_5x"
-        return sell_price, f"{sell_field}_conservative_spread_gt_5x"
-    if sell_price > 0:
-        return sell_price, f"{sell_field}_only"
-    if buy_price > 0:
-        return buy_price, f"{buy_field}_only"
-    return Decimal("0"), ""
-
-
-def choose_poecurrency_pair_price_with_reference(
-    buy_price: Decimal,
-    sell_price: Decimal,
-    buy_field: str,
-    sell_field: str,
-    reference_price: Decimal,
-    reference_field: str,
-) -> tuple[Decimal, str]:
-    if buy_price > 0 and sell_price > 0:
-        ratio = decimal_spread_ratio(buy_price, sell_price)
-        if ratio > CN_TRUSTED_BUY_SELL_RATIO and reference_price > 0:
-            price, field = closest_positive_to_reference(
-                reference_price,
-                [(buy_price, buy_field), (sell_price, sell_field)],
-            )
-            if decimal_spread_ratio(price, reference_price) <= CN_TRUSTED_BUY_SELL_RATIO:
-                return price, f"{field}_closest_to_{reference_field}_spread_gt_5x"
-            if reference_field.startswith("geo_"):
-                return reference_price, f"{reference_field}_latest_spread_avg_fallback"
-    return choose_poecurrency_pair_price(
-        buy_price, sell_price, buy_field, sell_field
-    )
-
-
-def decimal_has_fraction(value: Decimal) -> bool:
-    return value > 0 and value != value.to_integral_value()
-
-
-def poecurrency_digit_shifted_divine_pair_price(
-    buy_price: Decimal,
-    sell_price: Decimal,
-    buy_field: str,
-    sell_field: str,
-) -> tuple[Decimal, str]:
-    if buy_price <= 0 or sell_price <= 0:
-        return Decimal("0"), ""
-    high_price = max(buy_price, sell_price)
-    low_price = min(buy_price, sell_price)
-    if not decimal_has_fraction(low_price):
-        return Decimal("0"), ""
-    ratio = decimal_spread_ratio(high_price, low_price)
-    if ratio < Decimal("20") or ratio > Decimal("200"):
-        return Decimal("0"), ""
-    if high_price < Decimal("50") or high_price > Decimal("1000"):
-        return Decimal("0"), ""
-
-    scaled_high = high_price / Decimal("100")
-    if decimal_spread_ratio(low_price, scaled_high) > CN_TRUSTED_BUY_SELL_RATIO:
-        return Decimal("0"), ""
-
-    high_field = buy_field if buy_price >= sell_price else sell_field
-    low_field = sell_field if buy_price >= sell_price else buy_field
-    return (
-        (low_price * scaled_high).sqrt(),
-        f"geo_{low_field}_{high_field}_d_digit_shift_100x",
-    )
-
-
 def poecurrency_item_has_error(item: dict[str, Any]) -> bool:
-    raw_error = item.get("error")
-    if isinstance(raw_error, bool):
-        return raw_error
-    if str(raw_error).strip().lower() in {"1", "true", "yes"}:
-        return True
-    return bool(str(item.get("error_info") or "").strip())
+    return cn_has_error(item)
 
 
 def decimal_spread_ratio(left: Decimal, right: Decimal) -> Decimal:
@@ -2390,123 +2309,14 @@ def decimal_spread_ratio(left: Decimal, right: Decimal) -> Decimal:
     return max(left, right) / min(left, right)
 
 
-def closest_positive_to_reference(
-    reference: Decimal, candidates: list[tuple[Decimal, str]]
-) -> tuple[Decimal, str]:
-    positive = [(price, field) for price, field in candidates if price > 0]
-    if not positive:
-        return Decimal("0"), ""
-    if reference <= 0:
-        return max(positive, key=lambda item: item[0])
-    return min(positive, key=lambda item: decimal_spread_ratio(item[0], reference))
-
-
-def poecurrency_avg_price(item: dict[str, Any]) -> tuple[Decimal, str]:
-    buy_avg = to_decimal(item.get("buy_avg"))
-    sell_avg = to_decimal(item.get("sell_avg"))
-    return choose_poecurrency_pair_price(
-        buy_avg, sell_avg, "buy_avg", "sell_avg"
-    )
-
-
-def poecurrency_yesterday_avg_price(item: dict[str, Any]) -> tuple[Decimal, str]:
-    buy_avg = to_decimal(item.get("buy_avg_yesterday"))
-    sell_avg = to_decimal(item.get("sell_avg_yesterday"))
-    return choose_poecurrency_pair_price(
-        buy_avg,
-        sell_avg,
-        "buy_avg_yesterday",
-        "sell_avg_yesterday",
-    )
-
-
 def poecurrency_item_price(item: dict[str, Any]) -> tuple[Decimal, str]:
-    avg_price, avg_field = poecurrency_avg_price(item)
-    unit = poecurrency_item_unit(item)
-    latest_buy = to_decimal(item.get("latest_buy1"))
-    latest_sell = to_decimal(item.get("latest_sell1"))
-    if unit == "d":
-        shifted_price, shifted_field = poecurrency_digit_shifted_divine_pair_price(
-            latest_buy, latest_sell, "latest_buy1", "latest_sell1"
-        )
-        if shifted_price > 0:
-            return shifted_price, shifted_field
-        latest_price, latest_field = choose_poecurrency_pair_price(
-            latest_buy, latest_sell, "latest_buy1", "latest_sell1"
-        )
-        if latest_price > 0 and not latest_field.endswith("spread_gt_5x"):
-            return latest_price, latest_field
-
-    if poecurrency_item_has_error(item):
-        if avg_price > 0:
-            return avg_price, f"{avg_field}_error_fallback"
-        prev_buy = to_decimal(item.get("prev_buy1"))
-        if prev_buy > 0:
-            return prev_buy, "prev_buy1_error_fallback"
-
-    latest_price, latest_field = choose_poecurrency_pair_price_with_reference(
-        latest_buy,
-        latest_sell,
-        "latest_buy1",
-        "latest_sell1",
-        avg_price,
-        avg_field,
-    )
-    if latest_price > 0:
-        return latest_price, latest_field
-
-    if avg_price > 0:
-        return avg_price, avg_field
-    return poecurrency_yesterday_avg_price(item)
+    decision = select_cn_price(item)
+    return decision.price, decision.field
 
 
 def poecurrency_divine_price(item: dict[str, Any]) -> tuple[Decimal, str]:
-    latest_buy = to_decimal(item.get("latest_buy1"))
-    latest_sell = to_decimal(item.get("latest_sell1"))
-    buy_avg = to_decimal(item.get("buy_avg"))
-    sell_avg = to_decimal(item.get("sell_avg"))
-    stable_avg, stable_avg_field = (
-        (buy_avg, "buy_avg")
-        if buy_avg > 0
-        else (sell_avg, "sell_avg")
-    )
-
-    if poecurrency_item_has_error(item):
-        if stable_avg > 0:
-            return stable_avg, f"{stable_avg_field}_divine_error_fallback"
-        prev_buy = to_decimal(item.get("prev_buy1"))
-        if prev_buy > 0:
-            return prev_buy, "prev_buy1_divine_error_fallback"
-
-    if (
-        latest_buy > 0
-        and latest_sell > 0
-        and decimal_spread_ratio(latest_buy, latest_sell) > CN_TRUSTED_BUY_SELL_RATIO
-    ):
-        price, field = closest_positive_to_reference(
-            stable_avg,
-            [(latest_buy, "latest_buy1"), (latest_sell, "latest_sell1")],
-        )
-        if price > 0:
-            return price, f"{field}_divine_spread_fallback"
-
-    if (
-        latest_buy > 0
-        and stable_avg > 0
-        and decimal_spread_ratio(latest_buy, stable_avg) > CN_TRUSTED_BUY_SELL_RATIO
-    ):
-        return stable_avg, f"{stable_avg_field}_divine_latest_outlier_fallback"
-
-    if latest_buy > 0:
-        return latest_buy, "latest_buy1_divine_ratio"
-    if latest_sell > 0:
-        return latest_sell, "latest_sell1_divine_ratio"
-    if stable_avg > 0:
-        return stable_avg, f"{stable_avg_field}_divine_ratio"
-    yesterday_price, yesterday_field = poecurrency_yesterday_avg_price(item)
-    if yesterday_price > 0:
-        return yesterday_price, f"{yesterday_field}_divine_yesterday_fallback"
-    return Decimal("0"), ""
+    decision = select_cn_price(item, divine=True)
+    return decision.price, decision.field
 
 
 def poecurrency_price_to_exalted(
@@ -2566,6 +2376,10 @@ def poecurrency_item_metadata(item: dict[str, Any]) -> dict[str, Any]:
             "prev_buy1_datetime",
             "buy_avg_yesterday",
             "sell_avg_yesterday",
+            "buy_avg_12h",
+            "sell_avg_12h",
+            "buy_avg_24h",
+            "sell_avg_24h",
             "buy_avg_ratio",
             "sell_avg_ratio",
             "anomaly_count",
@@ -2645,6 +2459,10 @@ def collect_poecurrency_observations_with_quality(
         "skipped_no_price": 0,
         "skipped_unknown_unit": 0,
         "skipped_missing_divine_ratio": 0,
+        "price_flagged_items": 0,
+        "wide_spread_items": 0,
+        "explicit_price_rejected_items": 0,
+        "pricing_reasons": {},
         "latest_datetime_min": "",
         "latest_datetime_max": "",
         "prev_buy1_datetime_min": "",
@@ -2745,19 +2563,35 @@ def collect_poecurrency_observations_with_quality(
                 unknown_units.add(raw_unit)
                 continue
             explicit_exalted, explicit_field = poecurrency_explicit_exalted_price(item)
-            if explicit_exalted > 0:
+            explicit_exalted = cn_positive(explicit_exalted)
+            decision = select_cn_price(item, divine=api_id == "divine")
+            price, price_field = decision.price, decision.field
+            explicit_rejected = False
+            if not price and explicit_exalted and not item_has_error:
                 price = explicit_exalted
                 price_field = f"{explicit_field}_api_exalted"
                 unit = "e"
-            elif api_id == "divine":
-                price, price_field = poecurrency_divine_price(item)
-            else:
-                price, price_field = poecurrency_item_price(item)
+            elif api_id == "divine" and explicit_exalted and unit == "e":
+                # A derived e field must never bypass the exchange-rate guard.
+                if price and decimal_spread_ratio(price, explicit_exalted) <= Decimal("1.25"):
+                    price = explicit_exalted
+                    price_field = f"{explicit_field}_api_exalted"
+                else:
+                    explicit_rejected = True
             if price <= 0:
                 quality["skipped_no_price"] += 1
                 continue
 
-            quality_flags: list[str] = []
+            quality_flags: list[str] = list(decision.flags)
+            if explicit_rejected:
+                quality_flags.append("explicit_price_rejected")
+                quality["explicit_price_rejected_items"] += 1
+            if decision.flags:
+                quality["price_flagged_items"] += 1
+            if "wide_spread" in decision.flags:
+                quality["wide_spread_items"] += 1
+            for reason in decision.flags:
+                quality["pricing_reasons"][reason] = quality["pricing_reasons"].get(reason, 0) + 1
             if item_has_error:
                 quality_flags.append("error")
             if anomaly_count:
@@ -2777,6 +2611,8 @@ def collect_poecurrency_observations_with_quality(
                     "category_label": category_label,
                     "price": price,
                     "price_field": price_field,
+                    "explicit_exalted": explicit_exalted,
+                    "explicit_field": explicit_field,
                     "unit": unit,
                     "english_name": english_name,
                     "source_timestamp": latest_datetime_raw or previous_datetime_raw,
@@ -2828,6 +2664,16 @@ def collect_poecurrency_observations_with_quality(
             quality["skipped_missing_divine_ratio"] += 1
             continue
 
+        explicit_exalted = candidate["explicit_exalted"]
+        if explicit_exalted and api_id != "divine":
+            if decimal_spread_ratio(price_exalted, explicit_exalted) <= Decimal("1.25"):
+                price_exalted = explicit_exalted
+                candidate["price_field"] = f"{candidate['explicit_field']}_api_exalted"
+                unit = "e"
+            else:
+                candidate["quality_flags"] += ("explicit_price_rejected",)
+                quality["explicit_price_rejected_items"] += 1
+
         unit_note = unit
         if unit == "d":
             unit_note = f"d_to_e@{divine_exalted}"
@@ -2840,6 +2686,8 @@ def collect_poecurrency_observations_with_quality(
             source_pair=(
                 f"poecurrency.top/{candidate['category_label']}/"
                 f"{candidate['price_field']}/{unit_note}"
+                + (f"; quality={','.join(candidate['quality_flags'])}"
+                   if candidate["quality_flags"] else "")
             ),
             english_name=candidate["english_name"],
             source_timestamp=candidate["source_timestamp"],
@@ -3286,7 +3134,7 @@ def cn_price_divine_value(row: dict[str, str], divine_exalted: Decimal) -> Decim
     return price_exalted / divine_exalted
 
 
-def apply_high_value_reference_rows(
+def annotate_high_value_reference_rows(
     primary: list[dict[str, str]],
     fallback: list[dict[str, str]],
     primary_divine_exalted: Decimal,
@@ -3300,7 +3148,7 @@ def apply_high_value_reference_rows(
     fallback_by_metadata = {
         row["metadata_path"]: row for row in fallback if row.get("metadata_path")
     }
-    replaced = 0
+    divergent = 0
     checked: list[dict[str, str]] = []
     for row in primary:
         metadata_path = row.get("metadata_path", "")
@@ -3318,19 +3166,16 @@ def apply_high_value_reference_rows(
             checked.append(row)
             continue
 
-        replacement = dict(fallback_row)
-        label = "poe2db-economy" if "Poe2DB Economy" in fallback_row.get("source_pair", "") else "poe2scout"
-        replacement["source_pair"] = (
-            f"{fallback_row.get('source_pair', '')}; "
-            f"high_value_reference={label}; "
-            f"cn_price={row.get('price', '')}; "
-            f"cn_price_exalted={row.get('price_exalted', '')}; "
-            f"cn_source={row.get('source_pair', '')}"
+        annotated = dict(row)
+        annotated["source_pair"] = (
+            f"{row.get('source_pair', '')}; "
+            f"international_price_deviation={fallback_divine}D; "
+            f"reference_source={fallback_row.get('source_pair', '')}"
         )
-        checked.append(replacement)
-        replaced += 1
+        checked.append(annotated)
+        divergent += 1
 
-    return sorted(checked, key=lambda r: r["name"]), replaced
+    return sorted(checked, key=lambda r: r["name"]), divergent
 
 
 def fallback_rows_from_prices(
@@ -3554,9 +3399,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=Decimal,
         default=CN_HIGH_VALUE_FALLBACK_THRESHOLD_DIVINE,
         help=(
-            "For poecurrency-cn, compare items whose poe2scout reference is "
-            "at or above this Divine value and use poe2scout when the "
-            "deviation is too large."
+            "For poecurrency-cn, annotate differences for international references "
+            "at or above this Divine value. Does not replace domestic prices."
         ),
     )
     parser.add_argument(
@@ -3564,8 +3408,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=Decimal,
         default=CN_HIGH_VALUE_FALLBACK_MAX_RATIO,
         help=(
-            "For poecurrency-cn high-value comparison, replace with poe2scout "
-            "when CN and poe2scout Divine prices differ by more than this ratio."
+            "Annotate CN/international Divine price differences above this ratio; "
+            "international prices never override an existing domestic quote."
         ),
     )
     parser.add_argument(
@@ -4080,7 +3924,7 @@ def main(argv: list[str]) -> int:
                 fallback_divine = fallback_divine_by_source.get(source, Decimal("0"))
                 if fallback_divine <= 0:
                     continue
-                rows, replaced = apply_high_value_reference_rows(
+                rows, divergent = annotate_high_value_reference_rows(
                     primary=rows,
                     fallback=fallback_rows,
                     primary_divine_exalted=divine_exalted,
@@ -4088,7 +3932,7 @@ def main(argv: list[str]) -> int:
                     min_divine=args.cn_high_value_fallback_threshold_divine,
                     max_ratio=args.cn_high_value_fallback_max_ratio,
                 )
-                high_value_reference_rows += replaced
+                high_value_reference_rows += divergent
 
         if patch_base_items and fallback_rows_by_source:
             rows, fallback_rows_added_by_source = apply_fallback_rows(
@@ -4171,7 +4015,7 @@ def main(argv: list[str]) -> int:
         "price_source": args.price_source,
         "patch_scope": args.patch_scope,
         "price_strategy": (
-            "poecurrency-cn uses latest buy/sell first with avg fallback; currency_unit=d is converted to exalted by the current Divine ratio and explicit api e fields are preferred when present; high-value outliers are replaced by the configured international reference source when CN and reference prices differ beyond threshold"
+            "poecurrency-cn ordinary summary: validate each quote against grouped historical windows and previous buy; use supported decimal repair and robust historical fallback; validate domestic Divine ratio before conversion; international differences are diagnostic only"
             if args.price_source == "poecurrency-cn"
             else "poe2scout relative price"
         ),
@@ -4197,7 +4041,8 @@ def main(argv: list[str]) -> int:
         "local_match_gate": local_match_gate["state"],
         "fallback_matched_items": fallback_rows_added,
         "fallback_matched_items_by_source": fallback_rows_added_by_source,
-        "high_value_reference_items": high_value_reference_rows,
+        "high_value_reference_items": 0,
+        "high_value_reference_warnings": high_value_reference_rows,
         "cn_high_value_fallback_threshold_divine": str(
             args.cn_high_value_fallback_threshold_divine
         ),

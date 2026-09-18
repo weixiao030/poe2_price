@@ -67,7 +67,7 @@ class PoecurrencyQualityTests(unittest.TestCase):
         self.assertIs(item["error"], True)
         self.assertEqual(item["error_info"], "OCR")
 
-    def test_yesterday_average_is_only_last_resort(self):
+    def test_yesterday_average_can_reject_extreme_current_quote(self):
         fallback_price, fallback_field = self.price_patch.poecurrency_item_price(
             {
                 "latest_buy1": 0,
@@ -93,10 +93,10 @@ class PoecurrencyQualityTests(unittest.TestCase):
         self.assertEqual(fallback_price, Decimal("12"))
         self.assertEqual(
             fallback_field,
-            "geo_buy_avg_yesterday_sell_avg_yesterday",
+            "geo_buy_avg_yesterday_sell_avg_yesterday_history_fallback",
         )
-        self.assertEqual(current_price, Decimal("5"))
-        self.assertEqual(current_field, "latest_buy1_only")
+        self.assertEqual(current_price, Decimal("120"))
+        self.assertIn("history_fallback", current_field)
 
     def test_quality_report_is_serializable_and_does_not_drop_stale_prices(self):
         summary = [
