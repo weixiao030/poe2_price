@@ -132,9 +132,10 @@ try {
   )
   assert.equal(
     await page.getByRole('button', { name: '开始更新物价', exact: true }).isDisabled(),
-    true
+    false
   )
-  report.checks.push('no-league:localize-enabled,price-update-disabled')
+  await page.locator('#league').getByText('自动跟随最新赛季', { exact: true }).waitFor()
+  report.checks.push('no-league:localize-enabled,automatic-price-update-can-retry')
   await button.click()
   await page.getByRole('button', { name: '返回', exact: true }).click()
   assert.equal(await app.evaluate(() => globalThis.__localizeFixture.calls.length), 0)
