@@ -1,4 +1,5 @@
 import importlib.util
+import struct
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -6,7 +7,34 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "物价补丁" / "tools" / "build_poe2scout_price_patch.py"
-FIXTURE = ROOT / "verification/tablet-rarity-test-20260920/run/staged/resources/data/statdescriptions/pricetest20260920/ritual_tablet_stat_descriptions.csd"
+
+
+def synthetic_baseitems(m):
+    row_count = 3
+    row_size = 48
+    string_base = 4 + row_count * row_size
+    strings = bytearray()
+    offsets = {}
+
+    def add(value):
+        if value not in offsets:
+            offsets[value] = len(strings)
+            strings.extend(value.encode("utf-16-le") + b"\x00\x00")
+        return offsets[value]
+
+    rows = bytearray(4 + row_count * row_size)
+    struct.pack_into("<I", rows, 0, row_count)
+    metadata_rows = [
+        "Metadata/Items/TowerAugment/GenericAugment",
+        "Metadata/Items/TowerAugment/MapBossAugment",
+        "Metadata/Items/TowerAugment/IncursionAugment",
+    ]
+    add(metadata_rows[0])
+    for index, metadata in enumerate(metadata_rows):
+        row = 4 + index * row_size
+        struct.pack_into("<I", rows, row, add(metadata))
+        struct.pack_into("<I", rows, row + 40, add("Metadata/Items/TowerAugments/TowerAugment"))
+    return bytes(rows + strings)
 
 
 def module():
@@ -68,16 +96,34 @@ def test_tablet_raw_chaos_quote_converts_to_exalted_units():
     assert value.quantize(Decimal("0.01")) == Decimal("271.48")
 
 
-def test_tablet_stat_description_appends_price_without_touching_other_languages():
+def test_tablet_stat_description_appends_price_without_touching_other_languages(tmp_path):
     m = module()
     key = m._tablet_text_key("Map has {0}% increased Monster Rarity")
+    source = tmp_path / "tablet.csd"
+    source.write_bytes(
+        (
+            'description\n'
+            '    1 test_stat\n'
+            '    1\n'
+            '        1|# "Map has {0}% increased Monster Rarity"\n'
+            '    lang "Traditional Chinese"\n'
+            '    1\n'
+            '        # "地圖增加{0}%[MonsterRarity|怪物稀有度]"\n'
+            '    lang "Simplified Chinese"\n'
+            '    1\n'
+            '        # "地图增加{0}%[MonsterRarity|怪物稀有度]"\n'
+            '    lang "German"\n'
+            '    1\n'
+            '        # "Karte hat {0}%"\n'
+        ).encode("utf-8")
+    )
     transformed, matched, changed = m._append_tablet_price_to_csd(
-        str(FIXTURE), {key: Decimal("2")}
+        str(source), {key: Decimal("2")}
     )
     assert matched >= 1
-    assert changed == 1
-    assert transformed.count("=2.00E".encode("utf-16-le")) == 1
-    assert "Map has {0}% increased [MonsterRarity|Monster Rarity]=2.00E".encode("utf-16-le") not in transformed
+    assert changed == 2
+    assert transformed.count("=2.00E".encode("utf-16-le")) == 2
+    assert 'Map has {0}% increased Monster Rarity=2.00E'.encode("utf-16-le") not in transformed
 
 
 def test_poe_ninja_precursor_tablets_parser_isolated_from_affix_failure():
@@ -102,8 +148,9 @@ def test_poe_ninja_precursor_tablets_parser_isolated_from_affix_failure():
 
 def test_tablet_base_aliases_redirect_special_precursor_types():
     m = module()
-    source = ROOT / "verification/tablet-rarity-test-20260920/run/backup/resources/data/balance/traditional chinese/baseitemtypes.datc64"
-    patched, redirected = m._redirect_tablet_base_items(source.read_bytes(), {"Irradiated", "Overseer", "Temple"})
+    patched, redirected = m._redirect_tablet_base_items(
+        synthetic_baseitems(m), {"Irradiated", "Overseer", "Temple"}
+    )
     assert redirected == 3
     layout = m.detect_base_item_layout(patched)
     names = []
