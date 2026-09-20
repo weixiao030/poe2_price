@@ -342,7 +342,7 @@ onUnmounted(() => app.dispose())
                   <label
                     v-for="item in [
                       ['all', '通货与传奇', '完整显示物品参考价格'],
-                      ['currency', '仅通货', '通货、碎片与可交易物品'],
+                      ['currency', '仅通货', '通货、碑牌词缀与可交易物品'],
                       ['uniques', '仅传奇', '传奇装备参考价格']
                     ] as const"
                     :key="item[0]"
@@ -375,6 +375,10 @@ onUnmounted(() => app.dispose())
                   >
                 </div>
               </fieldset>
+              <div v-if="app.settings.gameVersion === 'poe2' && app.settings.patchScope !== 'uniques'" class="tablet-source-note">
+                <Icon icon="ph:scroll" />
+                <div><b>碑牌词缀标价已包含</b><span>获取失败会自动重试，仍不可用时跳过碑牌层，不影响其他价格。</span></div>
+              </div>
               <div v-if="app.settings.gameVersion === 'poe2'" class="option-row">
                 <div>
                   <b>岛屿传言地图提示</b>

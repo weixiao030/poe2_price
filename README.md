@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.4</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.5</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -23,7 +23,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.8.4` 优化 POE1 / POE2 国服 OCR 报价校验，继续使用普通汇总接口，无需 Token。结合买卖两侧各自的历史均价和上一笔报价处理异常，修复双边错价、单边极端值及神圣石汇率污染；正常跨位数涨跌不再仅因网站错误标记被回退。国际价格差异只记录，不覆盖已有国服价格。保留自动跟随最新赛季、手动固定选择、每小时自动更新、独立“一键汉化 POE1”、托盘及还原功能。
+`v0.8.5` 在 POE2 通货更新中加入碑牌词缀标价：自定义碑牌报价接口提供词缀价格，poe.ninja `PrecursorTablets` 提供先行者碑牌目录校验；价格写入独立模板资源，接口失败会重试并独立跳过碑牌层。继续保留 POE1 / POE2 国服 OCR 报价校验、自动跟随最新赛季、手动固定选择、每小时更新、独立“一键汉化 POE1”、托盘及还原功能。
 
 [下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
@@ -37,7 +37,7 @@
 
 当前**没有**使用官方 Trade 接口。
 
-- POE2 国际服：通货和可交易分类继续使用 poe2scout（全量 SnapshotPairs）并保留 poe.ninja / poe2db 补缺；传奇护甲单独优先使用 [poe.ninja UniqueArmours](https://poe.ninja/poe2/economy/forbiddenrites/unique-armours) 对应的 JSON 接口，运行时自动替换为当前所选赛季，只有接口缺失或无有效报价时才回退到其它来源。
+- POE2 国际服：通货和可交易分类继续使用 poe2scout（全量 SnapshotPairs）并保留 poe.ninja / poe2db 补缺；碑牌词缀使用 [碑牌报价 API](http://125.122.32.215:2083/api-docs)，先行者碑牌目录使用 [poe.ninja PrecursorTablets](https://poe.ninja/poe2/economy/forbiddenrites/precursor-tablets)；传奇护甲单独优先使用 [poe.ninja UniqueArmours](https://poe.ninja/poe2/economy/forbiddenrites/unique-armours) 对应的 JSON 接口。
 - POE2 国服：当前赛季主源 `poecurrency.top/api/summary?version=2`，历史赛季追加 `&season=<所选赛季>`，没有国服价的条目再用可用的国际参考源补。
 - POE1 国际服：主源 poe.ninja，备用 poe2scout / poedb。
 - POE1 国服：当前赛季主源 `poecurrency.top/api/summary?version=1`，历史赛季追加 `&season=<所选赛季>`，再用可用的国际参考源补缺。
@@ -61,6 +61,12 @@
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/9/21 更新（v0.8.5）
+
+- POE2 通货更新范围新增碑牌词缀标价，按现有 D/E 格式在繁体中文和简体中文描述中紧贴原词条追加价格。
+- 使用自定义碑牌词缀报价 API 与 poe.ninja `PrecursorTablets` 目录；请求自动重试，数据或模板失败时独立跳过碑牌层，不影响通货、传奇和岛屿传言。
+- 为每种碑牌生成独立 `.it` / `.csd` 资源并重定向对应 BaseItemTypes，保留共用模板和负面词缀。
 
 ### 26/9/18 更新（v0.8.4）
 
@@ -231,8 +237,8 @@
 
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
-- `POE-Price-Patch-0.8.4-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.4-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
+- `POE-Price-Patch-0.8.5-x64-Setup.exe`：安装版，推荐日常使用。
+- `POE-Price-Patch-0.8.5-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装

@@ -20,10 +20,10 @@
     {
       "path": "物价补丁/tools/build_poe2scout_price_patch.py",
       "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "local_sha256": "974811ec4270d268583bc320a63eb47511a6f71e1ca795ff85fbfc452d324692",
+      "local_sha256": "0b185903e0272f8c4824f16e92b474ab9ab7121aedfcd8b6256151e17f47742c",
       "equivalent": false,
-      "normalized_sha256": "974811ec4270d268583bc320a63eb47511a6f71e1ca795ff85fbfc452d324692",
-      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。"
+      "normalized_sha256": "0b185903e0272f8c4824f16e92b474ab9ab7121aedfcd8b6256151e17f47742c",
+      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。"
     },
     {
       "path": "物价补丁/tools/data_source_contract_baseline.json",
@@ -100,10 +100,10 @@
     {
       "path": "物价补丁/tools/update_price_patch.ps1",
       "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
-      "local_sha256": "555c3675720b6e462ab6d523f51119084261a83f76ef335e7a99da990ee3c919",
+      "local_sha256": "b9ed29c6c37b5948981e76be40f44080f98eefe188d3f7820670f17720a5f5c0",
       "equivalent": false,
-      "normalized_sha256": "d2db52da024e8633c8268c5ccc408881c28976db634af57e80b9e85d6b281fd5",
-      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。"
+      "normalized_sha256": "912e32fa23a3ecfbc86e98511a22bbeee1b71f0657b539d44bea571f920aa112",
+      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",

@@ -2947,6 +2947,7 @@ catch {
 }
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
 $PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques"))
+$PatchTabletAffixesEnabled = ($PatchScope -in @("all", "currency"))
 $PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
@@ -2982,6 +2983,8 @@ $EnWords = Join-Path $LatestDir "data\data_balance_words.datc64"
 $TcWordsPath = $InstallInfo.TcWordsPath
 $TcWords = Join-Path $LatestDir ("data\" + $InstallInfo.WordsFileSlug)
 $TcEndgameMaps = Join-Path $LatestDir ("data\" + $InstallInfo.EndgameMapsFileSlug)
+$TabletTemplateIt = Join-Path $LatestDir "metadata\items\toweraugments\toweraugment.it"
+$TabletTemplateCsd = Join-Path $LatestDir "data\statdescriptions\tablet_stat_descriptions.csd"
 $UniqueGoldPrices = Join-Path $LatestDir "data\data_balance_uniquegoldprices.datc64"
 $SupportsUniqueWords = Test-Poe2UniqueWordsSupported -WordsPath $TcWordsPath
 $OutDir = Join-Path $RepoRoot "output\poe2_price_patch_latest"
@@ -3147,6 +3150,20 @@ if (-not $SkipExtract) {
                 Label = "$DisplayLanguageName EndgameMaps"
                 Required = $PatchIslandRumourHintsEnabled
             })
+        if ($PatchTabletAffixesEnabled) {
+            $ExtractEntries.Add([pscustomobject]@{
+                    Path = "metadata/items/toweraugments/toweraugment.it"
+                    Destination = $TabletTemplateIt
+                    Label = "碑牌模板"
+                    Required = $false
+                })
+            $ExtractEntries.Add([pscustomobject]@{
+                    Path = "data/statdescriptions/tablet_stat_descriptions.csd"
+                    Destination = $TabletTemplateCsd
+                    Label = "碑牌词缀描述"
+                    Required = $false
+                })
+        }
 
         if ($SupportsUniqueWords) {
             $ExtractEntries.Add([pscustomobject]@{
@@ -3346,6 +3363,7 @@ $StagePatchedEndgameMaps = Join-Path $BuildStageDir "endgamemaps.patched.datc64"
 $StageReportJson = Join-Path $BuildStageDir "price_patch.report.json"
 $StageIslandReportJson = Join-Path $BuildStageDir "island_rumour_patch.report.json"
 $StageSummaryJson = Join-Path $BuildStageDir "summary.json"
+$StageTabletReportJson = Join-Path $BuildStageDir "tablet_affix.report.json"
 $StagePriceBuildLog = Join-Path $BuildStageDir "price_patch_build.log"
 $BuildArgs = @(
     (Join-Path $CodeToolsRoot "build_poe2scout_price_patch.py"),
@@ -3385,6 +3403,17 @@ if ($PatchPriceFetchEnabled) {
         "--league-is-current", $(if ($LeagueIsCurrent) { "true" } else { "false" }),
         "--fallback-price-sources", $(if ($PoeNinjaLeague) { "poe-ninja" } else { "none" })
     )
+}
+if ($PatchTabletAffixesEnabled) {
+    $BuildArgs += @(
+        "--tablet-api-base", "http://125.122.32.215:2083",
+        "--tablet-template-it", $TabletTemplateIt,
+        "--tablet-template-csd", $TabletTemplateCsd,
+        "--tablet-report", $StageTabletReportJson
+    )
+}
+else {
+    $BuildArgs += "--no-tablet-affixes"
 }
 if (-not [string]::IsNullOrWhiteSpace($League)) {
     $BuildArgs += @("--league", $League)

@@ -426,6 +426,37 @@ p {
   cursor: not-allowed;
   opacity: 0.7;
 }
+.tablet-source-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: -2px 0 17px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--tint) 68%, var(--surface));
+  color: var(--muted);
+}
+.tablet-source-note > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--accent);
+  font-size: 17px;
+}
+.tablet-source-note b,
+.tablet-source-note span {
+  display: block;
+}
+.tablet-source-note b {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+.tablet-source-note span {
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.5;
+}
 .option-row {
   display: flex;
   align-items: center;
