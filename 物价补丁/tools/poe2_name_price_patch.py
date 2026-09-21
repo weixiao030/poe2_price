@@ -626,7 +626,7 @@ def apply_replacements_fixed(data: bytes, replacements: list[NameReplacement]) -
 
 def export_names(source: Path, output: Path) -> None:
     data = source.read_bytes()
-    cleaned = clean_references(data)
+    cleaned = clean_tablet_layer(data)
     entries = scan_base_item_names(data)
     with output.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=["metadata_path", "name", "tablet_reference_patched"])
@@ -634,8 +634,8 @@ def export_names(source: Path, output: Path) -> None:
         for entry in entries:
             writer.writerow(
                 {"metadata_path": entry.metadata_path, "name": entry.name,
-                 "tablet_reference_patched": data[entry.name_pointer_pos + 8:entry.name_pointer_pos + 16]
-                 != cleaned[entry.name_pointer_pos + 8:entry.name_pointer_pos + 16]}
+                 "tablet_reference_patched": data[entry.name_pointer_pos:entry.name_pointer_pos + 16]
+                 != cleaned[entry.name_pointer_pos:entry.name_pointer_pos + 16]}
             )
     print(f"exported {output} ({len(entries)} names)")
 

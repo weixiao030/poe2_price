@@ -12,8 +12,13 @@ sys.path.insert(0, str(ROOT / "物价补丁/tools"))
 import poe2_tablet_prices as m
 import poe2_name_price_patch as names
 import poe2_tablet_refs as refs
+from poe2_price_labels import format_unique_price_name, strip_existing_price
 
 LEAGUE = "Forbidden Rites"
+
+
+def selected(price, variant='Normal'):
+    return {'price':price, 'variant':variant, 'selection':'normal' if variant=='Normal' else 'lowest_available'}
 
 
 def synthetic_baseitems():
@@ -181,6 +186,73 @@ def test_ninja_keeps_rarity_prices_separate():
             ]}
     result = m.fetch_poe_ninja_precursor_tablets(Ninja(), LEAGUE)
     assert result["prices"]["Ritual_Tablet"] == {"Normal":"1.00D", "Magic":"2.00D", "Rare":"3.00D"}
+    assert result['base_prices']['Ritual_Tablet'] == selected('1.00D')
+
+
+def test_tablets_and_uniques_share_the_same_formatter_and_cleaner():
+    import build_poe2scout_price_patch as builder
+    assert m.format_unique_price_name is builder.format_unique_price_name
+    assert m.strip_existing_price is builder.strip_existing_price
+
+
+def test_overseer_without_normal_uses_lowest_available_valid_variant():
+    class Ninja:
+        def get_json(self, url):
+            return {'core':{'primary':'divine','rates':{'exalted':500}},'lines':[
+                {'baseType':'Overseer Tablet','variant':variant,'primaryValue':price,'listingCount':count,'corrupted':corrupted}
+                for variant,price,count,corrupted in [('Magic',0.3285,8150,False),('Rare',0.1189,10000,False),
+                    ('Normal',0.01,0,False),('Normal',0.01,10,True)]]}
+    assert m.fetch_poe_ninja_precursor_tablets(Ninja(),LEAGUE)['base_prices']['Overseer_Tablet'] == selected('0.12D','Rare')
+
+
+def test_constant_cap_quote_is_retained_and_priced_against_game_variable(tmp_path):
+    text = 'Abyssal Monsters have (8-12)% increased Effectiveness for each closed Pit, up to 100%'
+    quotes, report = m.fetch_tablet_affix_prices(Client({0:page([quote(text=text)])}), 'http://unused', LEAGUE)
+    assert report['total'] == report['rows'] == 1
+    assert (quotes['Ritual_Tablet'][0].low,quotes['Ritual_Tablet'][0].high)==(8,12)
+    source=tmp_path/'abyss.csd'
+    source.write_text('description\n\t1 map_abyss_monster_potency_+%_per_chasm_closed\n\t1\n'
+        '\t\t1|# "[ContainsAbyss|Abyssal] Monsters have {0}% increased [MonsterEffectiveness|Effectiveness] for each closed Pit, up to 100%"\n'
+        '\tlang "Traditional Chinese"\n\t1\n'
+        '\t\t1|# "每有一個已關閉的坑洞，增加{0}%[ContainsAbyss|深淵]怪物[MonsterEffectiveness|效用]，最多100%"\n',encoding='utf-8')
+    output,matched,changed=m._append_tablet_price_to_csd(source,quotes['Ritual_Tablet'],Decimal(500))
+    assert matched==1 and changed==2
+    assert '8|12 "每有一個已關閉的坑洞，增加{0}%[ContainsAbyss|深淵]怪物[MonsterEffectiveness|效用]，最多100%=1.00D"' in output.decode()
+    bad=[m.Quote(text.replace('100%','200%'),Decimal(500),8,12)]
+    _,matched,changed=m._append_tablet_price_to_csd(source,bad,Decimal(500))
+    assert matched==changed==0
+
+
+def test_constant_before_variable_is_not_used_as_price_range():
+    q=m.Quote('After 10 seconds, grants (8-12)% Effectiveness',Decimal(500))
+    resolved=m.quote_for_record(q,'After 10 seconds, grants {0}% Effectiveness')
+    assert (resolved.low,resolved.high)==(8,12)
+    assert m.quote_for_record(q,'After 20 seconds, grants {0}% Effectiveness') is None
+    assert m.quote_for_record(q,'After {0} seconds, grants {1}% Effectiveness') is None
+
+
+def test_overlapping_queries_are_counted_as_covered_after_price_emission():
+    first=m.Quote('Map has (15-20)% increased Monster Rarity',Decimal(500),15,20)
+    second=m.Quote('Map has 15% increased Monster Rarity',Decimal(1000),15,15)
+    text,used,changed=m.price_block(csd(),[first,second],Decimal(500))
+    assert used=={first.text,second.text} and changed==4
+    assert '15 "地圖增加{0}%[MonsterRarity|怪物稀有度]=1.00D"' in text
+    assert '=2.00D' not in text
+
+
+def test_legacy_name_suffix_migrates_and_markup_only_patch_is_detected(tmp_path):
+    import csv
+    original=synthetic_baseitems()
+    rows,_=names.build_replacements(names.scan_base_item_names(original),
+        [{'metadata_path':'Metadata/Items/TowerAugment/RitualAugment','new_name':'祭祀碑牌=0.38D'}], '=',False,'append',False)
+    legacy=names.apply_replacements_append(original,rows)
+    updated,_=m.price_tablet_names(legacy,{'Ritual_Tablet':selected('0.40D')})
+    assert names.scan_base_item_names(updated)[0].name=='[0.40D|祭祀碑牌]'
+    source=tmp_path/'source.dat';source.write_bytes(updated)
+    exported=tmp_path/'names.csv';names.export_names(source,exported)
+    with exported.open(encoding='utf-8-sig') as stream: records=list(csv.DictReader(stream))
+    assert records[0]['tablet_reference_patched']=='True'
+    assert records[1]['tablet_reference_patched']=='False'
 
 
 def test_sources_fail_independently_and_zero_match_cannot_succeed(tmp_path):
@@ -267,9 +339,9 @@ def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, template
     assert entries['data/balance/traditional chinese/words.datc64'] == b'unchanged other layer'
     assert len(entries) == 3 and not any('/poe2price/' in path for path in entries)
     assert report['redirected_items'] == 0
-    assert report['base_names'] == [{'tablet':'Ritual_Tablet', 'price':'1.00D', 'variant':'Normal'}]
+    assert report['base_names'] == [{'tablet':'Ritual_Tablet', **selected('1.00D')}]
     for path in [core_path, 'data/balance/baseitemtypes.datc64']:
-        assert names.scan_base_item_names(entries[path])[0].name == '祭祀碑牌=1.00D'
+        assert names.scan_base_item_names(entries[path])[0].name == format_unique_price_name('祭祀碑牌','1.00D','markup')
     class Offline:
         def get_json(self, url): raise TimeoutError('offline')
     args['client'] = Offline()
@@ -279,18 +351,18 @@ def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, template
     assert archive.read_bytes() == before and patched.read_bytes() == before_dat
 
 
-def test_names_use_exact_base_paths_update_and_skip_missing_normal():
+def test_names_use_unique_markup_exact_base_paths_update_and_clean():
     original = synthetic_baseitems()
     unrelated, _ = names.build_replacements(names.scan_base_item_names(original),
         [{'metadata_path':'Metadata/Items/Currency/CurrencyAddModToRare','new_name':'崇高石=2D'}], '=', False, 'append', False)
     original = names.apply_replacements_append(original, unrelated)
-    priced, rows = m.price_tablet_names(original, {'Ritual_Tablet':{'Normal':'0.38D','Rare':'9.00D'},
-                                                'Breach_Tablet':{'Rare':'5.00D'}})
-    assert [e.name for e in names.scan_base_item_names(priced)] == ['祭祀碑牌=0.38D', '裂痕碑牌', '崇高石=2D']
-    assert len(rows) == 1
-    updated, _ = m.price_tablet_names(priced, {'Ritual_Tablet':{'Normal':'0.40D'}})
-    assert names.scan_base_item_names(updated)[0].name == '祭祀碑牌=0.40D'
-    assert m.price_tablet_names(updated, {'Ritual_Tablet':{'Normal':'0.40D'}})[0] == updated
+    priced, rows = m.price_tablet_names(original, {'Ritual_Tablet':selected('0.38D'),
+                                                'Breach_Tablet':selected('5.00D','Rare')})
+    assert [e.name for e in names.scan_base_item_names(priced)] == ['[0.38D|祭祀碑牌]', '[5.00D|裂痕碑牌]', '崇高石=2D']
+    assert len(rows) == 2
+    updated, _ = m.price_tablet_names(priced, {'Ritual_Tablet':selected('0.40D')})
+    assert names.scan_base_item_names(updated)[0].name == '[0.40D|祭祀碑牌]'
+    assert m.price_tablet_names(updated, {'Ritual_Tablet':selected('0.40D')})[0] == updated
     cleaned = refs.clean_tablet_layer(updated)
     assert [e.name for e in names.scan_base_item_names(cleaned)] == ['祭祀碑牌', '裂痕碑牌', '崇高石=2D']
     assert refs.clean_tablet_layer(cleaned) == cleaned
@@ -316,11 +388,11 @@ def test_api_available_without_templates_still_updates_ninja_names(tmp_path):
     assert report['api']['status'] == report['poe_ninja_precursor_tablets']['status'] == 'ok'
     with zipfile.ZipFile(archive) as z:
         assert z.namelist() == ['data/balance/baseitemtypes.datc64']
-        assert names.scan_base_item_names(z.read(z.namelist()[0]))[0].name == '祭祀碑牌=1.00D'
+        assert names.scan_base_item_names(z.read(z.namelist()[0]))[0].name == '[1.00D|祭祀碑牌]'
 
 
 def test_restore_and_disabled_build_remove_tablet_name_prices_in_both_languages(tmp_path):
-    priced, _ = m.price_tablet_names(synthetic_baseitems(), {'Ritual_Tablet':{'Normal':'0.38D'}})
+    priced, _ = m.price_tablet_names(synthetic_baseitems(), {'Ritual_Tablet':selected('0.38D')})
     redirected, _ = m._redirect_tablet_base_items(priced, {'Ritual'})
     source = tmp_path/'source.dat'; source.write_bytes(redirected)
     english = tmp_path/'english.dat'; english.write_bytes(redirected)

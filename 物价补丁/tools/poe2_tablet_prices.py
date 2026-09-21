@@ -1,7 +1,7 @@
 """Optional tablet market layers. Generate validated resources before committing ZIP."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 import html
 import json
@@ -15,8 +15,9 @@ import zipfile
 
 from poe2_name_price_patch import (
     apply_replacements_append, build_replacements, detect_base_item_layout,
-    read_string_offset, scan_base_item_names, strip_existing_price_suffix,
+    read_string_offset, scan_base_item_names,
 )
+from poe2_price_labels import format_unique_price_name, strip_existing_price
 from poe2_tablet_refs import ORIGINAL, TYPES, canonical_reference, clean_references, validate_resources
 
 TABLET_SLUGS = tuple(kind + "_Tablet" for kind in TYPES.values())
@@ -25,6 +26,7 @@ CHINESE = {"Traditional Chinese", "Simplified Chinese"}
 LINE = re.compile(r'^(\s*)([#\d|+\-. ]+?)\s+"([^"\r\n]*)"([^\r\n]*)(\r?\n|$)$')
 LANG = re.compile(r'^\s*lang\s+"([^"]+)"')
 BLOCKS = re.compile(r'(?m)(?=^description[ \t]*\r?$)')
+NUMBERS = re.compile(r'\{\d+(?::[^}]+)?\}|\(\d+-\d+\)|\b\d+\b')
 
 
 def decimal(value) -> Decimal:
@@ -65,6 +67,29 @@ class Quote:
     price: Decimal
     low: int | None = None
     high: int | None = None
+
+
+def quote_for_record(quote, text):
+    """Resolve the variable against the game's placeholder; keep constants exact."""
+    if _tablet_text_key(quote.text) != _tablet_text_key(text):
+        return None
+    quoted = NUMBERS.findall(quote.text)
+    if len(quoted) <= 1:
+        return quote  # Includes the game's singular, written-out number branches.
+    plain = re.sub(r'\[([^\]|]+)(?:\|([^\]]+))?\]', lambda m: m[2] or m[1], text)
+    template = NUMBERS.findall(plain)
+    if len(template) != len(quoted) or template.count('{0}') != 1:
+        return None
+    bounds = None
+    for token, value in zip(template, quoted):
+        if token == '{0}':
+            parts = value.strip('()').split('-')
+            if not all(part.isdigit() for part in parts):
+                return None
+            bounds = (int(parts[0]), int(parts[-1]))
+        elif token != value:
+            return None
+    return replace(quote, low=bounds[0], high=bounds[1]) if bounds else None
 
 
 def _tablet_price_from_row(row, rates=None) -> Decimal:
@@ -135,9 +160,10 @@ def fetch_tablet_affix_prices(client, api_base, league):
                 continue
             numbers = re.findall(r'\((\d+)-(\d+)\)|(\b\d+\b)', text)
             bounds = [(int(a or c), int(b or c)) for a, b, c in numbers]
-            if len(bounds) > 1:
-                continue  # no guessed matching for multi-stat numeric templates
-            low, high = bounds[0] if bounds else (None, None)
+            # More numbers can be literal caps, not additional stats. The game
+            # template resolves them before pricing; never discard the quote.
+            ranges = [(int(a), int(b)) for a, b, c in numbers if a]
+            low, high = ranges[0] if len(ranges) == 1 else bounds[0] if len(bounds) == 1 else (None, None)
             result.setdefault(slug, []).append(Quote(text, value, low, high))
         size = len(payload["data"]); offset += size
         if offset == total:
@@ -159,7 +185,7 @@ def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL):
     core = payload.get("core") or {}; ratio = decimal((core.get("rates") or {}).get("exalted"))
     if core.get("primary") != "divine" or ratio <= 0:
         raise ValueError("invalid poe.ninja tablet currency unit")
-    prices = {}
+    prices = {}; values = {}
     for row in payload["lines"]:
         slug = str(row.get("baseType") or row.get("name") or "").replace(' ', '_')
         variant = row.get("variant")
@@ -171,10 +197,17 @@ def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL):
         if variant in prices.setdefault(slug, {}) and prices[slug][variant] != price:
             raise ValueError("ambiguous poe.ninja tablet variant")
         prices[slug][variant] = price
+        values.setdefault(slug, {})[variant] = decimal(row['primaryValue'])
     if not prices:
         raise ValueError("no usable poe.ninja tablet prices")
+    base_prices = {}
+    for slug, variants in values.items():
+        variant = 'Normal' if 'Normal' in variants else min(variants, key=lambda v:(variants[v], v))
+        base_prices[slug] = {'price':prices[slug][variant], 'variant':variant,
+                             'selection':'normal' if variant == 'Normal' else 'lowest_available'}
     return {"status": "ok", "url": url, "lines": len(payload["lines"]),
-            "usable_lines": sum(map(len, prices.values())), "divine_exalted": str(ratio), "prices": prices}
+            "usable_lines": sum(map(len, prices.values())), "divine_exalted": str(ratio), "prices": prices,
+            "base_prices":base_prices}
 
 
 def decode_resource(raw: bytes):
@@ -221,8 +254,8 @@ def clean_chinese_markup(text):
     return ''.join(output)
 
 
-def price_tablet_names(data, catalogue):
-    """The shared base name gets the unmodified (Normal) base's market price."""
+def price_tablet_names(data, base_prices):
+    """Reuse unique markup for each base's explicitly selected market quote."""
     rows = []
     priced = []
     entries = scan_base_item_names(data)
@@ -230,11 +263,13 @@ def price_tablet_names(data, catalogue):
         for base, kind in TYPES.items():
             if entry.metadata_path != f'Metadata/Items/TowerAugment/{base}Augment':
                 continue
-            price = catalogue.get(kind + '_Tablet', {}).get('Normal', '')
-            name = strip_existing_price_suffix(entry.name, '=')
-            rows.append({'metadata_path':entry.metadata_path, 'new_name':name + ('=' + price if price else '')})
+            selected = base_prices.get(kind + '_Tablet', {})
+            price = selected.get('price', '')
+            name = strip_existing_price(entry.name)
+            rows.append({'metadata_path':entry.metadata_path,
+                         'new_name':format_unique_price_name(name, price, 'markup') if price else name})
             if price:
-                priced.append({'tablet':kind + '_Tablet', 'price':price, 'variant':'Normal'})
+                priced.append({'tablet':kind + '_Tablet', **selected})
     replacements, warnings = build_replacements(entries, rows, '=', False, 'append', False)
     if warnings:
         raise ValueError('tablet base name mapping failed: ' + '; '.join(warnings))
@@ -258,7 +293,7 @@ def price_block(block, quotes, ratio):
     english = [LINE.match(line) for line in sections[0] if LINE.match(line)]
     matches = {}
     for i, record in enumerate(english):
-        compatible = [quote for quote in quotes if _tablet_text_key(quote.text) == _tablet_text_key(record[3])]
+        compatible = [matched for quote in quotes if (matched := quote_for_record(quote, record[3])) is not None]
         # Some game translations use identical increased text for both signs.
         # Prefer the non-negated branch when the same text exists on both.
         if 'negate' in record[4] and any('negate' not in r[4] and _tablet_text_key(r[3]) == _tablet_text_key(record[3]) for r in english):
@@ -302,7 +337,6 @@ def price_block(block, quotes, ratio):
                 if low is not None and high is not None and low > high:
                     continue
                 candidates.append((low, high, quote))
-            used.update(q.text for _, _, q in candidates)
             # Split overlapping tier queries into disjoint intervals and choose
             # the cheapest applicable reference; never inflate by max merging.
             cuts = sorted({n for low, high, _ in candidates for n in (low, high + 1 if high is not None else None) if n is not None})
@@ -319,7 +353,12 @@ def price_block(block, quotes, ratio):
                 price = format_price(quote.price, ratio)
                 if not price: continue
                 additions.append(f'{record[1]}{condition} "{record[3]}={price}"{record[4]}{record[5]}')
-                used.add(quote.text); changes += 1
+                # Several market queries can cover the same game value. Count
+                # them as covered only after emitting its cheapest price branch.
+                used.update(q.text for lo, hi, q in candidates
+                            if (hi is None or low is None or hi >= low)
+                            and (lo is None or high is None or lo <= high))
+                changes += 1
             # Keep the untouched fallback for values not covered by market data.
             section[position:position] = additions
         count_position = next((i for i, line in enumerate(section[1:], 1) if re.fullmatch(r'\s*\d+\s*', line)), None)
@@ -431,13 +470,13 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
         supported.add(short)
         resource_rows.append({'tablet':slug, 'modifiers':len(modifiers), 'matched':len(used), 'changed':edits,
                               'unmatched':[q.text for q in modifiers if q.text not in used]})
-    named, named_rows = price_tablet_names(clean_references(patched_baseitems.read_bytes()), ninja.get('prices', {}))
-    if not supported and not named_rows: raise ValueError('no tablet descriptions matched and no Normal base prices; layer skipped')
+    named, named_rows = price_tablet_names(clean_references(patched_baseitems.read_bytes()), ninja.get('base_prices', {}))
+    if not supported and not named_rows: raise ValueError('no tablet descriptions matched and no base prices; layer skipped')
     redirected, count = _redirect_tablet_base_items(named, supported)
     if count != len(supported): raise ValueError('tablet base rows incomplete')
     entries[game_path] = redirected
     if english_baseitems and english_baseitems.exists() and english_baseitems.resolve() != source_baseitems.resolve():
-        english_named, english_names = price_tablet_names(clean_references(english_baseitems.read_bytes()), ninja.get('prices', {}))
+        english_named, english_names = price_tablet_names(clean_references(english_baseitems.read_bytes()), ninja.get('base_prices', {}))
         if len(english_names) != len(named_rows): raise ValueError('English tablet name rows incomplete')
         english, en_count = _redirect_tablet_base_items(english_named, supported)
         if en_count != count: raise ValueError('English tablet base rows incomplete')

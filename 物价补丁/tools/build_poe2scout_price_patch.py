@@ -39,6 +39,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from poe2_price_labels import PRICE_TEXT_RE, UNIQUE_SUFFIX_PRICE_RE, strip_existing_price, format_unique_price_name
 from price_sources.league import resolve_current_leagues
 from price_sources.health import (
     evaluate_source_health,
@@ -133,9 +134,7 @@ TABLET_BASE_ALIASES = {
     "Abyss": "Abyss",
     "Temple": "Incursion",
 }
-PRICE_TEXT_RE = r"(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]"
 UNIQUE_MARKUP_PRICE_RE = rf"\[[^\]\r\n|]*{PRICE_TEXT_RE}[^\]\r\n|]*\|[^\]\r\n]+\]"
-UNIQUE_SUFFIX_PRICE_RE = rf"\[<<{PRICE_TEXT_RE}>>\]"
 DEFAULT_UNIQUE_PRICE_LABEL_MODE = "markup"
 UNIQUE_PRICE_LABEL_MODES = (
     DEFAULT_UNIQUE_PRICE_LABEL_MODE,
@@ -397,36 +396,6 @@ def append_utf16le_string(output: bytearray, layout: DatLayout, text: str) -> in
     output.extend(text.encode("utf-16-le"))
     output.extend(b"\x00\x00\x00\x00")
     return offset
-
-
-def strip_existing_price(name: str) -> str:
-    markup = re.fullmatch(
-        rf"\[[^\]\r\n|]*{PRICE_TEXT_RE}[^\]\r\n|]*\|([^\]\r\n]+)\]",
-        name.strip(),
-    )
-    if markup:
-        return markup.group(1).strip()
-    if re.search(rf"\s*{UNIQUE_SUFFIX_PRICE_RE}$", name):
-        return re.sub(rf"\s*{UNIQUE_SUFFIX_PRICE_RE}$", "", name).strip()
-    if re.search(rf"<<\[{PRICE_TEXT_RE}\]>>$", name):
-        return re.sub(rf"<<\[{PRICE_TEXT_RE}\]>>$", "", name).strip()
-    if re.search(rf"\s*\[{PRICE_TEXT_RE}\]$", name):
-        return re.sub(rf"\s*\[{PRICE_TEXT_RE}\]$", "", name).strip()
-    if re.search(rf"={PRICE_TEXT_RE}$", name):
-        return re.sub(rf"={PRICE_TEXT_RE}$", "", name).strip()
-    return name
-
-
-def format_unique_price_name(base_name: str, price: str, label_mode: str) -> str:
-    if label_mode in {"suffix", "compat"}:
-        return f"{base_name}[<<{price}>>]"
-    if label_mode == "markup":
-        return f"[{price}|{base_name}]"
-    if label_mode == "newline":
-        return f"{base_name}\n[{price}]"
-    if label_mode == "overlay":
-        return f"{base_name}<<[{price}]>>"
-    return base_name
 
 
 def set_words_display_name(

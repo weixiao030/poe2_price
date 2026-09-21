@@ -20,10 +20,10 @@
     {
       "path": "物价补丁/tools/build_poe2scout_price_patch.py",
       "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "local_sha256": "b708d697f96678657021877c025325637926ebf8d1063726a388f02f6833c7ef",
+      "local_sha256": "a00ef1d8bd8a37c163fee6a6dbc95fc94bbc737a55b67281dbb321069564495b",
       "equivalent": false,
-      "normalized_sha256": "b708d697f96678657021877c025325637926ebf8d1063726a388f02f6833c7ef",
-      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。"
+      "normalized_sha256": "a00ef1d8bd8a37c163fee6a6dbc95fc94bbc737a55b67281dbb321069564495b",
+      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。"
     },
     {
       "path": "物价补丁/tools/data_source_contract_baseline.json",
@@ -56,10 +56,10 @@
     {
       "path": "物价补丁/tools/poe2_name_price_patch.py",
       "upstream_blob": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9",
-      "local_sha256": "2286e44aa90f44f29035ecc729af3e511cc20e452783d7a8ca283f9ffdc819de",
+      "local_sha256": "8e8d50d5239e5a6156254866f29dc7ee4b96f5830b80ed9f8e4a04bf75cd5cc6",
       "equivalent": false,
-      "normalized_sha256": "2286e44aa90f44f29035ecc729af3e511cc20e452783d7a8ca283f9ffdc819de",
-      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。"
+      "normalized_sha256": "8e8d50d5239e5a6156254866f29dc7ee4b96f5830b80ed9f8e4a04bf75cd5cc6",
+      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。"
     },
     {
       "path": "物价补丁/tools/poe2_patch_common.ps1",
@@ -255,17 +255,25 @@
       "path": "物价补丁/tools/poe2_tablet_prices.py",
       "upstream_blob": null,
       "equivalent": false,
-      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。",
-      "local_sha256": "cac2486133dceff9f1c4846c487b63b5a48bc3088c8528fc3294326b7f4caa08",
-      "normalized_sha256": "cac2486133dceff9f1c4846c487b63b5a48bc3088c8528fc3294326b7f4caa08"
+      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。",
+      "local_sha256": "d41954881152037be58631df04d0423399c935fc135c474bd2cad7f164d6e3fb",
+      "normalized_sha256": "d41954881152037be58631df04d0423399c935fc135c474bd2cad7f164d6e3fb"
     },
     {
       "path": "物价补丁/tools/poe2_tablet_refs.py",
       "upstream_blob": null,
       "equivalent": false,
-      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。",
-      "local_sha256": "a962d0d7a7d4c625973b992e2a8da41ea63d8a55bf019eaf3de8f069a0e405e3",
-      "normalized_sha256": "a962d0d7a7d4c625973b992e2a8da41ea63d8a55bf019eaf3de8f069a0e405e3"
+      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。",
+      "local_sha256": "5c761c9aef80951200951473db42528f292d6c8d6eabd22b63500a4972b31e44",
+      "normalized_sha256": "5c761c9aef80951200951473db42528f292d6c8d6eabd22b63500a4972b31e44"
+    },
+    {
+      "path": "物价补丁/tools/poe2_price_labels.py",
+      "upstream_blob": null,
+      "equivalent": false,
+      "local_changes": "从既有暗金装备实现原样提取名称格式和旧价格清理，供碑牌与暗金装备共用。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。",
+      "normalized_sha256": "d973477632092c9090230cb933051a67d294db6fdaf10879749c7754fa3ce214",
+      "local_sha256": "d973477632092c9090230cb933051a67d294db6fdaf10879749c7754fa3ce214"
     }
   ],
   "native_tools": [

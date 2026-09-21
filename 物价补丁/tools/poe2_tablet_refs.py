@@ -61,17 +61,17 @@ def clean_tablet_layer(data: bytes) -> bytes:
     """Remove only the eight tablet name labels and our template redirects."""
     from poe2_name_price_patch import (
         apply_replacements_append, build_replacements, scan_base_item_names,
-        strip_existing_price_suffix,
     )
+    from poe2_price_labels import strip_existing_price
     data = clean_references(data)
     if 'Metadata/Items/TowerAugment/'.encode('utf-16-le') not in data:
         return data
     entries = scan_base_item_names(data)
     paths = {f"Metadata/Items/TowerAugment/{base}Augment" for base in TYPES}
     rows = [dict(metadata_path=entry.metadata_path,
-                 new_name=strip_existing_price_suffix(entry.name, '='))
+                 new_name=strip_existing_price(entry.name))
             for entry in entries if entry.metadata_path in paths
-            and strip_existing_price_suffix(entry.name, '=') != entry.name]
+            and strip_existing_price(entry.name) != entry.name]
     if not rows:
         return data
     replacements, warnings = build_replacements(entries, rows, '=', False, 'append', False)
