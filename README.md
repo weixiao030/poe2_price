@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.5</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.6</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -23,7 +23,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.8.5` 在 POE2 通货更新中加入碑牌词缀标价：自定义碑牌报价接口提供词缀价格，poe.ninja `PrecursorTablets` 提供先行者碑牌目录校验；价格写入独立模板资源，接口失败会重试并独立跳过碑牌层。继续保留 POE1 / POE2 国服 OCR 报价校验、自动跟随最新赛季、手动固定选择、每小时更新、独立“一键汉化 POE1”、托盘及还原功能。
+`v0.8.6` 修复碑牌资源的实际安装、价格换算与旧测试引用残留。在 POE2「通货与更新」中提供 8 类碑牌词缀参考价，并分列 poe.ninja 普通、魔法、稀有底材报价；两种来源独立重试和跳过。保留现有通货、传奇、岛屿提示、自动更新及还原功能。
 
 [下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
@@ -61,6 +61,14 @@
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/9/21 更新（v0.8.6）
+
+- 修复 GGPK 模板提取与新资源索引写入，安装后逐项读回验证。
+- 按词缀数值范围匹配市场报价，修复稀有度标记、分支语法和 Divine 换算；词缀价为市场参考，不可相加作为整件价格。
+- poe.ninja 先行者碑牌按普通、魔法、稀有分列底材参考价。
+- 关闭、跳过、缓存回退及还原会清理已知旧测试引用，避免固定 `2D` 残留。
+- 两个碑牌数据源独立失败处理，部分成功会明确记录缺失来源。
 
 ### 26/9/21 更新（v0.8.5）
 
@@ -237,8 +245,8 @@
 
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
-- `POE-Price-Patch-0.8.5-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.5-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
+- `POE-Price-Patch-0.8.6-x64-Setup.exe`：安装版，推荐日常使用。
+- `POE-Price-Patch-0.8.6-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装

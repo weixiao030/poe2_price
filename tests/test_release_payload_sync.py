@@ -7,7 +7,9 @@ RUNTIME = DESKTOP / '.runtime'
 
 def test_bundled_core_matches_recorded_provenance_and_current_source():
     provenance = json.loads((ROOT / 'docs/core-provenance.json').read_text(encoding='utf-8'))
-    assert len(provenance['files']) == 34
+    recorded = {record['path'] for record in provenance['files']}
+    assert len(recorded) == len(provenance['files'])
+    assert {'物价补丁/tools/poe2_tablet_prices.py', '物价补丁/tools/poe2_tablet_refs.py'} <= recorded
     assert any(record['path'].endswith('/price_sources/poecurrency_pricing.py') and not record['equivalent'] for record in provenance['files'])
     assert any(record['path'].endswith('/poe_patch_leagues.ps1') and not record['equivalent'] for record in provenance['files'])
     for record in provenance['files']:

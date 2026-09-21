@@ -178,7 +178,6 @@ POE_NINJA_ITEM_TYPES = (
     "UniqueJewels",
     "UniqueSanctumRelics",
     "UniqueTablets",
-    "PrecursorTablets",
 )
 # Cloudflare may challenge a burst of API calls from one client IP. Keep this
 # separate from the local matching worker count so source requests stay gentle.
@@ -2896,312 +2895,12 @@ def format_price(price_exalted: Decimal, divine_exalted: Decimal) -> str:
     return f"{price_exalted.quantize(Decimal('0.01'))}E"
 
 
-def _tablet_text_key(value: Any) -> str:
-    """Normalize a market modifier and a stat-description line for matching."""
-    text = html.unescape(str(value or ""))
-    text = text.replace("\\r", " ").replace("\\n", " ").replace("\r", " ").replace("\n", " ")
-    text = re.sub(r"\[[^\]|]+\|([^\]]+)\]", r"\1", text)
-    text = re.sub(r"\[[^\]]+\]", "", text)
-    text = text.replace("{0}", "__VALUE__")
-    text = re.sub(r"\([^)]*\d[^)]*\)", "__VALUE__", text)
-    text = re.sub(r"\b\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?\b", "__VALUE__", text)
-    text = text.replace("__VALUE__", "{0}")
-    return re.sub(r"\s+", " ", text).strip().casefold()
-
-
-def _tablet_price_from_row(
-    row: dict[str, Any], rates: dict[str, Decimal] | None = None
-) -> Decimal:
-    converted = row.get("converted")
-    if isinstance(converted, dict) and str(converted.get("currency") or "").casefold() in {
-        "exalted",
-        "exalted orb",
-    }:
-        for key in ("low_sample_median", "min", "median"):
-            number = to_decimal(converted.get(key))
-            if number > 0:
-                return number
-    prices = row.get("prices") or {}
-    rates = rates or {}
-    exalted_per_divine = rates.get("exalted", Decimal("0"))
-    chaos_per_divine = rates.get("chaos", Decimal("0"))
-    for unit in ("exalted", "divine", "chaos"):
-        value = prices.get(unit)
-        if not isinstance(value, dict):
-            continue
-        for key in ("low_sample_median", "min", "median"):
-            number = to_decimal(value.get(key))
-            if number > 0:
-                if unit == "divine" and exalted_per_divine > 0:
-                    number *= exalted_per_divine
-                elif unit == "chaos" and exalted_per_divine > 0 and chaos_per_divine > 0:
-                    # The custom API exposes rates as the value of one unit in
-                    # Divine Orbs (for example, chaos=0.12 and exalted=0.0022).
-                    # Convert chaos to Exalted by dividing the Divine value by
-                    # the Divine value of one Exalted Orb.
-                    number *= chaos_per_divine / exalted_per_divine
-                return number
-    return Decimal("0")
-
-
-def fetch_tablet_affix_prices(
-    client: RetryingRequests,
-    api_base: str,
-    league: str,
-) -> tuple[dict[str, dict[str, Decimal]], dict[str, Any]]:
-    """Fetch tablet affix quotes without making them a required price source."""
-    base = api_base.rstrip("/")
-    query_league = urllib.parse.quote(league or "", safe="")
-    prices: dict[str, dict[str, Decimal]] = {}
-    currency_payload = client.get_json(
-        f"{base}/api/v1/currencies?league={query_league}"
-    )
-    raw_rates = currency_payload.get("values") if isinstance(currency_payload, dict) else {}
-    rates = {
-        str(key): to_decimal(value)
-        for key, value in (raw_rates or {}).items()
-        if to_decimal(value) > 0
-    }
-    offset = 0
-    page_size = 200
-    total = None
-    pages = 0
-    while total is None or offset < total:
-        url = (
-            f"{base}/api/v1/prices?league={query_league}"
-            f"&display_currency=exalted&sort=name&limit={page_size}&offset={offset}"
-        )
-        payload = client.get_json(url)
-        if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-            raise ValueError("tablet API returned an invalid prices payload")
-        rows = payload["data"]
-        total = int(payload.get("total") or len(rows))
-        pages += 1
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            slug = str(row.get("tablet") or "").strip()
-            key = _tablet_text_key(row.get("text_en"))
-            value = _tablet_price_from_row(row, rates)
-            if slug not in TABLET_SLUGS or not key or value <= 0:
-                continue
-            previous = prices.setdefault(slug, {}).get(key)
-            if previous is None or value > previous:
-                prices[slug][key] = value
-        if not rows or offset + len(rows) >= total:
-            break
-        offset += len(rows)
-        if pages >= 60:
-            raise ValueError("tablet API pagination exceeded safety limit")
-    return prices, {
-        "league": league,
-        "pages": pages,
-        "rows": sum(len(v) for v in prices.values()),
-        "total": total or 0,
-        "rates": {key: str(value) for key, value in rates.items() if key in {"exalted", "chaos"}},
-    }
-
-
-def fetch_poe_ninja_precursor_tablets(
-    client: RetryingRequests,
-    league: str,
-    api_url: str = DEFAULT_POE_NINJA_PRECURSOR_TABLETS_API,
-) -> dict[str, Any]:
-    """Read the current Precursor Tablets catalogue used to sanity-check tablet bases."""
-    query = urllib.parse.urlencode({"league": league, "type": "PrecursorTablets"})
-    payload = client.get_json(f"{api_url}?{query}")
-    if not isinstance(payload, dict) or not isinstance(payload.get("lines"), list):
-        raise ValueError("poe.ninja PrecursorTablets response is invalid")
-    lines = [row for row in payload["lines"] if isinstance(row, dict)]
-    usable = [
-        row
-        for row in lines
-        if to_decimal(row.get("primaryValue")) > 0
-        and to_decimal(row.get("listingCount")) > 0
-        and row.get("corrupted") is not True
-    ]
-    rates = (payload.get("core") or {}).get("rates") or {}
-    divine_exalted = to_decimal(rates.get("exalted"))
-    return {
-        "status": "ok",
-        "url": f"{api_url}?{query}",
-        "lines": len(lines),
-        "usable_lines": len(usable),
-        "divine_exalted": str(divine_exalted),
-        "names": sorted({str(row.get("baseType") or row.get("name") or "").strip() for row in usable if row.get("baseType") or row.get("name")}),
-    }
-
-
-def _append_tablet_price_to_csd(
-    source: str,
-    priced_mods: dict[str, Decimal],
-    divine_exalted: Decimal = Decimal("477"),
-) -> tuple[bytes, int, int]:
-    """Add `=1.00D` to Chinese stat descriptions matched by English text."""
-    raw = Path(source).read_bytes()
-    bom = raw.startswith(b"\xff\xfe")
-    text = raw[2:].decode("utf-16-le") if bom else raw.decode("utf-8")
-    blocks = re.split(r"(?m)(?=^description\s*$)", text)
-    matched = 0
-    changed = 0
-    for index, block in enumerate(blocks):
-        if not block.lstrip().startswith("description"):
-            continue
-        english = [_tablet_text_key(x) for x in re.findall(r'"([^"\r\n]+)"', block)]
-        prices = [priced_mods[key] for key in priced_mods if key in english]
-        if not prices:
-            continue
-        price_text = format_price(max(prices), divine_exalted)
-        matched += 1
-        lines = block.splitlines(keepends=True)
-        active_lang = ""
-        for line_no, line in enumerate(lines):
-            lang = re.search(r'^lang\s+"([^"]+)"', line.strip())
-            if lang:
-                active_lang = lang.group(1)
-                continue
-            if active_lang not in {"Traditional Chinese", "Simplified Chinese"}:
-                continue
-            if not re.search(r'"[^"\r\n]+"', line):
-                continue
-            # Negative/negated variants begin with `#|-1`; the test patch
-            # labels the positive affix only, matching its established logic.
-            if re.match(r"^\s*#\|-?\d", line):
-                continue
-            if re.search(r'=[0-9]+(?:\.[0-9]+)?[CDE]\s*"', line):
-                continue
-            lines[line_no] = re.sub(r'("\s*)$', f"={price_text}\1", line, count=1)
-            changed += 1
-        blocks[index] = "".join(lines)
-    output = "".join(blocks).encode("utf-16-le")
-    return (b"\xff\xfe" + output if bom else output), matched, changed
-
-
-def _redirect_tablet_base_items(data: bytes, tablet_types: set[str]) -> tuple[bytes, int]:
-    layout = detect_base_item_layout(data)
-    output = bytearray(data)
-    strings = bytearray(data[layout.string_base:])
-    redirects = 0
-    base_types = {TABLET_BASE_ALIASES.get(value, value) for value in tablet_types}
-    for row_index in range(layout.row_count):
-        row_start = 4 + row_index * layout.row_size
-        try:
-            metadata_offset = struct.unpack_from("<I", data, row_start)[0]
-            metadata = read_string_offset(data, layout, metadata_offset)
-        except (struct.error, ValueError):
-            continue
-        match = re.search(r"Metadata/Items/TowerAugment/([A-Za-z]+)Augment$", metadata)
-        if not match or match.group(1) not in base_types:
-            continue
-        resource_type = next(
-            (value for value in tablet_types if TABLET_BASE_ALIASES.get(value, value) == match.group(1)),
-            match.group(1),
-        )
-        target = f"{TABLET_RESOURCE_ROOT}/{resource_type}"
-        encoded = (target + "\x00").encode("utf-16-le")
-        pointer = len(strings)
-        strings.extend(encoded)
-        struct.pack_into("<I", output, row_start + 40, pointer)
-        redirects += 1
-    return bytes(output[: layout.string_base] + strings), redirects
-
-
-def build_tablet_affix_resources(
-    *,
-    client: RetryingRequests,
-    api_base: str,
-    league: str,
-    template_it: Path,
-    template_csd: Path,
-    source_baseitems: Path,
-    patched_baseitems: Path,
-    output_zip: Path,
-    game_path: str,
-    resource_report: Path,
-) -> dict[str, Any]:
-    ninja_report: dict[str, Any]
-    try:
-        ninja_report = fetch_poe_ninja_precursor_tablets(client, league)
-    except Exception as exc:
-        ninja_report = {
-            "status": "unavailable",
-            "reason": f"{type(exc).__name__}: {exc}",
-        }
-    prices, api_report = fetch_tablet_affix_prices(client, api_base, league)
-    if not prices:
-        raise ValueError("tablet API returned no usable priced modifiers")
-    divine_exalted = to_decimal(ninja_report.get("divine_exalted"))
-    if divine_exalted <= 0:
-        exalted_rate = to_decimal(api_report.get("rates", {}).get("exalted"))
-        if exalted_rate > 0:
-            divine_exalted = Decimal("1") / exalted_rate
-    if divine_exalted <= 0:
-        divine_exalted = Decimal("477")
-    template_raw = template_it.read_bytes()
-    template_bom = template_raw.startswith(b"\xff\xfe")
-    template_text = (
-        template_raw[2:].decode("utf-16-le")
-        if template_bom
-        else template_raw.decode("utf-8")
-    )
-    if "tablet_stat_descriptions.csd" not in template_text.casefold():
-        raise ValueError("tablet item template does not reference tablet_stat_descriptions.csd")
-    patched = bytearray(patched_baseitems.read_bytes())
-    resource_rows: list[dict[str, Any]] = []
-    for slug, modifier_prices in prices.items():
-        short = slug.removesuffix("_Tablet")
-        csd_name = f"data/statdescriptions/poe2price/{short.lower()}_tablet_stat_descriptions.csd"
-        it_name = f"metadata/items/toweraugments/poe2price/{short.lower()}.it"
-        csd_path = template_csd.parent / f".poe2price-{short.lower()}.csd"
-        csd_bytes, matched, changed = _append_tablet_price_to_csd(
-            str(template_csd), modifier_prices, divine_exalted
-        )
-        csd_path.write_bytes(csd_bytes)
-        it_text = re.sub(
-            r"(?i)data/statdescriptions/tablet_stat_descriptions\.csd",
-            csd_name,
-            template_text,
-            count=1,
-        )
-        it_bytes = (
-            b"\xff\xfe" + it_text.encode("utf-16-le")
-            if template_bom
-            else it_text.encode("utf-8")
-        )
-        it_path = template_it.parent / f".poe2price-{short.lower()}.it"
-        it_path.write_bytes(it_bytes)
-        resource_rows.append({"tablet": slug, "modifiers": len(modifier_prices), "matched": matched, "changed": changed})
-    tablet_types = {slug.removesuffix("_Tablet") for slug in prices}
-    redirected, count = _redirect_tablet_base_items(bytes(patched), tablet_types)
-    if count <= 0:
-        raise ValueError("tablet prices were fetched, but no matching BaseItemTypes rows were found")
-    patched_baseitems.write_bytes(redirected)
-    for row in resource_rows:
-        short = str(row["tablet"]).removesuffix("_Tablet").lower()
-        upsert_zip_entry(
-            output_zip,
-            f"metadata/items/toweraugments/poe2price/{short}.it",
-            (template_it.parent / f".poe2price-{short}.it").read_bytes(),
-        )
-        upsert_zip_entry(
-            output_zip,
-            f"data/statdescriptions/poe2price/{short}_tablet_stat_descriptions.csd",
-            (template_csd.parent / f".poe2price-{short}.csd").read_bytes(),
-        )
-    # Replace the BaseItemTypes entry after redirecting its inheritance.
-    upsert_zip_entry(output_zip, game_path, redirected)
-    report = {
-        "status": "ok",
-        "api": api_report,
-        "poe_ninja_precursor_tablets": ninja_report,
-        "resources": resource_rows,
-        "redirected_items": count,
-    }
-    resource_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    for parent in {template_it.parent, template_csd.parent}:
-        for path in parent.glob(".poe2price-*"):
-            path.unlink(missing_ok=True)
-    return report
+from poe2_tablet_prices import (
+    _tablet_text_key, _tablet_price_from_row, fetch_tablet_affix_prices,
+    fetch_poe_ninja_precursor_tablets, _append_tablet_price_to_csd,
+    _redirect_tablet_base_items, build_tablet_affix_resources,
+)
+from poe2_tablet_refs import clean_references as clean_tablet_references
 
 
 def is_reference_currency(obs: PriceObservation) -> bool:
@@ -3768,6 +3467,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--tablet-template-it", type=Path)
     parser.add_argument("--tablet-template-csd", type=Path)
+    parser.add_argument("--tablet-map-csd", type=Path)
+    parser.add_argument("--tablet-global-csd", type=Path)
     parser.add_argument("--tablet-report", type=Path)
     parser.add_argument(
         "--no-tablet-affixes",
@@ -4458,6 +4159,13 @@ def main(argv: list[str]) -> int:
                 patched_dat=args.patched_dat,
                 game_path=args.game_path,
             )
+        # Clear only our own English inheritance before optional layer handling.
+        # A skipped/disabled layer must not leave an old fixed test price active.
+        if args.en_baseitems and args.en_baseitems.exists() and args.en_baseitems.resolve() != args.tc_baseitems.resolve():
+            original_english = args.en_baseitems.read_bytes()
+            clean_english = clean_tablet_references(original_english)
+            if clean_english != original_english:
+                upsert_zip_entry(output_zip, "data/balance/baseitemtypes.datc64", clean_english)
         if not args.no_tablet_affixes and args.patch_scope in {"all", "currency"}:
             tablet_report_path = args.tablet_report or (args.out_dir / "tablet_affix.report.json")
             prerequisites = {
@@ -4484,7 +4192,7 @@ def main(argv: list[str]) -> int:
                     summary["tablet_affixes"] = build_tablet_affix_resources(
                         client=client,
                         api_base=args.tablet_api_base,
-                        league=args.poe_ninja_league or "Forbidden Rites",
+                        league=args.poe_ninja_league,
                         template_it=args.tablet_template_it,
                         template_csd=args.tablet_template_csd,
                         source_baseitems=args.tc_baseitems,
@@ -4492,8 +4200,17 @@ def main(argv: list[str]) -> int:
                         output_zip=output_zip,
                         game_path=args.game_path,
                         resource_report=tablet_report_path,
+                        english_baseitems=args.en_baseitems,
+                        template_map_csd=args.tablet_map_csd,
+                        template_global_csd=args.tablet_global_csd,
                     )
-                    progress("碑牌词缀价格完成")
+                    tablet_result = summary["tablet_affixes"]
+                    if tablet_result["status"] == "partial":
+                        unavailable = [name for name in ("api", "poe_ninja_precursor_tablets")
+                                       if tablet_result[name].get("status") != "ok"]
+                        progress("碑牌参考价部分完成，已跳过不可用来源：" + ", ".join(unavailable))
+                    else:
+                        progress("碑牌词缀和底材参考价完成")
                 except Exception as exc:
                     if output_backup is None:
                         output_zip.unlink(missing_ok=True)

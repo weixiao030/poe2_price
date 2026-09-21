@@ -85,6 +85,7 @@ function Test-BaseItemsLookPatched {
         }
         $Rows = Import-Csv -LiteralPath $TempCsv -Encoding UTF8
         return [bool]($Rows | Where-Object {
+                if ([string]$_.tablet_reference_patched -eq "True") { return $true }
                 $Name = [string]$_.name
                 if ([string]::IsNullOrWhiteSpace($Name)) {
                     return $false
@@ -559,6 +560,9 @@ function New-CurrentTargetRestoreZip {
         $TargetArchive = [System.IO.Compression.ZipFile]::Open($TempZip, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
             Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $InstallInfo.TcBaseItemsPath -Required | Out-Null
+            if ($InstallInfo.TcBaseItemsPath -ne "data/balance/baseitemtypes.datc64") {
+                Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName "data/balance/baseitemtypes.datc64" | Out-Null
+            }
             if ($GameMode -ne "Bundles2") {
                 if ($SupportsUniqueWords) {
                     Copy-ZipEntry -SourceArchive $SourceArchive -TargetArchive $TargetArchive -EntryName $TcWordsPath | Out-Null
@@ -580,6 +584,31 @@ function New-CurrentTargetRestoreZip {
     }
 
     return (Resolve-Path -LiteralPath $OutputZip).Path
+}
+
+function Clear-TabletRestoreReferences {
+    param([Parameter(Mandatory = $true)][string]$ZipPath)
+
+    $English = Join-Path $env:TEMP ([string]::Concat("poe2_restore_english_", [Guid]::NewGuid().ToString("N"), ".datc64"))
+    try {
+        $CleanArgs = @((Join-Path $CodeToolsRoot "poe2_tablet_refs.py"), $ZipPath)
+        if ($InstallInfo.TcBaseItemsPath -ne "data/balance/baseitemtypes.datc64") {
+            Resolve-BundleExtractor
+            $ExtractArgs = if ($GameMode -eq "GGPK") {
+                @("--extract-ggpk", $ContentGgpk, "data/balance/baseitemtypes.datc64", $English)
+            } else {
+                @($Bundles2Paths.IndexBin, "data/balance/baseitemtypes.datc64", $English)
+            }
+            & $BundledBundleExtractorExe @ExtractArgs | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw "提取英文碑牌还原引用失败，已停止写入。" }
+            $CleanArgs += @("--english", $English)
+        }
+        $Result = Invoke-Poe2Python -Python (Ensure-PythonRequests -RepoRoot $RepoRoot) -ArgumentList $CleanArgs -Quiet
+        if ($Result.ExitCode -ne 0) { throw "清理碑牌还原引用失败：$($Result.Text)" }
+    }
+    finally {
+        if (Test-Path -LiteralPath $English -PathType Leaf) { Remove-Item -LiteralPath $English -Force }
+    }
 }
 
 function Add-CleanCurrentWordsToRestoreZip {
@@ -1304,13 +1333,11 @@ function Invoke-GgpkRestorePatch {
 
     Push-Location -LiteralPath $BundledInstallerDir
     try {
-        $InstallerResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $ZipPath) -InputText ""
-        if ($InstallerResult.ExitCode -ne 0 -or $InstallerResult.Text -match 'Exception|Unhandled|錯誤|错误|失敗|失败') {
-            if (Test-GgpkExtractorMissingRuntimeDependency -Text $InstallerResult.Text) {
-                throw "GGPKExtractor missing VC runtime dependency. Exit code: $($InstallerResult.ExitCode). Log: restore-install"
-            }
-            throw "Restore installer failed. Exit code: $($InstallerResult.ExitCode)"
-        }
+        Resolve-BundleExtractor
+        & $BundledBundleExtractorExe --patch-ggpk $ContentGgpk $ZipPath
+        if ($LASTEXITCODE -ne 0) { throw "Restore installer failed. Exit code: $LASTEXITCODE" }
+        & $BundledBundleExtractorExe --verify-ggpk-zip $ContentGgpk $ZipPath
+        if ($LASTEXITCODE -ne 0) { throw "GGPK 还原完整读回校验失败：$LASTEXITCODE" }
     }
     finally {
         Pop-Location
@@ -1563,6 +1590,7 @@ function New-Poe2RestoreBaselineFromCurrentGame {
                 Update-ZipEntryFromFile -ZipPath $CleanZip -SourceFile $CurrentEndgameMaps -EntryName $InstallInfo.TcEndgameMapsPath
             }
         }
+        Clear-TabletRestoreReferences -ZipPath $CleanZip
         Add-Poe2RestoreManifest -ZipPath $CleanZip -BaselineKind "semantic-clean-self-heal" | Out-Null
         Copy-Poe2FileAtomically -Source $CleanZip -Destination $OutputZip | Out-Null
         Assert-RestoreZip $OutputZip
@@ -1703,6 +1731,14 @@ if ($GameMode -eq "Bundles2") {
     Assert-RestoreZip $InstallRestoreZip
     Remove-Poe2RestoreManifestForPatchBundle -ZipPath $InstallRestoreZip | Out-Null
 }
+
+$TabletCleanRestoreZip = Join-Path $RestoreOutDir "tablet_clean_install.zip"
+Copy-Poe2FileAtomically -Source $InstallRestoreZip -Destination $TabletCleanRestoreZip | Out-Null
+$InstallRestoreZip = $TabletCleanRestoreZip
+Clear-TabletRestoreReferences -ZipPath $InstallRestoreZip
+Add-Poe2RestoreManifest -ZipPath $InstallRestoreZip -BaselineKind "restore-install-payload" | Out-Null
+Assert-RestoreZip $InstallRestoreZip
+if ($GameMode -eq "Bundles2") { Remove-Poe2RestoreManifestForPatchBundle -ZipPath $InstallRestoreZip | Out-Null }
 
 if ($NoInstall) {
     Write-Step "Verify restore patch only"

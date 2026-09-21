@@ -7,6 +7,8 @@ class Program
 {
     static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] is "--patch-ggpk" or "--patch-bundles" or "--verify-ggpk-zip" or "--verify-bundles-zip")
+            return ResourcePatch.Run(args);
         if (args.Length > 0 && args[0].Equals("--detect-ggpk-game", StringComparison.OrdinalIgnoreCase))
         {
             if (args.Length != 2)

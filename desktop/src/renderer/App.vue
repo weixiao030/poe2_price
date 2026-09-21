@@ -375,10 +375,6 @@ onUnmounted(() => app.dispose())
                   >
                 </div>
               </fieldset>
-              <div v-if="app.settings.gameVersion === 'poe2' && app.settings.patchScope !== 'uniques'" class="tablet-source-note">
-                <Icon icon="ph:scroll" />
-                <div><b>碑牌词缀标价已包含</b><span>获取失败会自动重试，仍不可用时跳过碑牌层，不影响其他价格。</span></div>
-              </div>
               <div v-if="app.settings.gameVersion === 'poe2'" class="option-row">
                 <div>
                   <b>岛屿传言地图提示</b>

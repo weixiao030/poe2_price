@@ -1,4 +1,6 @@
 import subprocess
+import sys
+import zipfile
 from pathlib import Path
 
 
@@ -99,11 +101,22 @@ Write-Output 'MUTATION_FINGERPRINT_REJECTED_CHANGES'
 
 
 def test_cached_fallback_repackages_only_baseitems(tmp_path: Path):
+    from tests.test_tablet_affixes import synthetic_baseitems, m, refs
     cache_zip = tmp_path / "cache.zip"
     output_zip = tmp_path / "safe.zip"
+    original = synthetic_baseitems()
+    redirected, _ = m._redirect_tablet_base_items(original, {"Ritual"})
+    with zipfile.ZipFile(cache_zip, "w") as archive:
+        archive.writestr("data/balance/baseitemtypes.datc64", redirected)
+        archive.writestr("data/balance/words.datc64", b"old words")
+        archive.writestr("metadata/items/toweraugments/poe2price/ritual.it", b"old template")
     script = rf"""
 $ErrorActionPreference = 'Stop'
 . '{ps_path(COMMON)}'
+function Ensure-PythonRequests {{ param([string]$RepoRoot) return '{ps_path(Path(sys.executable))}' }}
+$CodeToolsRoot = '{ps_path(TOOLS)}'
+$RepoRoot = '{ps_path(ROOT)}'
+$EnBaseItems = ''; $TcBaseItems = ''
 function Assert-File([string]$Path,[string]$Name) {{ if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {{ throw "missing $Name" }} }}
 function Import-SelectedFunction([string]$Path, [string]$Name) {{
     $Tokens=$null; $Errors=$null
@@ -117,11 +130,6 @@ $global:InstallInfo=[pscustomobject]@{{TcBaseItemsPath='data/balance/baseitemtyp
 $global:TcWordsPath='data/balance/words.datc64'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$Archive=[System.IO.Compression.ZipFile]::Open('{ps_path(cache_zip)}',[System.IO.Compression.ZipArchiveMode]::Create)
-try {{
-    $Base=$Archive.CreateEntry($InstallInfo.TcBaseItemsPath); $Writer=New-Object IO.StreamWriter($Base.Open()); $Writer.Write('base'); $Writer.Dispose()
-    $Words=$Archive.CreateEntry($TcWordsPath); $Writer=New-Object IO.StreamWriter($Words.Open()); $Writer.Write('old words'); $Writer.Dispose()
-}} finally {{ $Archive.Dispose() }}
 New-CorePricePatchFromCache -CacheZip '{ps_path(cache_zip)}' -OutputZip '{ps_path(output_zip)}' | Out-Null
 $Check=[System.IO.Compression.ZipFile]::OpenRead('{ps_path(output_zip)}')
 try {{
@@ -132,6 +140,8 @@ try {{
 Write-Output 'SAFE_CACHE_CORE_ONLY'
 """
     assert "SAFE_CACHE_CORE_ONLY" in run_windows_powershell(script)
+    with zipfile.ZipFile(output_zip) as archive:
+        assert archive.read("data/balance/baseitemtypes.datc64") == refs.clean_references(redirected)
 
 
 def test_atomic_generation_and_restore_transaction_rollback(tmp_path: Path):
@@ -232,7 +242,7 @@ def test_update_only_refreshes_physical_backup_when_it_will_install():
     revalidate_pos = update.index(
         "Assert-Poe2PhysicalRestoreZip -Path $PhysicalRestoreZip", ensure_pos
     )
-    patch_pos = update.index("$BundlePatchResult = Invoke-DotNet8", revalidate_pos)
+    patch_pos = update.index('Invoke-TabletResourceTool -Mode "--patch-bundles"', revalidate_pos)
     assert ensure_pos < revalidate_pos < patch_pos
 
 

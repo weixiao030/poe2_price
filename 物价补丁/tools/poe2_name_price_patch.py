@@ -22,6 +22,8 @@ import zipfile
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from poe2_tablet_refs import canonical_reference, clean_references, TYPES as TABLET_TYPES
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -40,7 +42,7 @@ DEFAULT_SOURCE = (
 )
 DEFAULT_GAME_PATH = "data/balance/simplified chinese/baseitemtypes.datc64"
 DISPLAY_NAME_FIELD_INDEX = 8
-STRUCTURE_SIGNATURE_VERSION = 1
+STRUCTURE_SIGNATURE_VERSION = 2
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -252,7 +254,15 @@ def build_structure_signature(data: bytes) -> dict[str, int | str]:
         metadata_hasher.update(struct.pack("<I", len(encoded_path)))
         metadata_hasher.update(encoded_path)
         fixed_rows_hasher.update(data[row_start:name_pointer_pos])
-        fixed_rows_hasher.update(data[name_pointer_pos + 4 : row_end])
+        tablet_metadata = {f"Metadata/Items/TowerAugment/{base}Augment" for base in TABLET_TYPES}
+        if metadata_path in tablet_metadata and layout.row_size >= 48:
+            reference = read_string_offset(data, layout, struct.unpack_from("<Q", data, row_start + 40)[0])[0]
+            canonical = canonical_reference(metadata_path, reference)
+            fixed_rows_hasher.update(data[name_pointer_pos + 4:row_start + 40])
+            fixed_rows_hasher.update(canonical.encode("utf-8") + b"\0")
+            fixed_rows_hasher.update(data[row_start + 48:row_end])
+        else:
+            fixed_rows_hasher.update(data[name_pointer_pos + 4 : row_end])
 
     metadata_paths_sha256 = metadata_hasher.hexdigest()
     fixed_rows_sha256 = fixed_rows_hasher.hexdigest()
@@ -616,13 +626,16 @@ def apply_replacements_fixed(data: bytes, replacements: list[NameReplacement]) -
 
 def export_names(source: Path, output: Path) -> None:
     data = source.read_bytes()
+    cleaned = clean_references(data)
     entries = scan_base_item_names(data)
     with output.open("w", encoding="utf-8-sig", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["metadata_path", "name"])
+        writer = csv.DictWriter(fh, fieldnames=["metadata_path", "name", "tablet_reference_patched"])
         writer.writeheader()
         for entry in entries:
             writer.writerow(
-                {"metadata_path": entry.metadata_path, "name": entry.name}
+                {"metadata_path": entry.metadata_path, "name": entry.name,
+                 "tablet_reference_patched": data[entry.name_pointer_pos + 8:entry.name_pointer_pos + 16]
+                 != cleaned[entry.name_pointer_pos + 8:entry.name_pointer_pos + 16]}
             )
     print(f"exported {output} ({len(entries)} names)")
 
@@ -643,7 +656,7 @@ def build_patch(
     # Every invocation builds a complete patch for the current selection.  The
     # caller may publish this staging result atomically after all optional layers
     # are done, so never reuse stale entries from a previous invocation.
-    data = source.read_bytes()
+    data = clean_references(source.read_bytes())
     entries = scan_base_item_names(data)
     rows = load_price_rows(prices)
     replacements, warnings = build_replacements(

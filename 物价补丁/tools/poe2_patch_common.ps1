@@ -1550,6 +1550,7 @@ function Set-Poe2LogicalRestoreManifest {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $ExpectedPaths = @(
+        "data/balance/baseitemtypes.datc64",
         [string]$InstallInfo.TcBaseItemsPath,
         [string]$InstallInfo.TcWordsPath,
         [string]$InstallInfo.TcEndgameMapsPath
@@ -1664,6 +1665,7 @@ function Assert-Poe2LogicalRestoreManifest {
 
         $Allowed = @{}
         foreach ($Path in @(
+                "data/balance/baseitemtypes.datc64",
                 [string]$InstallInfo.TcBaseItemsPath,
                 [string]$InstallInfo.TcWordsPath,
                 [string]$InstallInfo.TcEndgameMapsPath

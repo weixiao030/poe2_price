@@ -793,6 +793,7 @@ function Test-BaseItemsLookPatched {
         }
         $Rows = Import-Csv -LiteralPath $TempCsv -Encoding UTF8
         return [bool]($Rows | Where-Object {
+                if ([string]$_.tablet_reference_patched -eq "True") { return $true }
                 $Name = [string]$_.name
                 if ([string]::IsNullOrWhiteSpace($Name)) {
                     return $false
@@ -1277,6 +1278,12 @@ function Add-Poe2LogicalRestoreManifest {
 
     $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_manifest_base_", [Guid]::NewGuid().ToString("N"), ".datc64"))
     try {
+        $CleanArgs = @((Join-Path $CodeToolsRoot "poe2_tablet_refs.py"), $ZipPath)
+        if ($EnBaseItems -ne $TcBaseItems -and (Test-Path -LiteralPath $EnBaseItems -PathType Leaf)) {
+            $CleanArgs += @("--english", $EnBaseItems)
+        }
+        $Clean = Invoke-Poe2Python -Python (Ensure-PythonRequests -RepoRoot $RepoRoot) -ArgumentList $CleanArgs -Quiet
+        if ($Clean.ExitCode -ne 0) { throw "清理碑牌还原引用失败：$($Clean.Text)" }
         Extract-RestoreBaseItems -RestoreZip $ZipPath -OutputDat $TempDat
         $Signature = Get-BaseItemsMetadataSignature $TempDat
         Set-Poe2LogicalRestoreManifest -ZipPath $ZipPath -InstallInfo $InstallInfo `
@@ -2459,15 +2466,13 @@ function Ensure-RestoreZip {
             $HasRequiredEndgameMaps = (-not $SourceEndgameMapsAvailable) -or `
                 (Test-ZipEntryExists -ZipPath $ResolvedCandidate -EntryName $InstallInfo.TcEndgameMapsPath)
             if ($StrictScopedCandidate -and $HasRequiredWords -and $HasRequiredEndgameMaps) {
-                if (-not $NoInstall -and -not ([System.IO.Path]::GetFullPath($ResolvedCandidate)).Equals(
-                        [System.IO.Path]::GetFullPath($PersistentLogicalRestoreZip),
-                        [System.StringComparison]::OrdinalIgnoreCase
-                    )) {
-                    New-Item -ItemType Directory -Force -Path $PersistentRestoreDir | Out-Null
-                    Copy-Poe2FileAtomically -Source $ResolvedCandidate -Destination $PersistentLogicalRestoreZip | Out-Null
-                    return (Resolve-Path -LiteralPath $PersistentLogicalRestoreZip).Path
+                $TabletRestoreWork = Join-Path $RestoreOutDir (".tablet-restore-" + [Guid]::NewGuid().ToString("N") + ".zip")
+                try {
+                    Copy-Poe2FileAtomically -Source $ResolvedCandidate -Destination $TabletRestoreWork | Out-Null
+                    Add-Poe2LogicalRestoreManifest -ZipPath $TabletRestoreWork -BaselineKind "validated-tablet-cleanup" | Out-Null
+                    return Publish-Poe2LogicalRestoreZip -Source $TabletRestoreWork
                 }
-                return $ResolvedCandidate
+                finally { Remove-Item -LiteralPath $TabletRestoreWork -Force -ErrorAction SilentlyContinue }
             }
             $CandidateWork = Join-Path $RestoreOutDir ([string]::Concat(".", $RestoreZipName, ".candidate-", [Guid]::NewGuid().ToString("N"), ".tmp"))
             $ScopedWork = Join-Path $RestoreOutDir ([string]::Concat(".", $RestoreZipName, ".scoped-", [Guid]::NewGuid().ToString("N"), ".tmp"))
@@ -2595,7 +2600,8 @@ function Invoke-Poe2BundleExtractBatch {
         [Parameter(Mandatory = $true)][object[]]$Entries,
         [Parameter(Mandatory = $true)][string]$LogPath,
         [int]$MaxAttempts = 3,
-        [int]$RetryDelaySeconds = 2
+        [int]$RetryDelaySeconds = 2,
+        [switch]$Ggpk
     )
 
     if ($Entries.Count -eq 0) {
@@ -2642,7 +2648,8 @@ function Invoke-Poe2BundleExtractBatch {
             New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
             Add-Content -LiteralPath $LogPath -Encoding UTF8 -Value "--- BundleExtractor attempt $Attempt/$([Math]::Max(1, $MaxAttempts)) ---"
 
-            $AttemptOutput = @(& $BundledBundleExtractorExe --extract-list $IndexPath $RequestListPath $OutputDir 2>&1)
+            $ExtractMode = if ($Ggpk) { "--extract-ggpk-list" } else { "--extract-list" }
+            $AttemptOutput = @(& $BundledBundleExtractorExe $ExtractMode $IndexPath $RequestListPath $OutputDir 2>&1)
             $LastExitCode = $LASTEXITCODE
             $AttemptOutput | ForEach-Object { Write-Host $_ }
             if ($AttemptOutput.Count -gt 0) {
@@ -2715,6 +2722,10 @@ function Test-PricePatchZipCompatible {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     try {
         Get-Poe2ZipEntryCrc32Map -Path $Path | Out-Null
+        $TabletValidation = Invoke-Poe2Python -Python (Ensure-PythonRequests -RepoRoot $RepoRoot) -ArgumentList @(
+            (Join-Path $CodeToolsRoot "poe2_tablet_refs.py"), $Path, "--validate"
+        ) -Quiet
+        if ($TabletValidation.ExitCode -ne 0) { return $false }
         $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
         try {
             $Entry = $Archive.GetEntry($InstallInfo.TcBaseItemsPath)
@@ -2764,6 +2775,12 @@ function New-CorePricePatchFromCache {
         # Repackage only the structurally checked BaseItemTypes layer so a
         # degraded update never overwrites the user's current optional tables.
         New-BaseItemZip -SourceDat $TempDat -OutputZip $OutputZip
+        $CleanCacheArgs = @((Join-Path $CodeToolsRoot "poe2_tablet_refs.py"), $OutputZip)
+        if ($EnBaseItems -ne $TcBaseItems -and (Test-Path -LiteralPath $EnBaseItems -PathType Leaf)) {
+            $CleanCacheArgs += @("--english", $EnBaseItems)
+        }
+        $CleanCache = Invoke-Poe2Python -Python (Ensure-PythonRequests -RepoRoot $RepoRoot) -ArgumentList $CleanCacheArgs -Quiet
+        if ($CleanCache.ExitCode -ne 0) { throw "清理缓存碑牌引用失败：$($CleanCache.Text)" }
         Get-Poe2ZipEntryCrc32Map -Path $OutputZip | Out-Null
         return (Resolve-Path -LiteralPath $OutputZip).Path
     }
@@ -2849,74 +2866,19 @@ function Publish-PriceBuildStage {
     }
 }
 
-function Assert-GgpkPatchApplied {
-    param([Parameter(Mandatory = $true)][string]$ZipPath)
-
-    $TempRoot = Join-Path $env:TEMP ([string]::Concat("poe2_verify_ggpk_", [Guid]::NewGuid().ToString("N")))
-    $ExpectedDir = Join-Path $TempRoot "expected"
-    $ActualDir = Join-Path $TempRoot "actual"
-    $LogPath = Join-Path $TempRoot "extract.log"
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    try {
-        New-Item -ItemType Directory -Force -Path $ExpectedDir, $ActualDir | Out-Null
-        $Targets = [ordered]@{
-            $InstallInfo.TcBaseItemsPath = $InstallInfo.LanguageFileSlug
-            $InstallInfo.TcWordsPath = $InstallInfo.WordsFileSlug
-            $InstallInfo.TcEndgameMapsPath = $InstallInfo.EndgameMapsFileSlug
-        }
-        $ExpectedByEntry = @{}
-        $Archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
-        try {
-            foreach ($EntryName in $Targets.Keys) {
-                $Entry = $Archive.GetEntry(([string]$EntryName).Replace("\", "/"))
-                if ($null -eq $Entry) {
-                    continue
-                }
-                $ExpectedPath = Join-Path $ExpectedDir ([Guid]::NewGuid().ToString("N") + ".datc64")
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $ExpectedPath, $true)
-                $ExpectedByEntry[[string]$EntryName] = $ExpectedPath
-            }
-        }
-        finally {
-            $Archive.Dispose()
-        }
-        if ($ExpectedByEntry.Count -eq 0) {
-            throw "GGPK 写入校验找不到任何目标 DAT 条目。"
-        }
-
-        if ($ExtractorUsesDotnet) {
-            $Result = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($Extractor, $ContentGgpk, $ActualDir) -Quiet
-            $Result.Text | Out-File -LiteralPath $LogPath -Encoding UTF8
-            $ExitCode = $Result.ExitCode
-            $ExtractText = $Result.Text
-        }
-        else {
-            & $Extractor $ContentGgpk $ActualDir *> $LogPath
-            $ExitCode = $LASTEXITCODE
-            $ExtractText = if (Test-Path -LiteralPath $LogPath -PathType Leaf) { Get-Content -LiteralPath $LogPath -Raw -Encoding UTF8 } else { "" }
-        }
-        if ($ExitCode -ne 0 -or (Test-ToolOutputFailure -Text $ExtractText -ExtraNeedles @("Fatal:"))) {
-            throw "GGPK 写入后读回提取失败。退出码：$ExitCode；日志：$LogPath"
-        }
-        foreach ($EntryName in $ExpectedByEntry.Keys) {
-            $ActualPath = Join-Path $ActualDir ("data\" + [string]$Targets[$EntryName])
-            Assert-File $ActualPath "GGPK read-back $EntryName"
-            $ExpectedHash = (Get-FileHash -LiteralPath $ExpectedByEntry[$EntryName] -Algorithm SHA256).Hash
-            $ActualHash = (Get-FileHash -LiteralPath $ActualPath -Algorithm SHA256).Hash
-            if ($ExpectedHash -ne $ActualHash) {
-                throw "GGPK 写入后读回内容不一致：$EntryName"
-            }
-        }
-        Write-Host "已校验 GGPK 中的 $($ExpectedByEntry.Count) 个补丁文件。" -ForegroundColor Green
-    }
-    finally {
-        if (Test-Path -LiteralPath $TempRoot -PathType Container) {
-            Remove-Item -LiteralPath $TempRoot -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
+function Invoke-TabletResourceTool {
+    param([string]$Mode, [string]$Target, [string]$ZipPath)
+    Resolve-BundleExtractor
+    $ToolOutput = @(& $BundledBundleExtractorExe $Mode $Target $ZipPath 2>&1)
+    $ToolExitCode = $LASTEXITCODE
+    $ToolOutput | ForEach-Object { Write-Host $_ }
+    if ($ToolExitCode -ne 0) { throw "资源安装或读回校验失败，退出码：$ToolExitCode" }
 }
 
+function Assert-GgpkPatchApplied {
+    param([Parameter(Mandatory = $true)][string]$ZipPath)
+    Invoke-TabletResourceTool -Mode "--verify-ggpk-zip" -Target $ContentGgpk -ZipPath $ZipPath
+}
 try {
 $PatchScope = Resolve-PatchScope `
     -Requested $PatchScope `
@@ -2985,6 +2947,8 @@ $TcWords = Join-Path $LatestDir ("data\" + $InstallInfo.WordsFileSlug)
 $TcEndgameMaps = Join-Path $LatestDir ("data\" + $InstallInfo.EndgameMapsFileSlug)
 $TabletTemplateIt = Join-Path $LatestDir "metadata\items\toweraugments\toweraugment.it"
 $TabletTemplateCsd = Join-Path $LatestDir "data\statdescriptions\tablet_stat_descriptions.csd"
+$TabletMapCsd = Join-Path $LatestDir "data\statdescriptions\map_stat_descriptions.csd"
+$TabletGlobalCsd = Join-Path $LatestDir "data\statdescriptions\stat_descriptions.csd"
 $UniqueGoldPrices = Join-Path $LatestDir "data\data_balance_uniquegoldprices.datc64"
 $SupportsUniqueWords = Test-Poe2UniqueWordsSupported -WordsPath $TcWordsPath
 $OutDir = Join-Path $RepoRoot "output\poe2_price_patch_latest"
@@ -3150,20 +3114,6 @@ if (-not $SkipExtract) {
                 Label = "$DisplayLanguageName EndgameMaps"
                 Required = $PatchIslandRumourHintsEnabled
             })
-        if ($PatchTabletAffixesEnabled) {
-            $ExtractEntries.Add([pscustomobject]@{
-                    Path = "metadata/items/toweraugments/toweraugment.it"
-                    Destination = $TabletTemplateIt
-                    Label = "碑牌模板"
-                    Required = $false
-                })
-            $ExtractEntries.Add([pscustomobject]@{
-                    Path = "data/statdescriptions/tablet_stat_descriptions.csd"
-                    Destination = $TabletTemplateCsd
-                    Label = "碑牌词缀描述"
-                    Required = $false
-                })
-        }
 
         if ($SupportsUniqueWords) {
             $ExtractEntries.Add([pscustomobject]@{
@@ -3227,6 +3177,27 @@ if (-not $SkipExtract) {
 }
 else {
     Write-Step "跳过提取，使用已有 BaseItemTypes"
+}
+
+if ($PatchTabletAffixesEnabled -and -not $SkipExtract) {
+    try {
+        Resolve-BundleExtractor
+        $TabletEntries = @(
+            [pscustomobject]@{ Path = "metadata/items/toweraugments/toweraugment.it"; Destination = $TabletTemplateIt; Label = "碑牌模板"; Required = $false },
+            [pscustomobject]@{ Path = "data/statdescriptions/tablet_stat_descriptions.csd"; Destination = $TabletTemplateCsd; Label = "碑牌描述"; Required = $false },
+            [pscustomobject]@{ Path = "data/statdescriptions/map_stat_descriptions.csd"; Destination = $TabletMapCsd; Label = "地图描述"; Required = $false },
+            [pscustomobject]@{ Path = "data/statdescriptions/stat_descriptions.csd"; Destination = $TabletGlobalCsd; Label = "基础描述"; Required = $false }
+        )
+        $TabletSource = if ($GameMode -eq "GGPK") { $ContentGgpk } else { $Bundles2Paths.IndexBin }
+        Invoke-Poe2BundleExtractBatch -IndexPath $TabletSource -Entries $TabletEntries `
+            -LogPath (Join-Path $LatestDir "tablet-extract.log") -Ggpk:($GameMode -eq "GGPK") | Out-Null
+    }
+    catch {
+        foreach ($Path in @($TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd)) {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        }
+        Write-Warning "碑牌模板提取失败，已跳过碑牌层，其余更新继续：$($_.Exception.Message)"
+    }
 }
 
 if ($IsChinaClient -and -not (Test-Path -LiteralPath $EnBaseItems -PathType Leaf)) {
@@ -3314,7 +3285,7 @@ $PriceCacheKey = [string]::Concat(
 )
 $CachedPatchZip = Join-Path $PriceCacheDir ($PriceCacheKey + ".zip")
 $CachedSummaryJson = Join-Path $PriceCacheDir ($PriceCacheKey + ".summary.json")
-Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $TcEndgameMaps, $UniqueGoldPrices)
+Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $TcEndgameMaps, $UniqueGoldPrices, $TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd)
 $LogicalRestoreReady = $false
 $InstallSuppressedReason = ""
 try {
@@ -3409,6 +3380,8 @@ if ($PatchTabletAffixesEnabled) {
         "--tablet-api-base", "http://125.122.32.215:2083",
         "--tablet-template-it", $TabletTemplateIt,
         "--tablet-template-csd", $TabletTemplateCsd,
+        "--tablet-map-csd", $TabletMapCsd,
+        "--tablet-global-csd", $TabletGlobalCsd,
         "--tablet-report", $StageTabletReportJson
     )
 }
@@ -3589,10 +3562,7 @@ if (-not $NoInstall) {
         try {
             Push-Location -LiteralPath $BundledInstallerDir
             try {
-                $InstallerResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $PatchFolderZip) -InputText ""
-                if ($InstallerResult.ExitCode -ne 0 -or (Test-ToolOutputFailure -Text $InstallerResult.Text)) {
-                    throw "Patch installer failed. Exit code: $($InstallerResult.ExitCode)"
-                }
+                Invoke-TabletResourceTool -Mode "--patch-ggpk" -Target $ContentGgpk -ZipPath $PatchFolderZip
             }
             finally {
                 Pop-Location
@@ -3608,10 +3578,7 @@ if (-not $NoInstall) {
             Write-Warning "GGPK 写入或校验失败，正在自动写回已验证还原包。原因：$InstallError"
             Push-Location -LiteralPath $BundledInstallerDir
             try {
-                $RollbackResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledPatchDll, $ContentGgpk, $RestoreZip) -InputText ""
-                if ($RollbackResult.ExitCode -ne 0 -or (Test-ToolOutputFailure -Text $RollbackResult.Text)) {
-                    throw "GGPK 自动还原失败。退出码：$($RollbackResult.ExitCode)"
-                }
+                Invoke-TabletResourceTool -Mode "--patch-ggpk" -Target $ContentGgpk -ZipPath $RestoreZip
             }
             finally {
                 Pop-Location
@@ -3664,15 +3631,9 @@ if (-not $NoInstall) {
         try {
             Push-Location -LiteralPath $BundledInstallerDir
             try {
-                if ($UsePatchBundleDll) {
-                    $BundlePatchResult = Invoke-DotNet8 -Dotnet $Dotnet -ArgumentList @($BundledBundlePatchDll, $Bundles2Paths.IndexBin, $TempPatchZip) -InputText "" -Quiet
-                    $BundlePatchOutput = $BundlePatchResult.Lines
-                    $BundlePatchExitCode = $BundlePatchResult.ExitCode
-                }
-                else {
-                    $BundlePatchOutput = & $BundledBundlePatchExe $Bundles2Paths.IndexBin $TempPatchZip 2>&1
-                    $BundlePatchExitCode = $LASTEXITCODE
-                }
+                Invoke-TabletResourceTool -Mode "--patch-bundles" -Target $Bundles2Paths.IndexBin -ZipPath $TempPatchZip
+                $BundlePatchOutput = @("已验证独立资源包与所有写入条目。")
+                $BundlePatchExitCode = 0
             }
             finally {
                 Pop-Location
@@ -3690,6 +3651,7 @@ if (-not $NoInstall) {
                 $TcWordsPath,
                 $InstallInfo.TcEndgameMapsPath
             )
+            Invoke-TabletResourceTool -Mode "--verify-bundles-zip" -Target $Bundles2Paths.IndexBin -ZipPath $TempPatchZip
             Write-Bundles2InstalledState -RestoreZip $PhysicalRestoreZip | Out-Null
             Write-Host "补丁已写入 Bundles2。" -ForegroundColor Green
         }

@@ -415,12 +415,8 @@ def test_patched_source_has_offline_physical_restore_migration_before_game_write
     backup_validation = update.index(
         "Assert-Poe2PhysicalRestoreZip -Path $PhysicalRestoreZip", ensure_call
     )
-    game_write = update.index("$BundlePatchResult = Invoke-DotNet8", backup_validation)
-    game_write_exe = update.index(
-        "& $BundledBundlePatchExe $Bundles2Paths.IndexBin", backup_validation
-    )
+    game_write = update.index('Invoke-TabletResourceTool -Mode "--patch-bundles"', backup_validation)
     assert ensure_call < backup_validation < game_write
-    assert backup_validation < game_write_exe
     assert "$Bundles2WritePrecondition = Get-Poe2Bundles2MutationFingerprint" in update
     install = update[backup_validation:]
     assert "-Expected $Bundles2WritePrecondition" in install

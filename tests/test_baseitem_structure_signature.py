@@ -148,7 +148,7 @@ def test_signature_cli_prints_complete_json(tmp_path: Path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     payload = json.loads(result.stdout)
-    assert payload["signature_version"] == 1
+    assert payload["signature_version"] == 2
     assert payload["row_count"] == 2
     assert payload["row_size"] == 48
     assert len(payload["metadata_paths_sha256"]) == 64

@@ -20,10 +20,10 @@
     {
       "path": "物价补丁/tools/build_poe2scout_price_patch.py",
       "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "local_sha256": "0b185903e0272f8c4824f16e92b474ab9ab7121aedfcd8b6256151e17f47742c",
+      "local_sha256": "28be195ac36de5bbfb200ff9ec83529b4f3c9dffa3c63a88508b944db6f08620",
       "equivalent": false,
-      "normalized_sha256": "0b185903e0272f8c4824f16e92b474ab9ab7121aedfcd8b6256151e17f47742c",
-      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。"
+      "normalized_sha256": "28be195ac36de5bbfb200ff9ec83529b4f3c9dffa3c63a88508b944db6f08620",
+      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
     },
     {
       "path": "物价补丁/tools/data_source_contract_baseline.json",
@@ -56,17 +56,18 @@
     {
       "path": "物价补丁/tools/poe2_name_price_patch.py",
       "upstream_blob": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9",
-      "local_sha256": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9",
-      "equivalent": true,
-      "normalized_sha256": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9"
+      "local_sha256": "4eedf50795bfbddc80cfe13a11fbe174e824e2a46ec7a04103db5b0af5298ca5",
+      "equivalent": false,
+      "normalized_sha256": "4eedf50795bfbddc80cfe13a11fbe174e824e2a46ec7a04103db5b0af5298ca5",
+      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
     },
     {
       "path": "物价补丁/tools/poe2_patch_common.ps1",
       "upstream_blob": "c2c07c23170ad9940128221ac5b9316e142ef646245642d6ac3cef154e46afd3",
-      "local_sha256": "b98647ed8e132c975c3f9464fda6b650bf3cfad0a53dcfff6547968f61445f2d",
+      "local_sha256": "5add68024ece6a6cc163417a4daecaba1b54cb4a6635f1b1e58b51dc51d095d5",
       "equivalent": false,
-      "normalized_sha256": "4956761328d9b9768f0498558607efff056b4e34a67742940852ef93729dffb1",
-      "local_changes": "赛季解析移入独立模块，国服赛季加入补丁缓存身份。"
+      "normalized_sha256": "a788296aa57b3e6f2bb0819de8cf32fc2fafa2923c5c6adeb820243d4a71cd44",
+      "local_changes": "赛季解析移入独立模块，国服赛季加入补丁缓存身份。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
     },
     {
       "path": "物价补丁/tools/poe_patch_profiles.ps1",
@@ -85,9 +86,10 @@
     {
       "path": "物价补丁/tools/restore_price_patch.ps1",
       "upstream_blob": "c6058a0c8e057a0d620758cc965c537d119ebf327cae1c5c1d4a4cdb44f402e9",
-      "local_sha256": "2051c1518fb8bbbe0e8bd5dcca98002546b6d863e18fd75d63c8617b3b235600",
-      "equivalent": true,
-      "normalized_sha256": "33f1774d2fe3e0f9d9f7d1f713c9db7744304247971f62451bdaf34ec6355202"
+      "local_sha256": "773f62c9dd4c01ea981a52ade046e9a57debe50b921cfcedd217148577a54de7",
+      "equivalent": false,
+      "normalized_sha256": "e55fa3610b3798cc485e8368af3abd85a6a3e618ea1348b9f9593460f357cc55",
+      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
     },
     {
       "path": "物价补丁/tools/update_poe1_price_patch.ps1",
@@ -100,17 +102,18 @@
     {
       "path": "物价补丁/tools/update_price_patch.ps1",
       "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
-      "local_sha256": "b9ed29c6c37b5948981e76be40f44080f98eefe188d3f7820670f17720a5f5c0",
+      "local_sha256": "59f85e80124b747f9db6eb47633f9456fbe5e1c24aa0ed686cefbd660a940dd6",
       "equivalent": false,
-      "normalized_sha256": "912e32fa23a3ecfbc86e98511a22bbeee1b71f0657b539d44bea571f920aa112",
-      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。"
+      "normalized_sha256": "6828a3cd897af8c47e62b4a5e1a15d922dbc0a3fa832a2dcd80eaaa83adc776b",
+      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",
       "upstream_blob": "68461a9d5763e9a59226a7e3816cab68a147a9aa4883176dc0d06ee7498b33d9",
-      "local_sha256": "68461a9d5763e9a59226a7e3816cab68a147a9aa4883176dc0d06ee7498b33d9",
-      "equivalent": true,
-      "normalized_sha256": "68461a9d5763e9a59226a7e3816cab68a147a9aa4883176dc0d06ee7498b33d9"
+      "local_sha256": "a609a0c694daac3ae80ce3f136a4b0671bdb89b433330845ba8e212fa634d1ae",
+      "equivalent": false,
+      "normalized_sha256": "a609a0c694daac3ae80ce3f136a4b0671bdb89b433330845ba8e212fa634d1ae",
+      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/oo2core.dll",
@@ -247,6 +250,22 @@
       "equivalent": false,
       "normalized_sha256": "d552b1b6ede008f671ae5fac8d4b823e7b6abeae3d06bf6f630a16cc647b5852",
       "local_changes": "新增 POE1/POE2 共用普通汇总 OCR 校验，仅本地算法，无额外请求。"
+    },
+    {
+      "path": "物价补丁/tools/poe2_tablet_prices.py",
+      "upstream_blob": null,
+      "equivalent": false,
+      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。",
+      "local_sha256": "3fc5b596e37765981be88d7e66f1b35fbfb78f33ad9eda7185de74771d897799",
+      "normalized_sha256": "3fc5b596e37765981be88d7e66f1b35fbfb78f33ad9eda7185de74771d897799"
+    },
+    {
+      "path": "物价补丁/tools/poe2_tablet_refs.py",
+      "upstream_blob": null,
+      "equivalent": false,
+      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。",
+      "local_sha256": "293548c61c57c3538712f467827f98e0ef315b09611580b293fe2b262d638f9a",
+      "normalized_sha256": "293548c61c57c3538712f467827f98e0ef315b09611580b293fe2b262d638f9a"
     }
   ],
   "native_tools": [
@@ -300,7 +319,7 @@
     },
     {
       "path": "build/BundleExtractor/Program.cs",
-      "sha256": "292292e9f76e539af9d37e49ad74630e60a82e486ee6905144958d8ab54539b6"
+      "sha256": "f929a36f2b086507145dee8af02d1879048861fa648c86921799793336567a91"
     },
     {
       "path": "restore-seeds/.gitkeep",
@@ -313,6 +332,10 @@
     {
       "path": "restore-seeds/国际服还原补丁.zip",
       "sha256": "e3fff5c1e556cdf133b8c7b1dc5ab724fec7f96c2b3479ec60faaed362dedfe2"
+    },
+    {
+      "path": "build/BundleExtractor/ResourcePatch.cs",
+      "sha256": "056c21c88202628b5d10364f67afa5b7bbc0dba9ed610a7b61355091719510d1"
     }
   ]
 }
