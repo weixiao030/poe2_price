@@ -235,12 +235,16 @@ def test_disabled_core_build_clears_old_test_inheritance_and_detects_it(tmp_path
     assert patched.read_bytes()[:1084] == original[:1084]
 
 
-def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path):
+@pytest.mark.parametrize('templates_available', [False, True])
+def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, templates_available):
     source = tmp_path/'base.dat'; source.write_bytes(synthetic_baseitems())
     patched = tmp_path/'patched.dat'; patched.write_bytes(source.read_bytes())
     template = tmp_path/'template.it'
     template.write_text('Mods\n{\nstat_description_list = "Data/StatDescriptions/tablet_stat_descriptions.csd"\nenable_rarity = "magic"\nenable_rarity = "rare"\n}\n', encoding='utf-8')
     descriptions = tmp_path/'tablet.csd'; descriptions.write_bytes(csd().encode())
+    if not templates_available:
+        template.unlink(); descriptions.unlink()
+    english = tmp_path/'english.dat'; english.write_bytes(source.read_bytes())
     supplement = tmp_path/'stats.csd'
     supplement.write_text('description\n\t1 tower_ritual_use_count\n\t1\n\t\t# "{0} uses remaining"\n\tlang "Traditional Chinese"\n\t1\n\t\t# "剩餘 {0} 次使用次數"\n', encoding='utf-8')
     archive = tmp_path/'core.zip'
@@ -252,21 +256,20 @@ def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path):
         def get_json(self, url):
             if 'poe.ninja' not in url: raise TimeoutError('API offline')
             return {'core':{'primary':'divine', 'rates':{'exalted':500}}, 'lines':[
-                {'baseType':'Ritual Tablet', 'variant':'Rare', 'primaryValue':3, 'listingCount':10, 'corrupted':False}]}
-    args = dict(client=NinjaOnly(),api_base='http://example.invalid',league=LEAGUE,template_it=template,template_csd=descriptions,template_global_csd=supplement,source_baseitems=source,patched_baseitems=patched,output_zip=archive,game_path=core_path,resource_report=tmp_path/'report.json')
+                {'baseType':'Ritual Tablet', 'variant':variant, 'primaryValue':price, 'listingCount':10, 'corrupted':False}
+                for variant, price in [('Normal', 1), ('Rare', 3)]]}
+    args = dict(client=NinjaOnly(),api_base='http://example.invalid',league=LEAGUE,template_it=template,template_csd=descriptions,template_global_csd=supplement,source_baseitems=source,patched_baseitems=patched,output_zip=archive,game_path=core_path,resource_report=tmp_path/'report.json',english_baseitems=english)
     report = m.build_tablet_affix_resources(**args)
     assert report['status'] == 'partial' and report['api']['status'] == 'unavailable'
     with zipfile.ZipFile(archive) as z:
         entries = {p:z.read(p) for p in z.namelist()}
     refs.validate_resources(entries)
     assert entries['data/balance/traditional chinese/words.datc64'] == b'unchanged other layer'
-    assert '稀有=3.00D' in m.decode_resource(entries['data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd'])[0]
-    installed_template = m.decode_resource(entries['metadata/items/toweraugments/poe2price/ritual.it'])[0]
-    assert 'enable_rarity = "magic"' in installed_template
-    assert 'enable_rarity = "rare"' in installed_template
-    missing = dict(entries); missing.pop('data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd')
-    with pytest.raises(ValueError, match='missing referenced stat'):
-        refs.validate_resources(missing)
+    assert len(entries) == 3 and not any('/poe2price/' in path for path in entries)
+    assert report['redirected_items'] == 0
+    assert report['base_names'] == [{'tablet':'Ritual_Tablet', 'price':'1.00D', 'variant':'Normal'}]
+    for path in [core_path, 'data/balance/baseitemtypes.datc64']:
+        assert names.scan_base_item_names(entries[path])[0].name == '祭祀碑牌=1.00D'
     class Offline:
         def get_json(self, url): raise TimeoutError('offline')
     args['client'] = Offline()
@@ -274,6 +277,88 @@ def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path):
     with pytest.raises(ValueError, match='sources unavailable'):
         m.build_tablet_affix_resources(**args)
     assert archive.read_bytes() == before and patched.read_bytes() == before_dat
+
+
+def test_names_use_exact_base_paths_update_and_skip_missing_normal():
+    original = synthetic_baseitems()
+    unrelated, _ = names.build_replacements(names.scan_base_item_names(original),
+        [{'metadata_path':'Metadata/Items/Currency/CurrencyAddModToRare','new_name':'崇高石=2D'}], '=', False, 'append', False)
+    original = names.apply_replacements_append(original, unrelated)
+    priced, rows = m.price_tablet_names(original, {'Ritual_Tablet':{'Normal':'0.38D','Rare':'9.00D'},
+                                                'Breach_Tablet':{'Rare':'5.00D'}})
+    assert [e.name for e in names.scan_base_item_names(priced)] == ['祭祀碑牌=0.38D', '裂痕碑牌', '崇高石=2D']
+    assert len(rows) == 1
+    updated, _ = m.price_tablet_names(priced, {'Ritual_Tablet':{'Normal':'0.40D'}})
+    assert names.scan_base_item_names(updated)[0].name == '祭祀碑牌=0.40D'
+    assert m.price_tablet_names(updated, {'Ritual_Tablet':{'Normal':'0.40D'}})[0] == updated
+    cleaned = refs.clean_tablet_layer(updated)
+    assert [e.name for e in names.scan_base_item_names(cleaned)] == ['祭祀碑牌', '裂痕碑牌', '崇高石=2D']
+    assert refs.clean_tablet_layer(cleaned) == cleaned
+    assert names.build_structure_signature(priced) == names.build_structure_signature(original)
+
+
+def test_api_available_without_templates_still_updates_ninja_names(tmp_path):
+    source = tmp_path/'source.dat'; source.write_bytes(synthetic_baseitems())
+    patched = tmp_path/'patched.dat'; patched.write_bytes(source.read_bytes())
+    archive = tmp_path/'patch.zip'
+    with zipfile.ZipFile(archive,'w') as z:
+        z.writestr('data/balance/baseitemtypes.datc64', source.read_bytes())
+        z.writestr('metadata/items/toweraugments/poe2price/ritual.it', b'old')
+    class Both:
+        def get_json(self, url):
+            if 'poe.ninja' not in url: return page([quote()])
+            return {'core':{'primary':'divine','rates':{'exalted':500}},'lines':[
+                {'baseType':'Ritual Tablet','variant':'Normal','primaryValue':1,'listingCount':10,'corrupted':False}]}
+    report = m.build_tablet_affix_resources(client=Both(),api_base='http://unused',league=LEAGUE,
+        template_it=None,template_csd=None,source_baseitems=source,patched_baseitems=patched,
+        output_zip=archive,game_path='data/balance/baseitemtypes.datc64',resource_report=tmp_path/'report.json')
+    assert report['status'] == 'partial' and report['affix_templates']['status'] == 'unavailable'
+    assert report['api']['status'] == report['poe_ninja_precursor_tablets']['status'] == 'ok'
+    with zipfile.ZipFile(archive) as z:
+        assert z.namelist() == ['data/balance/baseitemtypes.datc64']
+        assert names.scan_base_item_names(z.read(z.namelist()[0]))[0].name == '祭祀碑牌=1.00D'
+
+
+def test_restore_and_disabled_build_remove_tablet_name_prices_in_both_languages(tmp_path):
+    priced, _ = m.price_tablet_names(synthetic_baseitems(), {'Ritual_Tablet':{'Normal':'0.38D'}})
+    redirected, _ = m._redirect_tablet_base_items(priced, {'Ritual'})
+    source = tmp_path/'source.dat'; source.write_bytes(redirected)
+    english = tmp_path/'english.dat'; english.write_bytes(redirected)
+    archive = tmp_path/'cache.zip'
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr('data/balance/traditional chinese/baseitemtypes.datc64', redirected)
+        z.writestr('metadata/items/toweraugments/poe2price/ritual.it', b'old')
+    refs.clean_zip(archive, english)
+    with zipfile.ZipFile(archive) as z:
+        assert len(z.namelist()) == 2
+        for path in z.namelist():
+            clean = z.read(path)
+            assert names.scan_base_item_names(clean)[0].name == '祭祀碑牌'
+            assert refs.clean_tablet_layer(clean) == clean
+    prices = tmp_path/'prices.csv'; prices.write_text('metadata_path,name,price\n', encoding='utf-8')
+    patched = tmp_path/'clean.dat'
+    names.build_patch(source, prices, archive, patched, 'data/balance/baseitemtypes.datc64', '=', False, 'append', False, None, True)
+    assert names.scan_base_item_names(patched.read_bytes())[0].name == '祭祀碑牌'
+    assert refs.clean_tablet_layer(patched.read_bytes()) == patched.read_bytes()
+
+
+def test_original_breach_typo_is_removed_from_priced_and_fallback_lines(tmp_path):
+    source = tmp_path/'breach.csd'
+    source.write_text('description\n\t1 map_unstable_breach_enrage_x_additional_rare_monsters\n\t2\n'
+        '\t\t1 "Unstable Breaches in Map spawn an additional Rare Monster when stabilised"\n'
+        '\t\t# "Unstable Breaches in Map spawn {0} additional Rare Monsters when stabilised"\n'
+        '\tlang "Traditional Chinese"\n\t2\n'
+        '\t\t1 "地圖內的不穩定[ContainsBreach|裂痕]會在穩定後生成一名額外[Rarity|稀有]怪物]"\n'
+        '\t\t# "地圖內的不穩定[ContainsBreach|裂痕]會在穩定後生成{0}名額外[Rarity|稀有]怪物]" canonical_line\n', encoding='utf-8')
+    result, matched, _ = m._append_tablet_price_to_csd(source,
+        [m.Quote('Unstable Breaches in Map spawn (1-2) additional Rare Monsters when stabilised',Decimal(500),1,2)], Decimal(500))
+    text = result.decode()
+    assert matched == 1 and '怪物]' not in text
+    assert '[ContainsBreach|裂痕]' in text and '[Rarity|稀有]' in text
+    assert text.count('=1.00D') == 4
+    assert '怪物" canonical_line' in text
+    assert m.clean_chinese_markup(text) == text
+    m.validate_csd(text)
 
 
 def test_all_affix_lines_are_priced_in_shared_magic_and_rare_descriptions(tmp_path):

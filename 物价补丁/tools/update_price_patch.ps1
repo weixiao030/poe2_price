@@ -3196,7 +3196,7 @@ if ($PatchTabletAffixesEnabled -and -not $SkipExtract) {
         foreach ($Path in @($TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd)) {
             Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
         }
-        Write-Warning "碑牌模板提取失败，已跳过碑牌层，其余更新继续：$($_.Exception.Message)"
+        Write-Warning "碑牌模板提取失败，词缀标价将跳过；底材名称和其他更新继续：$($_.Exception.Message)"
     }
 }
 

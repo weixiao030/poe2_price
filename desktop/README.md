@@ -1,6 +1,6 @@
 # 物价补丁桌面应用
 
-当前版本 v0.8.6。使用说明、目录结构及核心迁移记录见[项目 README](../README.md)。
+当前版本 v0.8.7。使用说明、目录结构及核心迁移记录见[项目 README](../README.md)。
 
 ```powershell
 npm ci

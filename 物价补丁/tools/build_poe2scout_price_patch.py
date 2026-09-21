@@ -2900,7 +2900,7 @@ from poe2_tablet_prices import (
     fetch_poe_ninja_precursor_tablets, _append_tablet_price_to_csd,
     _redirect_tablet_base_items, build_tablet_affix_resources,
 )
-from poe2_tablet_refs import clean_references as clean_tablet_references
+from poe2_tablet_refs import clean_tablet_layer
 
 
 def is_reference_currency(obs: PriceObservation) -> bool:
@@ -4159,11 +4159,11 @@ def main(argv: list[str]) -> int:
                 patched_dat=args.patched_dat,
                 game_path=args.game_path,
             )
-        # Clear only our own English inheritance before optional layer handling.
-        # A skipped/disabled layer must not leave an old fixed test price active.
+        # Clear tablet name labels and our English redirects before optional work.
+        # A skipped/disabled layer must not leave old tablet prices active.
         if args.en_baseitems and args.en_baseitems.exists() and args.en_baseitems.resolve() != args.tc_baseitems.resolve():
             original_english = args.en_baseitems.read_bytes()
-            clean_english = clean_tablet_references(original_english)
+            clean_english = clean_tablet_layer(original_english)
             if clean_english != original_english:
                 upsert_zip_entry(output_zip, "data/balance/baseitemtypes.datc64", clean_english)
         if not args.no_tablet_affixes and args.patch_scope in {"all", "currency"}:
@@ -4171,8 +4171,6 @@ def main(argv: list[str]) -> int:
             prerequisites = {
                 "game_path": bool(args.game_path),
                 "patched_dat": bool(args.patched_dat and args.patched_dat.exists()),
-                "tablet_template_it": bool(args.tablet_template_it and args.tablet_template_it.exists()),
-                "tablet_template_csd": bool(args.tablet_template_csd and args.tablet_template_csd.exists()),
             }
             if not all(prerequisites.values()):
                 missing = ", ".join(name for name, available in prerequisites.items() if not available)
@@ -4206,11 +4204,11 @@ def main(argv: list[str]) -> int:
                     )
                     tablet_result = summary["tablet_affixes"]
                     if tablet_result["status"] == "partial":
-                        unavailable = [name for name in ("api", "poe_ninja_precursor_tablets")
-                                       if tablet_result[name].get("status") != "ok"]
-                        progress("碑牌参考价部分完成，已跳过不可用来源：" + ", ".join(unavailable))
+                        unavailable = [name for name in ("api", "poe_ninja_precursor_tablets", "affix_templates")
+                                       if name in tablet_result and tablet_result[name].get("status") != "ok"]
+                        progress("碑牌标价部分完成，已跳过不可用来源：" + ", ".join(unavailable))
                     else:
-                        progress("碑牌词缀和底材参考价完成")
+                        progress("碑牌名称和词缀标价完成")
                 except Exception as exc:
                     if output_backup is None:
                         output_zip.unlink(missing_ok=True)

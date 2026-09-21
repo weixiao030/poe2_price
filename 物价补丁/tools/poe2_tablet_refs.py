@@ -57,16 +57,39 @@ def clean_references(data: bytes) -> bytes:
     return bytes(result)
 
 
+def clean_tablet_layer(data: bytes) -> bytes:
+    """Remove only the eight tablet name labels and our template redirects."""
+    from poe2_name_price_patch import (
+        apply_replacements_append, build_replacements, scan_base_item_names,
+        strip_existing_price_suffix,
+    )
+    data = clean_references(data)
+    if 'Metadata/Items/TowerAugment/'.encode('utf-16-le') not in data:
+        return data
+    entries = scan_base_item_names(data)
+    paths = {f"Metadata/Items/TowerAugment/{base}Augment" for base in TYPES}
+    rows = [dict(metadata_path=entry.metadata_path,
+                 new_name=strip_existing_price_suffix(entry.name, '='))
+            for entry in entries if entry.metadata_path in paths
+            and strip_existing_price_suffix(entry.name, '=') != entry.name]
+    if not rows:
+        return data
+    replacements, warnings = build_replacements(entries, rows, '=', False, 'append', False)
+    if warnings:
+        raise ValueError('tablet name cleanup failed: ' + '; '.join(warnings))
+    return apply_replacements_append(data, replacements)
+
+
 def clean_zip(path: Path, english: Path | None = None) -> None:
     with zipfile.ZipFile(path) as archive:
         entries = {entry.filename: archive.read(entry) for entry in archive.infolist()
                    if not entry.is_dir() and "/poe2price/" not in entry.filename.lower()}
     for name in entries:
         if name.lower().endswith("/baseitemtypes.datc64"):
-            entries[name] = clean_references(entries[name])
+            entries[name] = clean_tablet_layer(entries[name])
     if english and english.exists():
         data = english.read_bytes()
-        cleaned = clean_references(data)
+        cleaned = clean_tablet_layer(data)
         entries["data/balance/baseitemtypes.datc64"] = cleaned
     fd, temporary = tempfile.mkstemp(prefix=".tablet-clean-", suffix=".zip", dir=path.parent)
     os.close(fd)

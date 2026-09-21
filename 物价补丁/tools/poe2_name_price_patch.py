@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from poe2_tablet_refs import canonical_reference, clean_references, TYPES as TABLET_TYPES
+from poe2_tablet_refs import canonical_reference, clean_references, clean_tablet_layer, TYPES as TABLET_TYPES
 
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -656,7 +656,7 @@ def build_patch(
     # Every invocation builds a complete patch for the current selection.  The
     # caller may publish this staging result atomically after all optional layers
     # are done, so never reuse stale entries from a previous invocation.
-    data = clean_references(source.read_bytes())
+    data = clean_tablet_layer(source.read_bytes())
     entries = scan_base_item_names(data)
     rows = load_price_rows(prices)
     replacements, warnings = build_replacements(

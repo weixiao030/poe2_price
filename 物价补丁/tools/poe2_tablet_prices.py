@@ -13,7 +13,10 @@ import tempfile
 import urllib.parse
 import zipfile
 
-from poe2_name_price_patch import detect_base_item_layout, read_string_offset
+from poe2_name_price_patch import (
+    apply_replacements_append, build_replacements, detect_base_item_layout,
+    read_string_offset, scan_base_item_names, strip_existing_price_suffix,
+)
 from poe2_tablet_refs import ORIGINAL, TYPES, canonical_reference, clean_references, validate_resources
 
 TABLET_SLUGS = tuple(kind + "_Tablet" for kind in TYPES.values())
@@ -191,6 +194,53 @@ def condition_bounds(condition):
     raise ValueError("unsupported CSD condition")
 
 
+def clean_chinese_markup(text):
+    """Drop unpaired closing link brackets, retaining every balanced game link."""
+    output = []
+    language = ''
+    for line in text.splitlines(keepends=True):
+        if line.startswith('description'):
+            language = ''
+        lang = LANG.match(line)
+        if lang:
+            language = lang[1]
+        record = LINE.match(line)
+        if language in CHINESE and record:
+            content = []
+            depth = 0
+            for char in record[3]:
+                if char == '[':
+                    depth += 1
+                elif char == ']':
+                    if depth == 0:
+                        continue
+                    depth -= 1
+                content.append(char)
+            line = f'{record[1]}{record[2]} "{"".join(content)}"{record[4]}{record[5]}'
+        output.append(line)
+    return ''.join(output)
+
+
+def price_tablet_names(data, catalogue):
+    """The shared base name gets the unmodified (Normal) base's market price."""
+    rows = []
+    priced = []
+    entries = scan_base_item_names(data)
+    for entry in entries:
+        for base, kind in TYPES.items():
+            if entry.metadata_path != f'Metadata/Items/TowerAugment/{base}Augment':
+                continue
+            price = catalogue.get(kind + '_Tablet', {}).get('Normal', '')
+            name = strip_existing_price_suffix(entry.name, '=')
+            rows.append({'metadata_path':entry.metadata_path, 'new_name':name + ('=' + price if price else '')})
+            if price:
+                priced.append({'tablet':kind + '_Tablet', 'price':price, 'variant':'Normal'})
+    replacements, warnings = build_replacements(entries, rows, '=', False, 'append', False)
+    if warnings:
+        raise ValueError('tablet base name mapping failed: ' + '; '.join(warnings))
+    return apply_replacements_append(data, replacements), priced
+
+
 def price_block(block, quotes, ratio):
     lines = block.splitlines(keepends=True)
     if len(lines) < 3 or not re.match(r'^\s*1\s+\S+\s*$', lines[1]):
@@ -305,7 +355,7 @@ def _append_tablet_price_to_csd(source, priced_mods, divine_exalted):
     for block in BLOCKS.split(text):
         modified, used, count = price_block(block, priced_mods, divine_exalted)
         output.append(modified); changed += count; matched += bool(used)
-    text = ''.join(output); validate_csd(text)
+    text = clean_chinese_markup(''.join(output)); validate_csd(text)
     return bom + text.encode(encoding), matched, changed
 
 
@@ -343,22 +393,25 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
     ratio = 1 / decimal(rates['exalted']) if decimal(rates.get('exalted')) > 0 else decimal(ninja.get('divine_exalted'))
     if ratio <= 0 or not quotes and not ninja.get('prices'):
         raise ValueError('tablet price sources unavailable; ' + json.dumps(reports, ensure_ascii=False))
-    template, it_encoding, it_bom = decode_resource(template_it.read_bytes())
-    original_csd, encoding, bom = decode_resource(template_csd.read_bytes())
+    templates_ready = bool(template_it and template_it.exists() and template_csd and template_csd.exists())
+    if quotes and not templates_ready:
+        reports['affix_templates'] = {'status':'unavailable', 'reason':'tablet templates are missing'}
+    template, it_encoding, it_bom = decode_resource(template_it.read_bytes()) if templates_ready else ('', 'utf-8', b'')
+    original_csd, encoding, bom = decode_resource(template_csd.read_bytes()) if templates_ready else ('', 'utf-8', b'')
     supplements = []
     for path in (template_map_csd, template_global_csd):
-        if path and path.exists():
+        if templates_ready and quotes and path and path.exists():
             supplements.extend(BLOCKS.split(decode_resource(path.read_bytes())[0])[1:])
     existing_stats = {b.splitlines()[1].strip() for b in BLOCKS.split(original_csd)[1:]}
     supplements = [b for b in supplements if b.splitlines()[1].strip() not in existing_stats]
     quoted_keys = {_tablet_text_key(q.text) for values in quotes.values() for q in values}
-    supplements = [b for b in supplements if 'tower_' in b.splitlines()[1] or any(
+    supplements = [b for b in supplements if any(
         _tablet_text_key(record[3]) in quoted_keys for line in b.split('lang "')[0].splitlines(keepends=True)
         if (record := LINE.match(line)))]
     entries = {}; resource_rows = []; supported = set()
     for slug in TABLET_SLUGS:
-        modifiers = quotes.get(slug, []); base_prices = ninja.get('prices', {}).get(slug, {})
-        if not modifiers and not base_prices: continue
+        modifiers = quotes.get(slug, [])
+        if not modifiers or not templates_ready: continue
         short = slug.removesuffix('_Tablet'); used = set(); edits = 0
         blocks = []
         for block in BLOCKS.split(original_csd):
@@ -367,30 +420,8 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
         for block in supplements:
             modified, found, count = price_block(block, modifiers, ratio)
             if count: blocks.append(modified); used.update(found); edits += count
-        # A labelled catalogue reference avoids assigning one rarity's price to
-        # every tablet. It is attached to this tablet's existing uses description.
-        catalogue_edits = 0
-        if base_prices:
-            for block in supplements:
-                english_part = block.split('lang "')[0]
-                stat = block.splitlines()[1].strip()
-                base = {'Irradiated':'irradiated', 'Overseer':'map_bosses', 'Temple':'incursion'}.get(short, short.lower())
-                if not re.search(r'\btower_\S*' + re.escape(base.lower()) + r'\S*\b', stat, re.I) or 'use remaining' not in english_part and 'uses remaining' not in english_part:
-                    continue
-                lines = block.splitlines(keepends=True); language = ''
-                for i, line in enumerate(lines):
-                    lang = LANG.match(line)
-                    if lang: language = lang[1]
-                    record = LINE.match(line)
-                    if language not in CHINESE or not record: continue
-                    labels = [('Normal','普通'),('Magic','魔法'),('Rare','稀有')]
-                    caption = ' / '.join(label + '=' + base_prices[variant] for variant, label in labels if variant in base_prices)
-                    prefix = '底材參考：' if language == 'Traditional Chinese' else '底材参考：'
-                    lines[i] = f'{record[1]}{record[2]} "{record[3]}\\n{prefix}{caption}"{record[4]}{record[5]}'
-                    catalogue_edits += 1
-                if catalogue_edits: blocks.append(''.join(lines))
-        if not edits and not catalogue_edits: continue
-        text = ''.join(blocks); validate_csd(text)
+        if not edits: continue
+        text = clean_chinese_markup(''.join(blocks)); validate_csd(text)
         csd_name = f'data/statdescriptions/poe2price/{short.lower()}_tablet_stat_descriptions.csd'
         it_name = f'metadata/items/toweraugments/poe2price/{short.lower()}.it'
         it_text, replacements = re.subn(r'(?i)data/statdescriptions/tablet_stat_descriptions\.csd', csd_name, template)
@@ -399,17 +430,21 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
         entries[it_name] = it_bom + it_text.encode(it_encoding)
         supported.add(short)
         resource_rows.append({'tablet':slug, 'modifiers':len(modifiers), 'matched':len(used), 'changed':edits,
-                              'unmatched':[q.text for q in modifiers if q.text not in used], 'catalogue_lines':catalogue_edits})
-    if not supported: raise ValueError('no tablet descriptions matched; layer skipped')
-    redirected, count = _redirect_tablet_base_items(clean_references(patched_baseitems.read_bytes()), supported)
+                              'unmatched':[q.text for q in modifiers if q.text not in used]})
+    named, named_rows = price_tablet_names(clean_references(patched_baseitems.read_bytes()), ninja.get('prices', {}))
+    if not supported and not named_rows: raise ValueError('no tablet descriptions matched and no Normal base prices; layer skipped')
+    redirected, count = _redirect_tablet_base_items(named, supported)
     if count != len(supported): raise ValueError('tablet base rows incomplete')
     entries[game_path] = redirected
     if english_baseitems and english_baseitems.exists() and english_baseitems.resolve() != source_baseitems.resolve():
-        english, en_count = _redirect_tablet_base_items(clean_references(english_baseitems.read_bytes()), supported)
+        english_named, english_names = price_tablet_names(clean_references(english_baseitems.read_bytes()), ninja.get('prices', {}))
+        if len(english_names) != len(named_rows): raise ValueError('English tablet name rows incomplete')
+        english, en_count = _redirect_tablet_base_items(english_named, supported)
         if en_count != count: raise ValueError('English tablet base rows incomplete')
         entries['data/balance/baseitemtypes.datc64'] = english
     with zipfile.ZipFile(output_zip) as archive:
-        previous = {info.filename:archive.read(info) for info in archive.infolist() if not info.is_dir()}
+        previous = {info.filename:archive.read(info) for info in archive.infolist()
+                    if not info.is_dir() and '/poe2price/' not in info.filename.lower()}
     previous.update(entries)
     validate_resources(previous)
     fd, temporary = tempfile.mkstemp(prefix='.tablet-', suffix='.zip', dir=output_zip.parent); os.close(fd)
@@ -420,7 +455,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
     finally: Path(temporary).unlink(missing_ok=True)
     patched_baseitems.write_bytes(redirected)
     status = 'ok' if all(source.get('status') == 'ok' for source in reports.values()) else 'partial'
-    report = {'status':status, **reports, 'resources':resource_rows, 'redirected_items':count,
+    report = {'status':status, **reports, 'resources':resource_rows, 'redirected_items':count, 'base_names':named_rows,
               'reference_note':'词缀为市场参考价，非整件估价；数据源样本使用次数条件见 api.query_config'}
     resource_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     return report

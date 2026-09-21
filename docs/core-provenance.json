@@ -20,10 +20,10 @@
     {
       "path": "物价补丁/tools/build_poe2scout_price_patch.py",
       "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "local_sha256": "28be195ac36de5bbfb200ff9ec83529b4f3c9dffa3c63a88508b944db6f08620",
+      "local_sha256": "b708d697f96678657021877c025325637926ebf8d1063726a388f02f6833c7ef",
       "equivalent": false,
-      "normalized_sha256": "28be195ac36de5bbfb200ff9ec83529b4f3c9dffa3c63a88508b944db6f08620",
-      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
+      "normalized_sha256": "b708d697f96678657021877c025325637926ebf8d1063726a388f02f6833c7ef",
+      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。"
     },
     {
       "path": "物价补丁/tools/data_source_contract_baseline.json",
@@ -56,10 +56,10 @@
     {
       "path": "物价补丁/tools/poe2_name_price_patch.py",
       "upstream_blob": "bdd9bad5b5fb83b32b78fe0474e35ba843c45728be7fb156588fc66a99a189a9",
-      "local_sha256": "4eedf50795bfbddc80cfe13a11fbe174e824e2a46ec7a04103db5b0af5298ca5",
+      "local_sha256": "2286e44aa90f44f29035ecc729af3e511cc20e452783d7a8ca283f9ffdc819de",
       "equivalent": false,
-      "normalized_sha256": "4eedf50795bfbddc80cfe13a11fbe174e824e2a46ec7a04103db5b0af5298ca5",
-      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
+      "normalized_sha256": "2286e44aa90f44f29035ecc729af3e511cc20e452783d7a8ca283f9ffdc819de",
+      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。"
     },
     {
       "path": "物价补丁/tools/poe2_patch_common.ps1",
@@ -102,10 +102,10 @@
     {
       "path": "物价补丁/tools/update_price_patch.ps1",
       "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
-      "local_sha256": "59f85e80124b747f9db6eb47633f9456fbe5e1c24aa0ed686cefbd660a940dd6",
+      "local_sha256": "e9beed262cbf35ef225d3bc805e01ad94f91737b2750cca512cfe464a3b9f2aa",
       "equivalent": false,
-      "normalized_sha256": "6828a3cd897af8c47e62b4a5e1a15d922dbc0a3fa832a2dcd80eaaa83adc776b",
-      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
+      "normalized_sha256": "2a3230f365d16a0fe63f665d717a761f8f48d6b1b0787527c5cae93f4fcc5064",
+      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",
@@ -255,17 +255,17 @@
       "path": "物价补丁/tools/poe2_tablet_prices.py",
       "upstream_blob": null,
       "equivalent": false,
-      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。",
-      "local_sha256": "3fc5b596e37765981be88d7e66f1b35fbfb78f33ad9eda7185de74771d897799",
-      "normalized_sha256": "3fc5b596e37765981be88d7e66f1b35fbfb78f33ad9eda7185de74771d897799"
+      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。",
+      "local_sha256": "cac2486133dceff9f1c4846c487b63b5a48bc3088c8528fc3294326b7f4caa08",
+      "normalized_sha256": "cac2486133dceff9f1c4846c487b63b5a48bc3088c8528fc3294326b7f4caa08"
     },
     {
       "path": "物价补丁/tools/poe2_tablet_refs.py",
       "upstream_blob": null,
       "equivalent": false,
-      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。",
-      "local_sha256": "293548c61c57c3538712f467827f98e0ef315b09611580b293fe2b262d638f9a",
-      "normalized_sha256": "293548c61c57c3538712f467827f98e0ef315b09611580b293fe2b262d638f9a"
+      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。",
+      "local_sha256": "a962d0d7a7d4c625973b992e2a8da41ea63d8a55bf019eaf3de8f069a0e405e3",
+      "normalized_sha256": "a962d0d7a7d4c625973b992e2a8da41ea63d8a55bf019eaf3de8f069a0e405e3"
     }
   ],
   "native_tools": [

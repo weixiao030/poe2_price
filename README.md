@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.6</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.7</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -23,7 +23,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.8.6` 修复碑牌资源的实际安装、价格换算与旧测试引用残留。在 POE2「通货与更新」中提供 8 类碑牌词缀参考价，并分列 poe.ninja 普通、魔法、稀有底材报价；两种来源独立重试和跳过。保留现有通货、传奇、岛屿提示、自动更新及还原功能。
+`v0.8.7` 将碑牌底材价直接标到名称后，例如 `祭祀碑牌=0.38D`，删除“底材参考”整行，并修复裂痕词条多余的 `]`。魔法、稀有碑牌的有价词缀逐条标注，默认随 POE2 通货更新；数据源独立重试和跳过。保留通货、传奇、岛屿传言、自动更新及还原功能。
 
 [下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
@@ -61,6 +61,13 @@
 ## 更新日志
 
 完整更新记录见 [更新日志.md](更新日志.md)。
+
+### 26/9/21 更新（v0.8.7）
+
+- 按 8 类碑牌的底材标识匹配名称，追加 poe.ninja 普通底材价；没有普通报价时保留原名，不混用魔法或稀有整件报价。
+- 删除使用次数下面的“底材参考”行；魔法和稀有物品继续逐条显示所有有数据的词缀价格。
+- 清理游戏繁中裂痕描述原有的多余 `]`，保留成对的游戏文字链接。
+- 更新、跳过、关闭和还原同时清理中英文碑牌旧名称价；缺词缀模板时仍可独立更新底材名称价。
 
 ### 26/9/21 更新（v0.8.6）
 
@@ -245,8 +252,8 @@
 
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
-- `POE-Price-Patch-0.8.6-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.6-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
+- `POE-Price-Patch-0.8.7-x64-Setup.exe`：安装版，推荐日常使用。
+- `POE-Price-Patch-0.8.7-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装
