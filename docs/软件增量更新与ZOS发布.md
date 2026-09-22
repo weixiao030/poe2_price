@@ -60,6 +60,8 @@ npm run updates:build -- --from $UpdateOldBuild --to $UpdateNewBuild --out $Upda
 
 先上传版本 ZIP，核对大小和 SHA-256，并确认匿名 HTTPS 可以下载；**最后上传 `latest.json`**。清单包含 `schema`、`payload`、`signature`，不能手动改内容。发布工具默认拒绝用不同内容覆盖同名版本包。
 
+上传默认采用 8 MiB 分块、单连接和 180 秒读写超时。链路不稳定时可追加 `--part-size-mib 5 --upload-concurrency 1 --read-timeout 180`，减小失败后需要重传的数据量；客户端发行包与签名不受上传分块配置影响。
+
 从项目根目录执行上传命令。Python 需要 `boto3`；AK/SK 从本地文件读取，不写入命令行：
 
 ```powershell

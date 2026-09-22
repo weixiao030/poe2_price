@@ -58,9 +58,15 @@ def main():
     parser.add_argument('--prefix', default='poe-updates')
     parser.add_argument('--region', default='us-east-1')
     parser.add_argument('--check-only', action='store_true')
+    parser.add_argument('--part-size-mib', type=int, default=8,
+                        help='Multipart size in MiB; smaller parts reduce timeout retries')
+    parser.add_argument('--upload-concurrency', type=int, default=1)
+    parser.add_argument('--read-timeout', type=int, default=180)
     parser.add_argument('--replace-unannounced-sha256',
                         help='Replace only this exact old package hash, and only while latest.json is absent')
     args = parser.parse_args()
+    if not 5 <= args.part_size_mib <= 64 or not 1 <= args.upload_concurrency <= 4 or not 30 <= args.read_timeout <= 600:
+        parser.error('Upload limits: part size 5..64 MiB, concurrency 1..4, timeout 30..600 seconds')
     if args.replace_unannounced_sha256 and not re.fullmatch('[0-9a-f]{64}', args.replace_unannounced_sha256):
         parser.error('--replace-unannounced-sha256 must be a lowercase SHA-256 digest')
     # Keep the upload SDK outside the application and release payload.
@@ -74,7 +80,7 @@ def main():
                          aws_access_key_id=secret['ak'], aws_secret_access_key=secret['sk'],
                          aws_session_token=secret.get('token'),
                          config=Config(signature_version='s3v4', s3={'addressing_style': 'path'},
-                                       connect_timeout=15, read_timeout=90,
+                                       connect_timeout=15, read_timeout=args.read_timeout,
                                        retries={'max_attempts': 3, 'mode': 'standard'},
                                        request_checksum_calculation='when_required',
                                        response_checksum_validation='when_required'))
@@ -118,7 +124,8 @@ def main():
                 raise
         evidence = {'version': release['version'], 'bucket': args.bucket, 'objects': []}
         transfer = TransferConfig(multipart_threshold=32 * 1024 * 1024,
-                                  multipart_chunksize=16 * 1024 * 1024, max_concurrency=3)
+                                  multipart_chunksize=args.part_size_mib * 1024 * 1024,
+                                  max_concurrency=args.upload_concurrency)
         for asset, path, key in assets:
             existing = None
             try:
