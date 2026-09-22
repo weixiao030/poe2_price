@@ -4181,9 +4181,24 @@ def main(argv: list[str]) -> int:
                     if tablet_result["status"] == "partial":
                         unavailable = [name for name in ("api", "poe_ninja_precursor_tablets", "affix_templates")
                                        if name in tablet_result and tablet_result[name].get("status") != "ok"]
-                        progress("碑牌标价部分完成，已跳过不可用来源：" + ", ".join(unavailable))
+                        details = []
+                        if unavailable:
+                            details.append("已跳过不可用来源：" + ", ".join(unavailable))
+                        excluded = tablet_result.get("quote_validation", {}).get("excluded", [])
+                        missing = tablet_result.get("game_coverage", {}).get("missing_quotes", [])
+                        if excluded:
+                            details.append(f"{len(excluded)} 组交易条件无法准确匹配，保留无价")
+                        if missing:
+                            details.append(f"游戏表中 {len(missing)} 组词缀没有可用行情，保留无价")
+                        progress("碑牌标价部分完成；" + "；".join(details))
                     else:
                         progress("碑牌名称和词缀标价完成")
+                    single = tablet_result.get("quote_validation", {}).get("single_source", [])
+                    if single:
+                        progress(f"{len(single)} 组词缀采用可用的单侧中位价")
+                    references = tablet_result.get("quote_validation", {}).get("reference_quotes", [])
+                    if references:
+                        progress(f"{len(references)} 组词缀显示网站参考报价，查询范围说明已记入报告")
                 except Exception as exc:
                     if output_backup is None:
                         output_zip.unlink(missing_ok=True)

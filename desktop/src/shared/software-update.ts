@@ -15,6 +15,10 @@ export interface SoftwareRelease {
 export interface UpdateConfig {
   manifestUrls: string[]
   publicKey: string
+  github?: {
+    repository: string
+    mirrorPrefixes?: string[]
+  }
 }
 export interface SoftwareUpdateState {
   status:

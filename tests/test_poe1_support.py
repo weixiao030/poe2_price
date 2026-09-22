@@ -344,12 +344,12 @@ def test_poe1_localization_download_prefers_domestic_accelerators_and_validates_
     download_sources = (
         "ghfast.top",
         "gh-proxy.com",
-        "gh.ddlc.top",
         "ghproxy.it",
-        "github.boki.moe",
+        "gh-proxy.org",
         "ghproxy.net",
-        "gh.jasonzeng.dev",
-        "gh.monlor.com",
+        "gh.llkk.cc",
+        "ghproxy.imciel.com",
+        "ghfile.geekertao.top",
     )
     positions = [localize.index(f'Prefix = "https://{source}/"') for source in download_sources]
     assert positions == sorted(positions)

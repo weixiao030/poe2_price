@@ -1,5 +1,7 @@
 import { _electron as electron } from 'playwright'
 import fs from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import https from 'node:https'
 import path from 'node:path'
 import os from 'node:os'
 import assert from 'node:assert/strict'
@@ -22,6 +24,12 @@ const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-zos-092-to-093-'))
 const current = path.join(sandbox, 'current')
 const userdata = path.join(sandbox, 'userdata')
 const exe = path.join(current, '物价补丁.exe')
+const releaseIndex = process.argv.indexOf('--release-dir')
+const localRelease = releaseIndex >= 0 ? path.resolve(process.argv[releaseIndex + 1]) : undefined
+let localServer: https.Server | undefined
+let localBase = ''
+let localCertificate = ''
+const transportRequests: string[] = []
 const readJson = async (file: string) => JSON.parse(await fs.readFile(file, 'utf8'))
 const evidence: Record<string, any> = { sandbox, from: '0.9.2', to: '0.9.3', checks: [] }
 let running: Awaited<ReturnType<typeof electron.launch>> | undefined
@@ -31,9 +39,30 @@ try {
   assert.equal(config.manifestUrls.length, 1, '测试基线必须配置单个公开更新清单地址')
   const manifestUrl = config.manifestUrls[0]
   assert.equal(new URL(manifestUrl).protocol, 'https:')
-  const response = await fetch(manifestUrl, { headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30_000) })
-  assert.equal(response.status, 200)
-  const release = verifyRelease(await response.json(), config.publicKey)
+  let envelope
+  if (localRelease) {
+    const certificate = spawnSync('python', ['-X', 'utf8', path.join(desktop, 'scripts/make-update-test-cert.py'), sandbox], { windowsHide: true })
+    assert.equal(certificate.status, 0)
+    localCertificate = await fs.readFile(path.join(sandbox, 'local-cert.pem'), 'utf8')
+    localServer = https.createServer({ key: await fs.readFile(path.join(sandbox, 'local-key.pem')), cert: localCertificate }, async (req, res) => {
+      const name = path.basename(new URL(req.url!, 'https://localhost').pathname)
+      transportRequests.push(name)
+      try {
+        const file = path.join(localRelease, name)
+        const stat = await fs.stat(file)
+        res.writeHead(200, { 'Content-Length': stat.size, 'Cache-Control': 'no-store' })
+        createReadStream(file).pipe(res)
+      } catch { res.writeHead(404); res.end() }
+    })
+    await new Promise<void>(resolve => localServer!.listen(0, '127.0.0.1', resolve))
+    localBase = `https://127.0.0.1:${(localServer.address() as { port: number }).port}/`
+    envelope = await readJson(path.join(localRelease, 'latest.json'))
+  } else {
+    const response = await fetch(manifestUrl, { headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(30_000) })
+    assert.equal(response.status, 200)
+    envelope = await response.json()
+  }
+  const release = verifyRelease(envelope, config.publicKey)
   assert.equal(release.version, '0.9.3')
   const asset = release.packages.find((item) => item.kind === 'delta' && item.fromVersion === '0.9.2')
   assert.ok(asset)
@@ -44,6 +73,19 @@ try {
   const env = { ...process.env, POE_DESKTOP_DATA: userdata }
   delete env.ELECTRON_RUN_AS_NODE
   running = await electron.launch({ executablePath: exe, cwd: current, env, timeout: 30_000 })
+  if (localRelease) {
+    // Route only these two public URLs to the local HTTPS staging server in this
+    // disposable process. Release files, signatures and the baseline stay intact.
+    await running.evaluate((_, staging) => {
+      const tls = process.getBuiltinModule('node:tls')
+      tls.setDefaultCACertificates([...tls.getCACertificates('default'), staging.certificate])
+      const original = globalThis.fetch
+      globalThis.fetch = (input, options) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+        return original(staging.urls.includes(url) ? staging.base + new URL(url).pathname.split('/').pop() : input, options)
+      }
+    }, { certificate: localCertificate, base: localBase, urls: [manifestUrl, asset.url] })
+  }
   const page = await running.firstWindow()
   await page.getByRole('heading', { name: '物价补丁', exact: true }).waitFor()
   await running.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setPosition(-20000, -20000))
@@ -61,7 +103,7 @@ try {
   assert.equal(available.release?.version, '0.9.3')
   await page.screenshot({ path: path.join(reportDir, '092-found-093-delta.png'), fullPage: true })
   evidence.available = available
-  evidence.checks.push('原样 0.9.2 基线通过生产 HTTPS 和签名验证发现 0.9.3 增量包')
+  evidence.checks.push(`原样 0.9.2 基线通过${localRelease ? '本地 HTTPS 暂存' : '生产 HTTPS'}和正式签名验证发现 0.9.3 增量包`)
   console.log(JSON.stringify({ phase: 'available', kind: available.packageKind, bytes: asset.size }))
   const downloaded = await page.evaluate(() => window.desktop.downloadSoftwareUpdate())
   assert.equal(downloaded.status, 'ready', downloaded.message)
@@ -73,7 +115,7 @@ try {
   assert.equal(await hashFile(path.join(transaction, 'update.zip')), asset.sha256)
   await page.screenshot({ path: path.join(reportDir, '092-delta-ready.png'), fullPage: true })
   evidence.downloadedBytes = downloaded.downloadedBytes
-  evidence.checks.push('真实公网下载增量包，大小、SHA-256、所有变化文件和 0.9.2 基线校验通过')
+  evidence.checks.push('真实下载增量包，大小、SHA-256、所有变化文件和 0.9.2 基线校验通过')
   console.log(JSON.stringify({ phase: 'downloaded', bytes: downloaded.downloadedBytes }))
   const oldProcess = running.process()
   const exited = new Promise<void>((resolve) => oldProcess.once('exit', () => resolve()))
@@ -110,6 +152,12 @@ try {
   evidence.checks.push('旧版自动退出，外部安装器完成替换，新版自动启动并返回 0.9.3 界面健康回执')
   evidence.checks.push('完整目标文件回读一致，0.9.2 保存基线及玩家自存文件保持完整')
   evidence.completed = true
+  if (localRelease) {
+    assert.ok(transportRequests.includes('latest.json'))
+    assert.ok(transportRequests.includes(new URL(asset.url).pathname.split('/').pop()!))
+    evidence.transportRequests = transportRequests
+    evidence.transport = 'local HTTPS staging of the exact signed release bytes'
+  }
 } catch (error) {
   evidence.completed = false
   evidence.failure = String(error)
@@ -121,6 +169,8 @@ try {
   throw error
 } finally {
   if (running) await running.close().catch(() => {})
+  localServer?.closeAllConnections()
+  localServer?.close()
   const cleanup = path.join(sandbox, 'close-isolated-app.ps1')
   await fs.writeFile(cleanup, '\ufeffparam([string]$TestExe)\nGet-Process | Where-Object { $_.Path -eq $TestExe } | Stop-Process -Force -ErrorAction SilentlyContinue\n')
   spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', cleanup, '-TestExe', exe], { windowsHide: true })

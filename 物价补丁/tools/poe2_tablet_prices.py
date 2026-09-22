@@ -79,6 +79,9 @@ class Quote:
     label: str = ""
     query_scope: str = ""
     sample_currencies: tuple = ()
+    query_exact: bool | None = None
+    query_context: str = ""
+    query_reference: bool = False
 
 
 def trade_query_scope(url, rarity):
@@ -105,6 +108,22 @@ def trade_query_scope(url, rarity):
 
 
 def pair_tablet_quotes(quotes_by_rarity, api_reports):
+    available = [rarity for rarity in ('magic', 'rare') if rarity in quotes_by_rarity
+                 and api_reports[rarity].get('status', 'ok') == 'ok']
+    if len(available) == 1:
+        rarity = available[0]
+        missing = 'rare' if rarity == 'magic' else 'magic'
+        # Reuse the same single-value formatting policy without consuming the
+        # failed snapshot. The report records only the source actually read.
+        result, audit = pair_tablet_quotes(
+            {side: quotes_by_rarity[rarity] for side in ('magic', 'rare')},
+            {side: api_reports[rarity] for side in ('magic', 'rare')})
+        for row in audit:
+            if row['status'] == 'priced':
+                row[missing + '_divine'] = None
+                row['price_rarities'] = [rarity]
+                row['single_source_reason'] = missing + ' snapshot unavailable'
+        return result, audit
     result = {}; audit = []; eligible = []
     rare_rate = decimal(api_reports['rare']['rates'].get('exalted'))
     magic_rate = decimal(api_reports['magic']['rates'].get('exalted'))
@@ -125,21 +144,37 @@ def pair_tablet_quotes(quotes_by_rarity, api_reports):
             if not identifier or (q.text, q.name, q.generation, q.low, q.high) != (other.text, other.name, other.generation, other.low, other.high):
                 raise ValueError(f'{slug}: magic/rare modifier identity differs: {identifier}')
             rare_d, magic_d = q.price * rare_rate, other.price * magic_rate
-            if not q.query_scope or q.query_scope != other.query_scope:
+            exact = (q.query_exact, other.query_exact)
+            single = None
+            reference = (q.query_reference and other.query_reference
+                         and q.query_scope == other.query_scope)
+            if (exact in ((True, False), (False, True)) and q.query_context
+                    and q.query_context == other.query_context):
+                single = 'rare' if q.query_exact else 'magic'
+            elif (not q.query_scope or q.query_scope != other.query_scope
+                    or False in exact and not reference):
                 audit.append({'tablet':slug, 'id':identifier, 'text':q.text, 'status':'excluded',
-                              'reason':'trade query scope is missing or differs between rarities'})
+                              'reason':('trade query includes a different available game modifier'
+                                        if False in exact else 'trade query scope is missing or differs between rarities')})
                 continue
-            eligible.append((slug, q, other, rare_d, magic_d))
+            eligible.append((slug, q, other, rare_d, magic_d, single, reference))
     if not eligible:
         raise ValueError('no tablet pairs have matching trade query scopes')
-    anchors = market_anchors([(row[3], row[4]) for row in eligible])
-    for slug, q, other, rare_d, magic_d in eligible:
-        counts = Counter(dict(q.sample_currencies)); counts.update(dict(other.sample_currencies))
-        label, policy = format_pair(rare_d, magic_d, rates, anchors, counts)
+    values = lambda r, m, single: (r, r) if single == 'rare' else (m, m) if single == 'magic' else (r, m)
+    anchors = market_anchors([values(row[3], row[4], row[5]) for row in eligible])
+    for slug, q, other, rare_d, magic_d, single, reference in eligible:
+        counts = Counter()
+        if single != 'magic': counts.update(dict(q.sample_currencies))
+        if single != 'rare': counts.update(dict(other.sample_currencies))
+        label, policy = format_pair(*values(rare_d, magic_d, single), rates, anchors, counts)
         result.setdefault(slug, []).append(replace(q, label=label))
         audit.append({'tablet':slug, 'id':q.identifier, 'text':q.text, 'name':q.name,
                       'generation':q.generation, 'rare_divine':str(rare_d),
                       'magic_divine':str(magic_d), 'label':label, 'status':'priced',
+                      'price_rarities':[single] if single else ['magic', 'rare'],
+                      'single_source_reason':'other query also matches a different available game modifier' if single else '',
+                      'query_scope_warning':('website reference price; query can also match a different game modifier'
+                                             if reference else ''),
                       'display_mode':'range' if '~' in label else 'single', 'policy':policy})
     return result, audit
 
@@ -557,16 +592,20 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
     templates_ready = bool(template_it and template_it.exists() and template_csd and template_csd.exists())
     quotes = {}; pair_audit = []; mapping = []
     if has_quotes and templates_ready:
-        if not all(api_ok):
-            raise ValueError('both magic and rare medians are required; tablet layer unchanged')
-        quotes, pair_audit = pair_tablet_quotes(quotes_by_rarity, api_reports)
-        excluded = [row for row in pair_audit if row['status'] == 'excluded']
-        reports['quote_validation'] = {'status':'partial' if excluded else 'ok', 'excluded':excluded}
         if not all(path and Path(path).exists() for path in (tablet_mods, tablet_stats, tablet_tags)):
             raise ValueError('current game Mods/Stats/Tags are required to bind tablet prices')
-        from poe2_tablet_catalog import bind_game_stats
-        quotes, mapping = bind_game_stats(quotes, mods_path=tablet_mods, stats_path=tablet_stats,
+        from poe2_tablet_catalog import bind_game_stats, game_affix_catalog, report_game_coverage
+        catalog = game_affix_catalog(mods_path=tablet_mods, stats_path=tablet_stats,
             tags_path=tablet_tags, baseitems_path=english_baseitems or source_baseitems)
+        for rarity in quotes_by_rarity:
+            quotes_by_rarity[rarity], quoted_mapping = bind_game_stats(quotes_by_rarity[rarity], game_catalog=catalog)
+        reports['game_coverage'] = report_game_coverage(catalog, quoted_mapping)
+        quotes, pair_audit = pair_tablet_quotes(quotes_by_rarity, api_reports)
+        excluded = [row for row in pair_audit if row['status'] == 'excluded']
+        reports['quote_validation'] = {'status':'partial' if excluded else 'ok', 'excluded':excluded,
+            'single_source': [row['id'] for row in pair_audit if row.get('single_source_reason')],
+            'reference_quotes': [row['id'] for row in pair_audit if row.get('query_scope_warning')]}
+        quotes, mapping = bind_game_stats(quotes, game_catalog=catalog)
     elif has_quotes:
         reports['affix_templates'] = {'status':'unavailable', 'reason':'tablet templates are missing'}
     template, it_encoding, it_bom = decode_resource(template_it.read_bytes()) if templates_ready else ('', 'utf-8', b'')

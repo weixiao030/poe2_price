@@ -1,21 +1,18 @@
 # 软件增量更新与 ZOS 发布
 
-正式主应用版本为 0.9.2；0.9.3 仅用于升级功能测试。软件更新和每小时物价更新是两个独立功能。
+正式主应用版本为 0.9.3。软件更新和每小时物价更新是两个独立功能。
+
+v0.9.3 优先通过 GitHub 国内主源、备用源读取签名清单和专用增量包，全部失败后使用 ZOS。已发布的 v0.9.2 仍按其原配置从 ZOS 升级，升级后采用新的来源顺序。GitHub 提供完整安装包、免安装包和增量包；ZOS 只存放本次增量包及签名更新清单，不上传完整发行包或完整更新包。
+
+## 国内源与 ZOS 的顺序
+
+`resources/update-config.json` 的 `github.repository` 为 `weixiao030/poe2_price`。默认 8 个国内镜像与 POE1 汉化脚本顺序一致：`ghfast.top`、`gh-proxy.com`、`ghproxy.it`、`gh-proxy.org`、`ghproxy.net`、`gh.llkk.cc`、`ghproxy.imciel.com`、`ghfile.geekertao.top`。第一项为主源，其余为备用源；软件更新最后回退 ZOS，不再尝试 GitHub 直连。2026-09-22 实测及复查共移除 4 个异常源（`github.boki.moe` 大包超时、`gh.jasonzeng.dev` TLS 中断、`gh.monlor.com` 和 `gh.ddlc.top` 返回 429），补回 4 个通过内容校验的源（`gh-proxy.org`、`gh.llkk.cc`、`ghproxy.imciel.com`、`ghfile.geekertao.top`），源总数保持 8 个。`ghproxy.it` 会跳转 `ghfast.top`，`ghfile.geekertao.top` 部分请求会跳转 `gh.dpik.top`。检查结果是当时的连通性，不保证第三方源持续可用。
+
+清单通过各镜像访问 GitHub 的 `releases/latest/download/latest.json`。更新 ZIP 通过镜像访问同仓库的 `releases/download/v版本号/文件名`。所有镜像必须提供签名清单指定的同一份文件，大小和 SHA-256 校验失败会删除部分下载并切换下一源；清单还必须通过内置 Ed25519 公钥验证。每个包下载源最多尝试 3 分钟，连续 30 秒无响应也会切源；用户取消时立即结束，不继续尝试备用源。
+
+`manifestUrls` 保留 ZOS 的签名清单地址，签名清单内的包 `url` 仍保留 ZOS 地址。这使原客户端继续可用，新客户端则先尝试 GitHub 国内镜像。修改 GitHub 仓库时同时修改 `github.repository`；需要自定义镜像时可提供 `github.mirrorPrefixes` 数组，地址须使用 HTTPS 并以 `/` 结尾。未配置 `github` 的客户端保持按 `manifestUrls` 下载。
 
 更新包按文件比较 SHA-256，只包含相对指定旧版发生变化的文件。它不是二进制差分：如果重新构建改变了 EXE 的版本资源，整个 EXE 都会进入增量包；仅更新界面代码时通常只需新的 `app.asar`。
-
-## 0.9.3 轻量测试
-
-2026-09-22 已完成原样 0.9.2 基线从对象存储公开 HTTPS 地址下载、校验、安装并自动重启到测试版 0.9.3 的验证。下载包为 **841,168 字节（约 821 KiB / 0.84 MB）**，仅替换两个文件：
-
-| 文件 | 内容 |
-| --- | --- |
-| `resources/app.asar` | 归档内只有 `package.json` 的版本号从 0.9.2 改为 0.9.3 |
-| `resources/current-release.json` | 测试版本号和说明 |
-
-ZIP 另含 `update.json` 安装清单。EXE、运行库、物价引擎保持 0.9.2；没有新增业务功能。Windows EXE 文件属性仍为 0.9.2，应用内版本为 0.9.3，因此不能将测试目录当作正式发行物。
-
-测试使用独立的测试清单目录，正式下载清单保持 0.9.2。测试安装结果为 `completed`，新版界面返回 0.9.3 健康回执，355 个目标文件校验通过，原基线和额外放入的玩家文件完整。私有测试材料保存在已忽略的 `release-desktop/zos-final-v092-r3-test/` 和 `desktop/test-results/zos-final-v092-r3/`，不进入源码仓库或正式发行包。
 
 ## 下载配置与密钥边界
 
@@ -50,12 +47,16 @@ $UpdateOldBuild = Read-Host '旧版本 win-unpacked 目录'
 $UpdateNewBuild = Read-Host '新版本 win-unpacked 目录'
 $UpdateOutput = Read-Host '新的更新包输出目录'
 $UpdateDownloadBase = Read-Host '公开 HTTPS 下载目录'
-npm run updates:build -- --from $UpdateOldBuild --to $UpdateNewBuild --out $UpdateOutput --base-url $UpdateDownloadBase --key '.\.release-keys\update-private.pem' --notes '.\resources\current-release.json'
+npm run updates:build -- --from $UpdateOldBuild --to $UpdateNewBuild --out $UpdateOutput --base-url $UpdateDownloadBase --key '.\.release-keys\update-private.pem' --notes '.\resources\current-release.json' --delta-only
 ```
 
-输出包括对应基线的 `*-delta.zip`、完整更新用的 `*-full.zip`、签名 `latest.json` 和维护者使用的 `release-info.json`。只测试指定旧版时增加 `--delta-only`，必须同时提供 `--from`；此时没有匹配基线的客户端将无包可用。省略 `--from` 只生成完整包。
+正式 v0.9.3 使用 `--delta-only`，必须提供保存的正式 v0.9.2 基线。输出为 `*-delta.zip`、签名 `latest.json` 和维护者使用的 `release-info.json`。不生成或上传 `*-full.zip`。没有匹配基线的旧客户端通过 GitHub 完整安装包或免安装包手动升级。
 
 ## 上传与公布
+
+同一个正式版本应在 GitHub `v版本号` Release 和 ZOS 放置**字节完全相同**的签名 `latest.json` 与 `*-delta.zip`。ZOS 不上传 Setup、NoInstall 或 full 更新包。免安装 ZIP 和 Setup EXE 不能代替专用更新包。沿用现有构建命令的 ZOS `--base-url` 即可，无需为镜像重新签名或改写清单。
+
+先用最终签名包完成隔离的真实升级测试，再准备 GitHub 草稿 Release 并上传文件，按下述流程上传和校验 ZOS，最后发布 GitHub 正式 Release。不要覆盖已经发布的版本，也不要复用旧的轻量测试发行目录。新客户端下载时会优先尝试国内镜像；镜像尚未同步时自动使用已经可用的 ZOS。
 
 先上传版本 ZIP，核对大小和 SHA-256，并确认匿名 HTTPS 可以下载；**最后上传 `latest.json`**。清单包含 `schema`、`payload`、`signature`，不能手动改内容。发布工具默认拒绝用不同内容覆盖同名版本包。
 
@@ -80,7 +81,7 @@ Setup 安装包和免安装 ZIP 可单独提供，供首次安装和手动修复
 
 ## 安装与失败恢复
 
-客户端验证清单签名、下载大小、SHA-256、ZIP 路径和文件清单；增量包还要核验全部旧发行文件。基线不符会停止安装。无匹配增量时只能使用清单中已公布的完整更新包。
+客户端验证清单签名、下载大小、SHA-256、ZIP 路径和文件清单；增量包还要核验全部旧发行文件。基线不符会停止安装。v0.9.3 清单只提供 v0.9.2 增量包；无匹配增量时需要手动安装 GitHub 完整发行版。
 
 物价任务或查询未结束时禁止安装软件更新。安装器等待旧程序退出，备份涉及文件、替换并校验完整目标。新版界面初始化成功后回传健康回执；失败会尝试恢复旧文件。游戏文件、用户设置和发行清单外的玩家文件不属于软件替换范围。
 
@@ -104,4 +105,10 @@ node --import tsx scripts/verify-software-updates.ts
 
 最后一项复制发行目录，在临时 HTTPS 服务上验证签名、下载、自动重启和失败回退。测试证书仅供测试进程使用，生产 TLS 校验保持启用。
 
-真实 ZOS 测试使用保存在本机的 0.9.2 基线和轻量目标，执行 `node --import tsx scripts/verify-zos-software-updates.ts`。脚本从基线配置读取公网地址，并在隔离副本安装；未准备基线和目标时不会自行构造正式发布。
+发布前可用正式签名包在本地 HTTPS 暂存服务完成真实升级，而不改写基线或公布版本：
+
+```powershell
+node --import tsx scripts/verify-zos-software-updates.ts --baseline ../release-desktop/baselines/0.9.2/win-unpacked --target ../release-desktop/v0.9.3-release/win-unpacked --release-dir ../release-desktop/v0.9.3-release/poe-updates --report-dir test-results/release-093-local-upgrade
+```
+
+该参数只在隔离测试进程中将两个确切的下载地址转向本地 HTTPS，正式包、签名及基线字节保持原样。发布后去掉 `--release-dir` 并使用单独的报告目录，即可检查生产 ZOS 下载、安装、重启及完整目标文件哈希。

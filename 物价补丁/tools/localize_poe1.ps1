@@ -15,7 +15,7 @@ $RepoRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
 else {
     (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
-$script:PatchVersion = "v0.9.2"
+$script:PatchVersion = "v0.9.3"
 $script:GameDirectoryMutex = $null
 $script:LocalizationAssetName = "PoeChinese3_win-x64.exe"
 $script:LatestReleaseApiUrl = "https://api.github.com/repos/aianlinb/LibGGPK3/releases/latest"
@@ -32,28 +32,28 @@ $script:LocalizationSourcePrefixes = @(
         Prefix = "https://gh-proxy.com/"
     },
     [pscustomobject]@{
-        Name = "备用加速源 gh.ddlc.top"
-        Prefix = "https://gh.ddlc.top/"
-    },
-    [pscustomobject]@{
         Name = "备用加速源 ghproxy.it"
         Prefix = "https://ghproxy.it/"
     },
     [pscustomobject]@{
-        Name = "备用加速源 github.boki.moe"
-        Prefix = "https://github.boki.moe/"
+        Name = "备用加速源 gh-proxy.org"
+        Prefix = "https://gh-proxy.org/"
     },
     [pscustomobject]@{
         Name = "备用加速源 ghproxy.net"
         Prefix = "https://ghproxy.net/"
     },
     [pscustomobject]@{
-        Name = "备用加速源 gh.jasonzeng.dev"
-        Prefix = "https://gh.jasonzeng.dev/"
+        Name = "备用加速源 gh.llkk.cc"
+        Prefix = "https://gh.llkk.cc/"
     },
     [pscustomobject]@{
-        Name = "备用加速源 gh.monlor.com"
-        Prefix = "https://gh.monlor.com/"
+        Name = "备用加速源 ghproxy.imciel.com"
+        Prefix = "https://ghproxy.imciel.com/"
+    },
+    [pscustomobject]@{
+        Name = "备用加速源 ghfile.geekertao.top"
+        Prefix = "https://ghfile.geekertao.top/"
     },
     [pscustomobject]@{
         Name = "GitHub 官方源"

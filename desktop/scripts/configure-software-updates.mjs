@@ -4,6 +4,11 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
+const target = path.join(root, 'resources/update-config.json')
+const existing = JSON.parse(await fs.readFile(target, 'utf8').catch((error) => {
+  if (error.code !== 'ENOENT') throw error
+  return '{}'
+}))
 const i = args.indexOf('--base-url')
 const baseUrl = i >= 0 ? args[i + 1] : ''
 if (
@@ -26,9 +31,9 @@ try {
 }
 const publicKey = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'pem' })
 const config = {
-  manifestUrls: baseUrl ? [new URL('latest.json', baseUrl.replace(/\/?$/, '/')).href] : [],
+  github: existing.github || { repository: 'weixiao030/poe2_price' },
+  manifestUrls: baseUrl ? [new URL('latest.json', baseUrl.replace(/\/?$/, '/')).href] : (existing.manifestUrls || []),
   publicKey
 }
-const target = path.join(root, 'resources/update-config.json')
 await fs.writeFile(target, JSON.stringify(config, null, 2) + '\n')
 console.log(`发布配置：${target}\n签名私钥保存在 ${privatePath}，请独立备份，勿上传到下载目录。`)

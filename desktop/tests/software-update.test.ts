@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -19,6 +19,7 @@ import {
   verifyRelease
 } from '../src/main/software-update-protocol'
 import { SoftwareUpdater } from '../src/main/software-update'
+import { GITHUB_MIRROR_PREFIXES, manifestSources, packageSources } from '../src/main/software-update-sources'
 import type { SoftwareRelease } from '../src/shared/software-update'
 
 const desktopRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -182,6 +183,118 @@ test('actual HTTP download verifies signed manifest and rejects tampered package
   assert.equal(failure.status, 'error')
   assert.match(failure.message, /校验失败/)
   assert.equal(await fs.readFile(path.join(f.old, 'resources/app.asar'), 'utf8'), 'old application')
+})
+
+test('GitHub mirror priority matches POE1 localization and leaves ZOS last', async () => {
+  const localization = await fs.readFile(path.join(desktopRoot, '../物价补丁/tools/localize_poe1.ps1'), 'utf8')
+  const prefixes = [...localization.split('function Resolve-Poe1LocalizationDirectory')[0]
+    .matchAll(/Prefix = "([^"]+)"/g)].map((match) => match[1])
+  assert.deepEqual(GITHUB_MIRROR_PREFIXES, prefixes)
+  assert.equal(prefixes.length, 8)
+  const config = { github: { repository: 'weixiao030/poe2_price' }, manifestUrls: ['https://example.zos.ctyun.cn/latest.json'], publicKey }
+  const sources = manifestSources(config)
+  assert.equal(sources[0].url, 'https://ghfast.top/https://github.com/weixiao030/poe2_price/releases/latest/download/latest.json')
+  assert.equal(sources[1].url, 'https://gh-proxy.com/https://github.com/weixiao030/poe2_price/releases/latest/download/latest.json')
+  assert.equal(sources.at(-1)?.name, 'ZOS 备用源')
+  const asset = { kind: 'full' as const, url: 'https://example.zos.ctyun.cn/updates/full.zip', size: 1, sha256: 'a'.repeat(64) }
+  const release = { appId: APP_ID, version: '0.9.3', publishedAt: new Date().toISOString(), notes: [], packages: [asset] }
+  assert.equal(packageSources(config, release, asset)[0].url, 'https://ghfast.top/https://github.com/weixiao030/poe2_price/releases/download/v0.9.3/full.zip')
+  assert.equal(packageSources(config, release, asset).at(-1)?.url, asset.url)
+  assert.throws(() => manifestSources({ ...config, github: { repository: '../unexpected/repo' } }))
+  assert.throws(() => manifestSources({ ...config, github: { repository: 'owner/repo', mirrorPrefixes: ['http://insecure.test/'] } }))
+})
+
+type SourceMode = 'ok' | 'offline' | 'corrupt' | 'stall'
+async function mirrorFixture(t: TestContext) {
+  const f = await fixture()
+  const requests: string[] = []
+  const modes: Record<string, SourceMode> = {}
+  let envelope = '', archive = Buffer.alloc(0)
+  let stalled: () => void = () => {}
+  const onStalled = new Promise<void>((resolve) => { stalled = resolve })
+  const server = http.createServer((req, res) => {
+    const source = req.url!.split('/')[1]
+    const kind = req.url!.endsWith('/latest.json') ? 'manifest' : 'package'
+    requests.push(`${source}:${kind}`)
+    const mode = modes[`${source}:${kind}`] || 'ok'
+    if (mode === 'offline') { res.writeHead(503); res.end(); return }
+    const bytes = kind === 'manifest' ? Buffer.from(envelope) : Buffer.from(archive)
+    if (mode === 'stall') {
+      res.write(bytes.subarray(0, 8)); stalled(); return
+    }
+    if (mode === 'corrupt') {
+      if (kind === 'manifest') {
+        const wrong = JSON.parse(envelope)
+        wrong.signature = Buffer.alloc(64).toString('base64')
+        res.end(JSON.stringify(wrong)); return
+      }
+      bytes[bytes.length - 1] ^= 1
+    }
+    res.end(bytes)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  const built = await makeRelease(f, origin + '/zos/')
+  archive = await fs.readFile(built.archive)
+  envelope = JSON.stringify(built.envelope)
+  const create = (sourceTimeoutMs = 3_000) => new SoftwareUpdater({
+    version: '0.9.0', notes: [],
+    config: { publicKey, manifestUrls: [origin + '/zos/latest.json'],
+      github: { repository: 'owner/repo', mirrorPrefixes: [origin + '/primary/', origin + '/backup/'] } },
+    appRoot: f.old, transactionRoot: path.join(f.root, crypto.randomUUID()), helperSource: helper,
+    packaged: false, canInstall: () => false, changed: () => {}, quit: () => {},
+    allowLocalhost: true, sourceTimeoutMs
+  })
+  return { create, requests, modes, onStalled }
+}
+
+test('domestic GitHub primary serves signed metadata and package without contacting ZOS', async (t) => {
+  const f = await mirrorFixture(t), updater = f.create()
+  assert.equal((await updater.check()).status, 'available')
+  assert.equal((await updater.download()).status, 'ready')
+  assert.deepEqual(f.requests, ['primary:manifest', 'primary:package'])
+})
+
+test('invalid mirror signature and corrupted package both switch to domestic backup', async (t) => {
+  const f = await mirrorFixture(t), updater = f.create()
+  f.modes['primary:manifest'] = 'corrupt'
+  f.modes['primary:package'] = 'corrupt'
+  assert.equal((await updater.check()).status, 'available')
+  assert.equal((await updater.download()).status, 'ready')
+  assert.deepEqual(f.requests, ['primary:manifest', 'backup:manifest', 'primary:package', 'backup:package'])
+})
+
+test('ZOS is used only after every domestic mirror fails', async (t) => {
+  const f = await mirrorFixture(t), updater = f.create()
+  for (const source of ['primary', 'backup']) {
+    f.modes[`${source}:manifest`] = 'offline'
+    f.modes[`${source}:package`] = 'corrupt'
+  }
+  assert.equal((await updater.check()).status, 'available')
+  assert.equal((await updater.download()).status, 'ready')
+  assert.deepEqual(f.requests, ['primary:manifest', 'backup:manifest', 'zos:manifest', 'primary:package', 'backup:package', 'zos:package'])
+})
+
+test('a stalled partial download is removed before retrying the next source', async (t) => {
+  const f = await mirrorFixture(t), updater = f.create(300)
+  f.modes['primary:package'] = 'stall'
+  await updater.check()
+  assert.equal((await updater.download()).status, 'ready')
+  assert.deepEqual(f.requests, ['primary:manifest', 'primary:package', 'backup:package'])
+})
+
+test('cancelling a partial mirror download does not contact backup or ZOS', async (t) => {
+  const f = await mirrorFixture(t), updater = f.create()
+  f.modes['primary:package'] = 'stall'
+  await updater.check()
+  const download = updater.download()
+  await f.onStalled
+  updater.cancel()
+  const state = await download
+  assert.equal(state.status, 'available')
+  assert.match(state.message, /已取消/)
+  assert.deepEqual(f.requests, ['primary:manifest', 'primary:package'])
 })
 async function applyFixture(f: Awaited<ReturnType<typeof fixture>>, corruptTarget = false) {
   const { asset, release, archive } = await makeRelease(f)

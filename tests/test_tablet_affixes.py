@@ -622,7 +622,8 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
     queries = [parse_qs(urlparse(url).query).get('rarity', [''])[0] for url in client.urls
                if '/api/v1/prices?' in url]
     assert queries == ['magic', 'rare']
-    assert report['status'] == 'ok'
+    assert report['status'] == 'partial'
+    assert report['game_coverage']['missing_quotes'][0]['tablet'] == 'Breach_Tablet'
     assert report['api']['rarities']['magic']['status'] == report['api']['rarities']['rare']['status'] == 'ok'
     assert report['resources'][0]['matched'] == 1 and report['redirected_items'] == 1
     assert report['game_mapping'][0]['stat'] == 'test_stat'

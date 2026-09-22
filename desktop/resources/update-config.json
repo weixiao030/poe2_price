@@ -1,4 +1,7 @@
 {
+  "github": {
+    "repository": "weixiao030/poe2_price"
+  },
   "manifestUrls": [
     "https://price-up.guangxi-5.zos.ctyun.cn/poe-updates/latest.json"
   ],

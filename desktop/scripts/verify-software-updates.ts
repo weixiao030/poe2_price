@@ -13,6 +13,8 @@ import { APP_ID, hashFile, verifyInventory } from '../src/main/software-update-p
 import type { SoftwareRelease } from '../src/shared/software-update'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const appArgument = process.argv.indexOf('--app-dir')
+const sourceApp = appArgument >= 0 ? path.resolve(process.argv[appArgument + 1]) : path.join(root, 'dist/win-unpacked')
 const reportDir = path.join(root, 'test-results/software-updates')
 await fs.mkdir(reportDir, { recursive: true })
 const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-software-真实更新-'))
@@ -26,6 +28,7 @@ const certificate = spawnSync(
   { windowsHide: true, encoding: 'utf8' }
 )
 if (certificate.status !== 0) throw new Error(certificate.stderr)
+const transportRequests: string[] = []
 const server = https.createServer(
   {
     key: await fs.readFile(path.join(sandbox, 'local-key.pem')),
@@ -33,6 +36,10 @@ const server = https.createServer(
   },
   async (req, res) => {
     try {
+      transportRequests.push(req.url!)
+      if (req.url!.startsWith('/primary/')) {
+        res.writeHead(503); res.end(); return
+      }
       const name = path.basename(new URL(req.url!, 'https://localhost').pathname)
       const bytes = await fs.readFile(path.join(published, name))
       res.writeHead(200, { 'Content-Length': bytes.length, 'Cache-Control': 'no-store' })
@@ -53,10 +60,11 @@ const checks = evidence.checks as string[],
   errors = evidence.errors as string[]
 let running: Awaited<ReturnType<typeof electron.launch>> | undefined
 try {
-  await fs.cp(path.join(root, 'dist/win-unpacked'), before, { recursive: true })
+  await fs.cp(sourceApp, before, { recursive: true })
   await fs.writeFile(
     path.join(before, 'resources/update-config.json'),
-    JSON.stringify({ manifestUrls: [baseUrl + 'latest.json'], publicKey })
+    JSON.stringify({ manifestUrls: [baseUrl + 'latest.json'], publicKey,
+      github: { repository: 'owner/update-test', mirrorPrefixes: [baseUrl + 'primary/', baseUrl + 'backup/'] } })
   )
   await fs.cp(before, after, { recursive: true })
   const asar = createRequire(import.meta.url)('@electron/asar')
@@ -241,6 +249,13 @@ try {
   checks.push(
     `真实HTTPS读取签名说明、只下载变化文件、旧进程退出、外部安装、新版本${pkg.version}界面启动回执成功`
   )
+  for (const resource of ['latest.json', new URL(asset.url).pathname.split('/').pop()!]) {
+    const primary = transportRequests.findIndex(url => url.startsWith('/primary/') && url.endsWith('/' + resource))
+    const backup = transportRequests.findIndex(url => url.startsWith('/backup/') && url.endsWith('/' + resource))
+    assert.ok(primary >= 0 && backup > primary, `${resource} 应先主源失败再从备用源成功`)
+  }
+  evidence.transportRequests = transportRequests
+  checks.push('实际 Electron 更新中，主源返回 503，备用源提供同一签名清单和更新包，安装与重启完成')
   checks.push('完整目标发行文件逐一哈希回读通过，Electron可执行文件未改动，玩家自存文件保留')
   assert.deepEqual(errors, [])
 } catch (error) {

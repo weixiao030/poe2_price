@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import type {
   SoftwareUpdateState,
   UpdateConfig,
+  UpdateAsset,
   UpdatePackage,
   UpdateFile
 } from '../shared/software-update'
@@ -18,6 +19,7 @@ import {
   verifyInventory,
   verifyRelease
 } from './software-update-protocol'
+import { manifestSources, packageSources } from './software-update-sources'
 
 export interface UpdateOptions {
   version: string
@@ -31,13 +33,14 @@ export interface UpdateOptions {
   changed: (state: SoftwareUpdateState) => void
   quit: () => void
   allowLocalhost?: boolean
+  sourceTimeoutMs?: number
 }
 export class SoftwareUpdater {
   private state: SoftwareUpdateState
   private abort?: AbortController
   private staged?: { dir: string; manifest: UpdatePackage }
   constructor(private options: UpdateOptions) {
-    const configured = options.config.manifestUrls.length > 0 && !!options.config.publicKey
+    const configured = (options.config.manifestUrls.length > 0 || !!options.config.github) && !!options.config.publicKey
     this.state = {
       status: configured ? 'idle' : 'unconfigured',
       currentVersion: options.version,
@@ -89,12 +92,20 @@ export class SoftwareUpdater {
   async check(): Promise<SoftwareUpdateState> {
     if (['checking', 'downloading', 'installing', 'ready'].includes(this.state.status))
       return this.snapshot
-    if (!this.options.config.manifestUrls.length || !this.options.config.publicKey)
+    if ((!this.options.config.manifestUrls.length && !this.options.config.github) || !this.options.config.publicKey)
       return this.snapshot
     this.set({ status: 'checking', message: '正在检查新版本…', release: undefined })
     let lastError: unknown
-    for (const url of this.options.config.manifestUrls) {
+    let sources
+    try {
+      sources = manifestSources(this.options.config, this.options.allowLocalhost)
+    } catch (error) {
+      this.fail(error)
+      return this.snapshot
+    }
+    for (const { url, name } of sources) {
       try {
+        this.set({ message: `正在通过${name}检查新版本…` })
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), 20_000)
         let release
@@ -131,7 +142,7 @@ export class SoftwareUpdater {
         })
         return this.snapshot
       } catch (error) {
-        lastError = error
+        lastError = new Error(`${name}：${error instanceof Error ? error.message : String(error)}`)
       }
     }
     this.fail(lastError)
@@ -139,6 +150,50 @@ export class SoftwareUpdater {
   }
   cancel() {
     if (this.state.status === 'downloading') this.abort?.abort()
+  }
+  private async downloadFrom(url: string, archive: string, asset: UpdateAsset, signal: AbortSignal) {
+    const controller = new AbortController()
+    const combined = AbortSignal.any([signal, controller.signal])
+    const deadline = setTimeout(
+      () => controller.abort(new Error('当前下载源超时')),
+      this.options.sourceTimeoutMs ?? 3 * 60_000
+    )
+    let idle: ReturnType<typeof setTimeout>
+    const touch = () => {
+      clearTimeout(idle)
+      idle = setTimeout(() => controller.abort(new Error('当前下载源长时间无响应')), 30_000)
+    }
+    touch()
+    try {
+      const response = await this.response(url, combined)
+      const output = await fs.open(archive, 'wx')
+      const hash = crypto.createHash('sha256')
+      let size = 0
+      let lastSent = 0
+      try {
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+          touch()
+          size += chunk.length
+          if (size > asset.size) throw new Error('更新包大小超过发布清单')
+          hash.update(chunk)
+          await output.writeFile(chunk)
+          if (Date.now() - lastSent > 100) {
+            this.set({ downloadedBytes: size })
+            lastSent = Date.now()
+          }
+        }
+      } finally {
+        await output.close()
+      }
+      combined.throwIfAborted()
+      if (size !== asset.size || hash.digest('hex') !== asset.sha256)
+        throw new Error('更新包校验失败，请重新下载')
+      return size
+    } finally {
+      clearTimeout(deadline)
+      clearTimeout(idle!)
+      controller.abort()
+    }
   }
   async download(): Promise<SoftwareUpdateState> {
     if (this.state.status !== 'available' || !this.state.release)
@@ -161,27 +216,23 @@ export class SoftwareUpdater {
     )
     try {
       await fs.mkdir(dir, { recursive: true })
-      const response = await this.response(asset.url, this.abort.signal)
-      const output = await fs.open(archive, 'wx')
-      const hash = crypto.createHash('sha256')
       let size = 0
-      let lastSent = 0
-      try {
-        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-          size += chunk.length
-          if (size > asset.size) throw new Error('更新包大小超过发布清单')
-          hash.update(chunk)
-          await output.writeFile(chunk)
-          if (Date.now() - lastSent > 100) {
-            this.set({ downloadedBytes: size })
-            lastSent = Date.now()
-          }
+      let downloaded = false
+      let lastError: unknown
+      for (const source of packageSources(this.options.config, release, asset, this.options.allowLocalhost)) {
+        this.abort.signal.throwIfAborted()
+        this.set({ downloadedBytes: 0, message: `正在通过${source.name}下载更新包…` })
+        try {
+          size = await this.downloadFrom(source.url, archive, asset, this.abort.signal)
+          downloaded = true
+          break
+        } catch (error) {
+          await fs.rm(archive, { force: true })
+          this.abort.signal.throwIfAborted()
+          lastError = new Error(`${source.name}：${error instanceof Error ? error.message : String(error)}`)
         }
-      } finally {
-        await output.close()
       }
-      if (size !== asset.size || hash.digest('hex') !== asset.sha256)
-        throw new Error('更新包校验失败，请重新下载')
+      if (!downloaded) throw lastError || new Error('所有更新下载源均不可用')
       if (this.abort.signal.aborted) throw new Error('下载已取消')
       this.set({ downloadedBytes: size, message: '正在校验更新文件…' })
       const manifest = await unpackUpdate(archive, path.join(dir, 'files'), asset, release)

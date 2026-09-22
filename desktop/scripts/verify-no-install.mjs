@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { version } = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
-const archive = path.join(root, `dist/POE-Price-Patch-${version}-x64-NoInstall.zip`)
+const releaseIndex = process.argv.indexOf('--release-dir')
+const releaseDir = releaseIndex >= 0 ? path.resolve(process.argv[releaseIndex + 1]) : path.join(root, 'dist')
+const archive = path.join(releaseDir, `POE-Price-Patch-${version}-x64-NoInstall.zip`)
 const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-no-install-'))
 const appDirectory = path.join(sandbox, '免安装版 中文路径')
 await fs.mkdir(appDirectory)
@@ -58,7 +60,7 @@ try {
     { POE_TEST_ARCHIVE: archive, POE_TEST_APP_DIR: appDirectory }
   )
   const extracted = await inventory(appDirectory)
-  const unpacked = await inventory(path.join(root, 'dist/win-unpacked'))
+  const unpacked = await inventory(path.join(releaseDir, 'win-unpacked'))
   // NSIS adds its elevation helper after the ZIP target; the app does not use it.
   const installerHelper = path.join('resources', 'elevate.exe')
   if (!extracted[installerHelper]) delete unpacked[installerHelper]
