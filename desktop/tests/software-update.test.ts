@@ -1,414 +1,365 @@
-import { test, type TestContext } from 'node:test'
+import { test } from 'node:test'
+import type { TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
 import http from 'node:http'
-import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { buildPackage, inventory, signRelease } from '../scripts/build-software-update'
+import { dump } from 'js-yaml'
+import { buildRelease } from '../scripts/build-software-update'
+import { verifyChannel } from '../scripts/verify-update-release'
 import {
-  APP_ID,
+  hashFile,
+  installerName,
   newerVersion,
-  relativeFile,
-  selectAsset,
-  unpackUpdate,
+  signManifest,
   updateUrl,
-  verifyInventory,
   verifyRelease
 } from '../src/main/software-update-protocol'
 import { SoftwareUpdater } from '../src/main/software-update'
-import { GITHUB_MIRROR_PREFIXES, manifestSources, packageSources } from '../src/main/software-update-sources'
-import type { SoftwareRelease } from '../src/shared/software-update'
+import type { UpdateDriver } from '../src/main/software-update'
+import {
+  GITHUB_MIRROR_PREFIXES,
+  installerSources,
+  manifestSources
+} from '../src/main/software-update-sources'
+import type { SoftwareUpdateState } from '../src/shared/software-update'
 
-const desktopRoot = fileURLToPath(new URL('../', import.meta.url))
-const helper = path.join(desktopRoot, 'resources/install-software-update.ps1')
 const keys = crypto.generateKeyPairSync('ed25519')
 const privateKey = keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
-async function fixture() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-更新 $包-'))
-  const old = path.join(root, 'old'),
-    next = path.join(root, 'next'),
-    out = path.join(root, 'published')
-  for (const dir of [old, next]) {
-    await fs.mkdir(path.join(dir, 'resources'), { recursive: true })
-    await fs.writeFile(path.join(dir, '物价补丁.exe'), Buffer.alloc(100_000, 73))
-  }
-  await fs.writeFile(path.join(old, 'resources/app.asar'), 'old application')
-  await fs.writeFile(path.join(old, 'resources/obsolete.dat'), 'old managed resource')
-  await fs.writeFile(path.join(next, 'resources/app.asar'), 'new application')
-  await fs.writeFile(path.join(next, 'resources/new.dat'), 'new managed resource')
-  return { root, old, next, out }
-}
-async function makeRelease(
-  f: Awaited<ReturnType<typeof fixture>>,
-  baseUrl = 'https://download.example.test/'
-) {
-  const asset = await buildPackage({
-    from: f.old,
-    to: f.next,
-    version: '0.9.1',
-    fromVersion: '0.9.0',
-    output: f.out,
-    baseUrl,
-    allowLocalhost: baseUrl.startsWith('http:')
-  })
-  const release: SoftwareRelease = {
-    appId: APP_ID,
-    version: '0.9.1',
-    notes: ['真实更新测试'],
-    publishedAt: new Date().toISOString(),
-    packages: [asset]
-  }
-  return {
-    asset,
-    release,
-    envelope: signRelease(release, privateKey),
-    archive: path.join(f.out, new URL(asset.url).pathname.split('/').pop()!)
-  }
-}
-test('software versions, paths, transport and publisher signature are enforced', () => {
-  assert.equal(newerVersion('0.10.0', '0.9.9'), true)
-  assert.equal(newerVersion('0.9.0', '0.9.0'), false)
-  assert.throws(() => newerVersion('v0.9.0', '0.8.8'))
-  for (const value of [
-    '../outside',
-    'C:/outside',
-    'x\\y',
-    '/absolute',
-    'x/NUL.txt',
-    'x.',
-    'x/../y',
-    'x//y'
-  ])
-    assert.throws(() => relativeFile(value))
-  assert.throws(() => updateUrl('http://example.test/update.zip'))
-  assert.throws(() => updateUrl('https://user:password@example.test/update.zip'))
-  const release: SoftwareRelease = {
-    appId: APP_ID,
-    version: '0.9.1',
-    publishedAt: new Date().toISOString(),
-    notes: ['版本说明'],
-    packages: [
-      {
-        kind: 'delta',
-        fromVersion: '0.9.0',
-        url: 'https://example.test/update.zip',
-        size: 10,
-        sha256: 'a'.repeat(64)
-      }
-    ]
-  }
-  const envelope = signRelease(release, privateKey)
-  assert.equal(verifyRelease(envelope, publicKey).version, '0.9.1')
-  assert.throws(() =>
-    verifyRelease(
-      {
-        ...envelope,
-        payload: Buffer.from(JSON.stringify({ ...release, version: '9.9.9' })).toString('base64')
-      },
-      publicKey
-    )
+const payload = Buffer.from('complete installer payload shared by every old version')
+function metadata(version = '2.4.0', extra: Record<string, unknown> = {}) {
+  return Buffer.from(
+    dump({
+      version,
+      releaseDate: '2026-09-22T00:00:00.000Z',
+      releaseNotes: '保留现有功能\n跨版本直升',
+      files: [
+        {
+          url: installerName(version),
+          size: payload.length,
+          sha512: crypto.createHash('sha512').update(payload).digest('base64')
+        }
+      ],
+      ...extra
+    })
   )
-  assert.throws(() => selectAsset(release, '0.8.8'))
+}
+function verified(version = '2.4.0') {
+  const bytes = metadata(version)
+  return verifyRelease(bytes, signManifest(bytes, privateKey), publicKey)
+}
+
+test('publication rejects downgrades, changed same-version metadata and invalid channel signatures', () => {
+  const bytes = metadata(),
+    signature = signManifest(bytes, privateKey)
+  const hash = crypto.createHash('sha256').update(bytes).digest('hex')
+  assert.equal(verifyChannel(bytes, signature, publicKey, '3.0.0', 'next-hash'), '2.4.0')
+  assert.equal(verifyChannel(bytes, signature, publicKey, '2.4.0', hash), '2.4.0')
+  assert.throws(() => verifyChannel(bytes, signature, publicKey, '2.3.9', hash), /旧版本/)
+  assert.throws(() => verifyChannel(bytes, signature, publicKey, '2.4.0', 'changed'), /元数据/)
+  assert.throws(
+    () =>
+      verifyChannel(Buffer.concat([bytes, Buffer.from('x')]), signature, publicKey, '3.0.0', hash),
+    /签名/
+  )
 })
-test('delta package contains only changed files, checks baseline, preserves unrelated files', async () => {
-  const f = await fixture()
-  await fs.writeFile(path.join(f.old, 'resources/elevate.exe'), 'NSIS-only helper')
-  const { asset, release, archive } = await makeRelease(f)
-  const stage = path.join(f.root, 'stage')
-  const manifest = await unpackUpdate(archive, stage, asset, release)
-  assert.deepEqual(manifest.files.map((file) => file.path).sort(), [
-    'resources/app.asar',
-    'resources/new.dat'
-  ])
-  assert.ok(asset.size < 10_000)
-  await verifyInventory(f.old, manifest.baseFiles)
-  assert.ok(!manifest.baseFiles.some(file => file.path === 'resources/elevate.exe'))
-  await fs.unlink(path.join(f.old, 'resources/elevate.exe'))
-  await verifyInventory(f.old, manifest.baseFiles)
-  await fs.writeFile(path.join(f.old, 'personal-notes.txt'), 'keep me')
-  await verifyInventory(f.old, manifest.baseFiles)
-  await fs.writeFile(path.join(f.old, 'resources/app.asar'), 'modified locally')
-  await assert.rejects(verifyInventory(f.old, manifest.baseFiles), /基线不一致/)
+
+test('standard signed YAML rejects tampering, foreign keys, paths, web packages and wrong platform assets', () => {
+  const bytes = metadata(),
+    signature = signManifest(bytes, privateKey)
+  assert.equal(verifyRelease(bytes, signature, publicKey).version, '2.4.0')
+  assert.throws(
+    () => verifyRelease(Buffer.concat([bytes, Buffer.from('x')]), signature, publicKey),
+    /签名/
+  )
+  const foreign = crypto
+    .generateKeyPairSync('ed25519')
+    .publicKey.export({ type: 'spki', format: 'pem' })
+    .toString()
+  assert.throws(() => verifyRelease(bytes, signature, foreign), /签名/)
+  for (const extra of [
+    { files: [{ url: '../bad.exe', size: 10, sha512: 'a'.repeat(86) + '==' }] },
+    { files: [{ url: 'https://other.test/install.exe', size: 10, sha512: 'a'.repeat(86) + '==' }] },
+    { packages: { x64: { path: 'payload.7z' } } },
+    { files: [] },
+    { version: '3.0.0-beta.1' },
+    { stagingPercentage: 10 }
+  ]) {
+    const bad = metadata('2.4.0', extra)
+    assert.throws(() => verifyRelease(bad, signManifest(bad, privateKey), publicKey))
+  }
+  assert.throws(() => updateUrl('http://example.test/latest.yml'))
+  assert.throws(() => updateUrl('https://user:password@example.test/latest.yml'))
+  assert.throws(() => updateUrl('https://example.test/latest.yml#fragment'))
+  assert.equal(newerVersion('2.0.0', '1.99.99'), true)
 })
-test('actual HTTP download verifies signed manifest and rejects tampered package', async (t) => {
-  const f = await fixture()
-  let manifestBody = '',
-    archive = '',
-    corrupted = false
-  const server = http.createServer(async (req, res) => {
-    if (req.url === '/latest.json') res.end(manifestBody)
-    else {
-      const bytes = await fs.readFile(archive)
-      if (corrupted) bytes[bytes.length - 1] ^= 1
-      res.end(bytes)
+
+test('all configured GitHub mirrors precede ZOS and package URLs pin the verified release', () => {
+  const config = {
+    github: { repository: 'weixiao030/poe2_price' },
+    manifestUrls: ['https://example.zos.ctyun.cn/installer/latest.yml'],
+    publicKey
+  }
+  const manifests = manifestSources(config),
+    sources = installerSources(config, verified())
+  assert.equal(manifests.length, 9)
+  for (let i = 0; i < 8; i++) {
+    assert.ok(manifests[i].url.startsWith(GITHUB_MIRROR_PREFIXES[i] + 'https://github.com/'))
+    assert.ok(
+      sources[i].url.includes('/releases/download/v2.4.0/POE-Price-Patch-2.4.0-x64-Setup.exe')
+    )
+    assert.ok(
+      sources[i]
+        .oldBlockmapUrl('1.0.0')
+        .includes('/releases/download/v1.0.0/POE-Price-Patch-1.0.0-x64-Setup.exe.blockmap')
+    )
+  }
+  assert.equal(
+    sources[8].url,
+    'https://example.zos.ctyun.cn/installer/POE-Price-Patch-2.4.0-x64-Setup.exe'
+  )
+  assert.ok(!manifests.some((source) => source.url.startsWith('https://github.com/')))
+  assert.throws(() => manifestSources({ ...config, github: { repository: '../other' } }))
+})
+
+async function fixture(t: TestContext, current = '1.0.0') {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-installer-test-'))
+  t.after(() => fs.rm(dir, { recursive: true, force: true }))
+  const requests: string[] = [],
+    modes: Record<string, string> = {}
+  const bytes = metadata(),
+    signature = signManifest(bytes, privateKey)
+  const server = http.createServer((req, res) => {
+    const source = req.url!.split('/')[1]
+    const kind = req.url!.endsWith('.sig')
+      ? 'signature'
+      : req.url!.endsWith('.yml')
+        ? 'manifest'
+        : 'installer'
+    requests.push(`${source}:${kind}`)
+    const mode = modes[source + ':' + kind] || modes[source]
+    if (mode === 'offline') {
+      res.writeHead(503)
+      res.end()
+      return
     }
+    if (mode === 'hang') return
+    const content =
+      mode === 'corrupt'
+        ? Buffer.from('tampered')
+        : kind === 'signature'
+          ? Buffer.from(signature)
+          : kind === 'manifest'
+            ? bytes
+            : payload
+    res.writeHead(200, { 'Content-Length': content.length })
+    res.end(content)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   t.after(() => {
     server.closeAllConnections()
     server.close()
   })
-  const baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}/`
-  const built = await makeRelease(f, baseUrl)
-  archive = built.archive
-  manifestBody = JSON.stringify(built.envelope)
-  const create = () =>
-    new SoftwareUpdater({
-      version: '0.9.0',
-      notes: [],
-      config: { manifestUrls: [baseUrl + 'latest.json'], publicKey },
-      appRoot: f.old,
-      transactionRoot: path.join(f.root, 'transactions'),
-      helperSource: helper,
-      packaged: false,
-      canInstall: () => false,
-      changed: () => {},
-      quit: () => {
-        throw new Error('must not exit')
-      },
-      allowLocalhost: true
-    })
-  const updater = create()
-  assert.equal((await updater.check()).status, 'available')
-  assert.equal((await updater.download()).status, 'ready')
-  await assert.rejects(updater.install(), /开发模式/)
-  corrupted = true
-  const other = create()
-  await other.check()
-  const failure = await other.download()
-  assert.equal(failure.status, 'error')
-  assert.match(failure.message, /校验失败/)
-  assert.equal(await fs.readFile(path.join(f.old, 'resources/app.asar'), 'utf8'), 'old application')
-})
-
-test('GitHub mirror priority matches POE1 localization and leaves ZOS last', async () => {
-  const localization = await fs.readFile(path.join(desktopRoot, '../物价补丁/tools/localize_poe1.ps1'), 'utf8')
-  const prefixes = [...localization.split('function Resolve-Poe1LocalizationDirectory')[0]
-    .matchAll(/Prefix = "([^"]+)"/g)].map((match) => match[1])
-  assert.deepEqual(GITHUB_MIRROR_PREFIXES, prefixes)
-  assert.equal(prefixes.length, 8)
-  const config = { github: { repository: 'weixiao030/poe2_price' }, manifestUrls: ['https://example.zos.ctyun.cn/latest.json'], publicKey }
-  const sources = manifestSources(config)
-  assert.equal(sources[0].url, 'https://ghfast.top/https://github.com/weixiao030/poe2_price/releases/latest/download/latest.json')
-  assert.equal(sources[1].url, 'https://gh-proxy.com/https://github.com/weixiao030/poe2_price/releases/latest/download/latest.json')
-  assert.equal(sources.at(-1)?.name, 'ZOS 备用源')
-  const asset = { kind: 'full' as const, url: 'https://example.zos.ctyun.cn/updates/full.zip', size: 1, sha256: 'a'.repeat(64) }
-  const release = { appId: APP_ID, version: '0.9.3', publishedAt: new Date().toISOString(), notes: [], packages: [asset] }
-  assert.equal(packageSources(config, release, asset)[0].url, 'https://ghfast.top/https://github.com/weixiao030/poe2_price/releases/download/v0.9.3/full.zip')
-  assert.equal(packageSources(config, release, asset).at(-1)?.url, asset.url)
-  assert.throws(() => manifestSources({ ...config, github: { repository: '../unexpected/repo' } }))
-  assert.throws(() => manifestSources({ ...config, github: { repository: 'owner/repo', mirrorPrefixes: ['http://insecure.test/'] } }))
-})
-
-type SourceMode = 'ok' | 'offline' | 'corrupt' | 'stall'
-async function mirrorFixture(t: TestContext) {
-  const f = await fixture()
-  const requests: string[] = []
-  const modes: Record<string, SourceMode> = {}
-  let envelope = '', archive = Buffer.alloc(0)
-  let stalled: () => void = () => {}
-  const onStalled = new Promise<void>((resolve) => { stalled = resolve })
-  const server = http.createServer((req, res) => {
-    const source = req.url!.split('/')[1]
-    const kind = req.url!.endsWith('/latest.json') ? 'manifest' : 'package'
-    requests.push(`${source}:${kind}`)
-    const mode = modes[`${source}:${kind}`] || 'ok'
-    if (mode === 'offline') { res.writeHead(503); res.end(); return }
-    const bytes = kind === 'manifest' ? Buffer.from(envelope) : Buffer.from(archive)
-    if (mode === 'stall') {
-      res.write(bytes.subarray(0, 8)); stalled(); return
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  let installs = 0,
+    busy = false,
+    installationError: Error | undefined
+  const downloaded = path.join(dir, 'pending.exe')
+  const driver: UpdateDriver = {
+    async download(_release, source, signal, progress) {
+      const response = await fetch(source.url, { signal })
+      if (!response.ok) throw new Error('download ' + response.status)
+      const content = Buffer.from(await response.arrayBuffer())
+      await fs.writeFile(downloaded, content)
+      progress(content.length, content.length)
+      return downloaded
+    },
+    install(onError) {
+      installs++
+      if (installationError) onError(installationError)
     }
-    if (mode === 'corrupt') {
-      if (kind === 'manifest') {
-        const wrong = JSON.parse(envelope)
-        wrong.signature = Buffer.alloc(64).toString('base64')
-        res.end(JSON.stringify(wrong)); return
-      }
-      bytes[bytes.length - 1] ^= 1
+  }
+  const changes: SoftwareUpdateState[] = []
+  const options = {
+    version: current,
+    notes: [],
+    config: {
+      publicKey,
+      github: { repository: 'owner/repo', mirrorPrefixes: [base + '/primary/', base + '/backup/'] },
+      manifestUrls: [base + '/zos/latest.yml']
+    },
+    stateRoot: path.join(dir, 'state'),
+    packaged: true,
+    driver,
+    canInstall: () => !busy,
+    changed: (s: SoftwareUpdateState) => changes.push(s),
+    allowLocalhost: true,
+    sourceIdleTimeoutMs: 150,
+    manifestTimeoutMs: 500
+  }
+  const updater = new SoftwareUpdater(options)
+  return {
+    dir,
+    requests,
+    modes,
+    updater,
+    options,
+    driver,
+    changes,
+    downloaded,
+    installs: () => installs,
+    busy: (value: boolean) => {
+      busy = value
+    },
+    installationError: (error: Error) => {
+      installationError = error
     }
-    res.end(bytes)
-  })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  t.after(() => { server.closeAllConnections(); server.close() })
-  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
-  const built = await makeRelease(f, origin + '/zos/')
-  archive = await fs.readFile(built.archive)
-  envelope = JSON.stringify(built.envelope)
-  const create = (sourceTimeoutMs = 3_000) => new SoftwareUpdater({
-    version: '0.9.0', notes: [],
-    config: { publicKey, manifestUrls: [origin + '/zos/latest.json'],
-      github: { repository: 'owner/repo', mirrorPrefixes: [origin + '/primary/', origin + '/backup/'] } },
-    appRoot: f.old, transactionRoot: path.join(f.root, crypto.randomUUID()), helperSource: helper,
-    packaged: false, canInstall: () => false, changed: () => {}, quit: () => {},
-    allowLocalhost: true, sourceTimeoutMs
-  })
-  return { create, requests, modes, onStalled }
+  }
 }
 
-test('domestic GitHub primary serves signed metadata and package without contacting ZOS', async (t) => {
-  const f = await mirrorFixture(t), updater = f.create()
-  assert.equal((await updater.check()).status, 'available')
-  assert.equal((await updater.download()).status, 'ready')
-  assert.deepEqual(f.requests, ['primary:manifest', 'primary:package'])
-})
-
-test('invalid mirror signature and corrupted package both switch to domestic backup', async (t) => {
-  const f = await mirrorFixture(t), updater = f.create()
-  f.modes['primary:manifest'] = 'corrupt'
-  f.modes['primary:package'] = 'corrupt'
-  assert.equal((await updater.check()).status, 'available')
-  assert.equal((await updater.download()).status, 'ready')
-  assert.deepEqual(f.requests, ['primary:manifest', 'backup:manifest', 'primary:package', 'backup:package'])
-})
-
-test('ZOS is used only after every domestic mirror fails', async (t) => {
-  const f = await mirrorFixture(t), updater = f.create()
-  for (const source of ['primary', 'backup']) {
-    f.modes[`${source}:manifest`] = 'offline'
-    f.modes[`${source}:package`] = 'corrupt'
-  }
-  assert.equal((await updater.check()).status, 'available')
-  assert.equal((await updater.download()).status, 'ready')
-  assert.deepEqual(f.requests, ['primary:manifest', 'backup:manifest', 'zos:manifest', 'primary:package', 'backup:package', 'zos:package'])
-})
-
-test('a stalled partial download is removed before retrying the next source', async (t) => {
-  const f = await mirrorFixture(t), updater = f.create(300)
-  f.modes['primary:package'] = 'stall'
-  await updater.check()
-  assert.equal((await updater.download()).status, 'ready')
-  assert.deepEqual(f.requests, ['primary:manifest', 'primary:package', 'backup:package'])
-})
-
-test('cancelling a partial mirror download does not contact backup or ZOS', async (t) => {
-  const f = await mirrorFixture(t), updater = f.create()
-  f.modes['primary:package'] = 'stall'
-  await updater.check()
-  const download = updater.download()
-  await f.onStalled
-  updater.cancel()
-  const state = await download
-  assert.equal(state.status, 'available')
-  assert.match(state.message, /已取消/)
-  assert.deepEqual(f.requests, ['primary:manifest', 'primary:package'])
-})
-async function applyFixture(f: Awaited<ReturnType<typeof fixture>>, corruptTarget = false) {
-  const { asset, release, archive } = await makeRelease(f)
-  const dir = path.join(f.root, crypto.randomUUID()),
-    stage = path.join(dir, 'files')
-  const manifest = await unpackUpdate(archive, stage, asset, release)
-  const target = new Set(manifest.targetFiles.map((file) => file.path))
-  const removeFiles = manifest.baseFiles.filter((file) => !target.has(file.path))
-  const base = new Map(manifest.baseFiles.map((file) => [file.path, file]))
-  const beforeFiles = [...manifest.files, ...removeFiles].map((file) => ({
-    ...(base.get(file.path) || file),
-    exists: base.has(file.path)
-  }))
-  const plan = {
-    schema: 1,
-    token: path.basename(dir),
-    version: '0.9.1',
-    parentPid: 0,
-    appRoot: f.old,
-    stageRoot: stage,
-    backupRoot: path.join(dir, 'backup'),
-    executable: '物价补丁.exe',
-    restart: false,
-    files: manifest.files,
-    removeFiles,
-    beforeFiles,
-    baseFiles: manifest.baseFiles,
-    targetFiles: manifest.targetFiles.map((file) =>
-      corruptTarget && file.path === 'resources/app.asar'
-        ? { ...file, sha256: '0'.repeat(64) }
-        : file
+for (const current of ['1.0.0', '1.0.7', '1.9.0', '2.0.0']) {
+  test(`${current} downloads the same complete 2.4.0 without intermediate releases or inventories`, async (t) => {
+    const f = await fixture(t, current)
+    assert.equal((await f.updater.check()).status, 'available')
+    assert.equal((await f.updater.download()).status, 'ready')
+    assert.deepEqual(await fs.readFile(f.downloaded), payload)
+    assert.deepEqual(
+      f.requests.filter((x) => x.endsWith(':installer')),
+      ['primary:installer']
     )
-  }
-  const planFile = path.join(dir, 'plan.json')
-  await fs.writeFile(planFile, JSON.stringify(plan))
-  await fs.writeFile(path.join(f.old, 'personal-notes.txt'), 'keep me')
-  return { dir, planFile, manifest, plan }
-}
-async function runHelper(planFile: string, recover = false) {
-  return new Promise<number | null>((resolve, reject) => {
-    const child = spawn(
-      'powershell.exe',
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        helper,
-        '-PlanPath',
-        planFile,
-        ...(recover ? ['-Recover'] : [])
-      ],
-      { windowsHide: true, stdio: 'pipe' }
-    )
-    let errors = ''
-    child.stderr.on('data', (chunk) => {
-      errors += chunk.toString()
-    })
-    const timeout = setTimeout(() => {
-      child.kill()
-      reject(new Error('helper timeout: ' + errors))
-    }, 30_000)
-    child.on('error', reject)
-    child.on('exit', (code) => {
-      clearTimeout(timeout)
-      resolve(code)
-    })
   })
 }
-test(
-  'real Windows helper applies changed files, removes managed obsolete file and keeps user file',
-  { skip: process.platform !== 'win32' },
-  async () => {
-    const f = await fixture(),
-      apply = await applyFixture(f)
-    assert.equal(await runHelper(apply.planFile), 0)
-    await verifyInventory(f.old, apply.manifest.targetFiles)
-    assert.equal(await fs.readFile(path.join(f.old, 'personal-notes.txt'), 'utf8'), 'keep me')
-    await assert.rejects(fs.access(path.join(f.old, 'resources/obsolete.dat')))
-    assert.equal(
-      JSON.parse(await fs.readFile(path.join(apply.dir, 'result.json'), 'utf8')).status,
-      'completed'
-    )
+
+test('invalid primary signature uses the backup; corrupt installer retries backup with the same signed target', async (t) => {
+  const f = await fixture(t)
+  f.modes['primary:signature'] = 'corrupt'
+  assert.equal((await f.updater.check()).status, 'available')
+  f.modes['primary:installer'] = 'corrupt'
+  assert.equal((await f.updater.download()).status, 'ready')
+  assert.deepEqual(
+    f.requests.filter((x) => x.endsWith(':installer')),
+    ['primary:installer', 'backup:installer']
+  )
+  assert.ok(!f.requests.some((x) => x.startsWith('zos:')))
+})
+
+test('ZOS is used only after every mirror fails for each operation', async (t) => {
+  const f = await fixture(t)
+  f.modes.primary = f.modes.backup = 'offline'
+  assert.equal((await f.updater.check()).status, 'available')
+  assert.equal((await f.updater.download()).status, 'ready')
+  assert.deepEqual(
+    f.requests.filter((x) => x.endsWith(':installer')),
+    ['primary:installer', 'backup:installer', 'zos:installer']
+  )
+  assert.deepEqual(
+    f.requests.filter((x) => x.endsWith(':manifest')),
+    ['primary:manifest', 'backup:manifest', 'zos:manifest']
+  )
+})
+
+test('stalled download advances to the next mirror', async (t) => {
+  const f = await fixture(t)
+  await f.updater.check()
+  f.modes['primary:installer'] = 'hang'
+  assert.equal((await f.updater.download()).status, 'ready')
+  assert.deepEqual(
+    f.requests.filter((x) => x.endsWith(':installer')),
+    ['primary:installer', 'backup:installer']
+  )
+})
+
+test('cancel stops all fallback attempts and permits retry; concurrent requests do not launch another download', async (t) => {
+  const f = await fixture(t)
+  await f.updater.check()
+  f.modes['primary:installer'] = 'hang'
+  const downloading = f.updater.download()
+  await assert.rejects(f.updater.download(), /先检查/)
+  while (!f.requests.includes('primary:installer'))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  f.updater.cancel()
+  assert.equal((await downloading).status, 'available')
+  assert.ok(!f.requests.includes('backup:installer'))
+  delete f.modes['primary:installer']
+  assert.equal((await f.updater.download()).status, 'ready')
+})
+
+test('installation is blocked while busy, takes the guard immediately and never installs a changed cache', async (t) => {
+  const f = await fixture(t)
+  await f.updater.check()
+  await f.updater.download()
+  f.busy(true)
+  await assert.rejects(f.updater.install(), /等待/)
+  assert.equal(f.installs(), 0)
+  f.busy(false)
+  await fs.writeFile(f.downloaded, 'modified after download')
+  const installing = f.updater.install()
+  assert.equal(f.updater.installing, true)
+  assert.equal((await installing).status, 'error')
+  assert.equal(f.installs(), 0)
+  await assert.rejects(fs.access(f.downloaded))
+  await f.updater.check()
+  await f.updater.download()
+  assert.equal((await f.updater.install()).status, 'installing')
+  assert.equal(f.installs(), 1)
+  await assert.rejects(f.updater.install(), /尚未准备/)
+})
+
+test('installer errors are reported, receipts survive restart and only the target UI marks completion', async (t) => {
+  const f = await fixture(t)
+  await f.updater.check()
+  await f.updater.download()
+  f.installationError(new Error('安装器无法启动'))
+  assert.equal((await f.updater.install()).status, 'error')
+  assert.match(f.updater.snapshot.message, /无法启动/)
+  const old = new SoftwareUpdater(f.options)
+  await old.previousResult()
+  assert.equal(old.snapshot.status, 'error')
+  const target = new SoftwareUpdater({ ...f.options, version: '2.4.0' })
+  await target.uiReady()
+  assert.equal(
+    JSON.parse(await fs.readFile(path.join(f.options.stateRoot, 'installer-result.json'), 'utf8'))
+      .status,
+    'completed'
+  )
+})
+
+test('publisher signs a standard release without a baseline and refuses altered or overwritten installers', async (t) => {
+  const f = await fixture(t)
+  const directory = path.join(f.dir, 'build'),
+    output = path.join(f.dir, 'publish')
+  await fs.mkdir(directory)
+  await fs.writeFile(path.join(directory, installerName('2.4.0')), payload)
+  await fs.writeFile(path.join(directory, installerName('2.4.0') + '.blockmap'), 'blockmap')
+  await fs.writeFile(path.join(directory, 'latest.yml'), metadata())
+  const options = {
+    directory,
+    output,
+    privateKey,
+    publicKey,
+    notes: { version: '2.4.0', notes: ['跨版本更新'] }
   }
-)
-test(
-  'real Windows helper rolls back a failed post-write verification',
-  { skip: process.platform !== 'win32' },
-  async () => {
-    const f = await fixture(),
-      apply = await applyFixture(f, true)
-    assert.equal(await runHelper(apply.planFile), 1)
-    await verifyInventory(f.old, apply.manifest.baseFiles)
-    await assert.rejects(fs.access(path.join(f.old, 'resources/new.dat')))
-    assert.equal(
-      JSON.parse(await fs.readFile(path.join(apply.dir, 'result.json'), 'utf8')).status,
-      'rolled-back'
-    )
-  }
-)
-test(
-  'interrupted commit can be recovered from the journal and verified backups',
-  { skip: process.platform !== 'win32' },
-  async () => {
-    const f = await fixture(),
-      apply = await applyFixture(f)
-    for (const file of apply.plan.beforeFiles.filter((file) => file.exists)) {
-      const destination = path.join(apply.plan.backupRoot, file.path)
-      await fs.mkdir(path.dirname(destination), { recursive: true })
-      await fs.copyFile(path.join(f.old, file.path), destination)
-    }
-    await fs.writeFile(path.join(apply.dir, 'journal.json'), JSON.stringify({ state: 'applying' }))
-    await fs.writeFile(path.join(f.old, 'resources/app.asar'), 'interrupted update')
-    assert.equal(await runHelper(apply.planFile, true), 0)
-    await verifyInventory(f.old, apply.manifest.baseFiles)
-  }
-)
+  const result = await buildRelease(options)
+  assert.equal(result.files.filter((name) => name.endsWith('.exe')).length, 1)
+  assert.ok(!result.files.some((name) => name.endsWith('.zip')))
+  assert.equal(
+    await hashFile(path.join(output, installerName('2.4.0'))),
+    await hashFile(path.join(directory, installerName('2.4.0')))
+  )
+  const release = verifyRelease(
+    await fs.readFile(path.join(output, 'latest.yml')),
+    await fs.readFile(path.join(output, 'latest.yml.sig'), 'utf8'),
+    publicKey
+  )
+  assert.equal(release.version, '2.4.0')
+  await buildRelease(options)
+  await assert.rejects(
+    buildRelease({ ...options, notes: { version: '2.4.0', notes: ['changed'] } }),
+    /覆盖/
+  )
+  await fs.writeFile(path.join(directory, installerName('2.4.0')), 'changed binary')
+  await assert.rejects(buildRelease(options), /不一致/)
+})

@@ -35,10 +35,10 @@
     {
       "path": "物价补丁/tools/localize_poe1.ps1",
       "upstream_blob": "9b7dd21b04012d0d5f92cb43b22d22a9b90240820fb6ab0eb66c83a9d71b7606",
-      "local_sha256": "e1ddfe68ce7a912c2bb1c3c81dda6dec6fb23eee3b07f28e8cffe071bc8a94fd",
+      "local_sha256": "e1d733b19a9e422359bfeabd48695f0857b7e99e0bc19468e528e9dfcd55cad2",
       "equivalent": false,
-      "normalized_sha256": "68985b6b0ed7c08b7d6018a4293ebc4624c1c35d00058361d372fd4b5cbe296f",
-      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：汉化下载摘要仅信任官方元数据，镜像只传输经过独立摘要校验的载荷。 2026-09-22：与软件更新共用已实测的主备用源顺序，移除不稳定 boki/jasonzeng 及返回 429 的 monlor，加入 gh-proxy.org。 同日补齐移除的 3 个源：新增 gh-proxy.org、gh.llkk.cc、ghproxy.imciel.com，总数恢复 8 个。 全量复查另发现 ddlc 返回 429，以 ghfile.geekertao.top 等量替换；共移除 4 个、补回 4 个，最终 8 个国内源。 v0.9.3：同步发行版本标识。"
+      "normalized_sha256": "e7d1e026156e9c659af05eafa79be7a03a44711b66a01092631af4b33ee04fa7",
+      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：汉化下载摘要仅信任官方元数据，镜像只传输经过独立摘要校验的载荷。 2026-09-22：与软件更新共用已实测的主备用源顺序，移除不稳定 boki/jasonzeng 及返回 429 的 monlor，加入 gh-proxy.org。 同日补齐移除的 3 个源：新增 gh-proxy.org、gh.llkk.cc、ghproxy.imciel.com，总数恢复 8 个。 全量复查另发现 ddlc 返回 429，以 ghfile.geekertao.top 等量替换；共移除 4 个、补回 4 个，最终 8 个国内源。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。"
     },
     {
       "path": "物价补丁/tools/poe1_patch_common.ps1",
@@ -81,34 +81,34 @@
     {
       "path": "物价补丁/tools/restore_poe1_price_patch.ps1",
       "upstream_blob": "04e4fb232f20d25f744f2ef5d8623fede25a9996cac235f3eb27049be8825c68",
-      "local_sha256": "32e6bdce6c167db6e500b9846382868ce50ad627625b0df33902bf70f79751f7",
+      "local_sha256": "62b1b921441aedea369e7af9e2ca27ce7fa274c2b34388c3a4aa0302a3ee2dc5",
       "equivalent": false,
-      "normalized_sha256": "f04185125aa8f15080180d5e457090df69251cde0379804481f1393db4ecc095",
-      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：物理还原前核对官方底板，拒绝过期索引并尝试逻辑还原。 v0.9.3：同步发行版本标识。"
+      "normalized_sha256": "b72e6e3d7fff3a76ada9ade3ed7633b8b9842ac55b9930f72b58cc0688bc3bbc",
+      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：物理还原前核对官方底板，拒绝过期索引并尝试逻辑还原。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。"
     },
     {
       "path": "物价补丁/tools/restore_price_patch.ps1",
       "upstream_blob": "c6058a0c8e057a0d620758cc965c537d119ebf327cae1c5c1d4a4cdb44f402e9",
-      "local_sha256": "f1b304aee01c5b3a9216c4ce6770e4c753ba0ed33154b489d7d8bca7764de537",
+      "local_sha256": "0ab44580ca5c0125c5519175de71328da0dfb9a3c9b936f51e8453bc489fd5c6",
       "equivalent": false,
-      "normalized_sha256": "6bf9e36e06d290a0492464c422fa325f70ba99493cf53a60c19d7834bb6a762d",
-      "local_changes": "v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 同步当前版本标识为 v0.9.2。 v0.9.3：同步发行版本标识。"
+      "normalized_sha256": "aa1ab3201c35534507d60a5e32368e77ac93e87d9a3a26d947e4104b61155ea0",
+      "local_changes": "v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 同步当前版本标识为 v0.9.2。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。"
     },
     {
       "path": "物价补丁/tools/update_poe1_price_patch.ps1",
       "upstream_blob": "ff1174efa7e2884d507f675e133a791ac0595e86d40de9c291e211363e85e2f5",
-      "local_sha256": "1ad988a8c3827358fbd0e15b51d3aaddbb937ba7aea72bc89de41b862f1824a4",
+      "local_sha256": "81807721738719a52b77d8ae8fecd36e256c1b3e1fb67430c6c9630b0659d5bf",
       "equivalent": false,
-      "normalized_sha256": "782e4e9adbbd890fff558fe491dbb2e09bc8927dca502dcc529b38a48fd3acb5",
-      "local_changes": "接入自动与固定模式、正确国服当前和历史接口、独立国服价格路径及缓存隔离。 同步当前版本标识为 v0.9.2。 v0.9.2：校验物理还原包官方底板；旧版或过期基线转离线逻辑迁移。 v0.9.3：同步发行版本标识。"
+      "normalized_sha256": "6d00802549370694024404c3e178595524908120391f03a1e4aa30117c14cacd",
+      "local_changes": "接入自动与固定模式、正确国服当前和历史接口、独立国服价格路径及缓存隔离。 同步当前版本标识为 v0.9.2。 v0.9.2：校验物理还原包官方底板；旧版或过期基线转离线逻辑迁移。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。"
     },
     {
       "path": "物价补丁/tools/update_price_patch.ps1",
       "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
-      "local_sha256": "6ce830d40b343618c7cf327308775d2eff12e49e2df4b2405b45678f8ceaab94",
+      "local_sha256": "44859412ec3f39a3613be88463ef8d058c5b678a77a1c9ef6203b86306e529bc",
       "equivalent": false,
-      "normalized_sha256": "5f5e82da2d6be1e6992c4ed535dfa214ad394b25424ac18c03448519766383e7",
-      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.9.0：接入碑牌双中位数、动态币种及交易筛选范围核对。 保留碑牌 Mods/Stats/Tags 提取文件；透传资源校验失败原因，避免误报为结构不兼容或赛季价格不可用。 同步当前版本标识为 v0.9.2。 v0.9.2：POE2 写入失败后成功回退仍返回失败，防止更新误报成功。 v0.9.3：同步发行版本标识。 v0.9.3：中位价缺失采用有效最低价，在线失败回退同赛季成功快照；按单条行情保留可用侧，缓存汇率逐侧换算后统一显示。"
+      "normalized_sha256": "3edfb31166c7dffa634ec28a981692e6fb0961f64b61108237b53fbb79ff1375",
+      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.9.0：接入碑牌双中位数、动态币种及交易筛选范围核对。 保留碑牌 Mods/Stats/Tags 提取文件；透传资源校验失败原因，避免误报为结构不兼容或赛季价格不可用。 同步当前版本标识为 v0.9.2。 v0.9.2：POE2 写入失败后成功回退仍返回失败，防止更新误报成功。 v0.9.3：同步发行版本标识。 v0.9.3：中位价缺失采用有效最低价，在线失败回退同赛季成功快照；按单条行情保留可用侧，缓存汇率逐侧换算后统一显示。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",

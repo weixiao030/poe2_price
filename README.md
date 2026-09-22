@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.9.4</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v1.0.0</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -23,13 +23,13 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.9.3` 修复碑牌漏价并恢复总督魂灵的网站参考报价；软件更新优先使用 8 个 GitHub 国内主备用源，全部失败后回退 ZOS。在线更新使用从正式 v0.9.2 升级的专用增量包。
+`v1.0.0` 统一为安装版，使用 NSIS / electron-updater 完成在线更新。从 1.0.0 起支持跳过中间版本直升最新版，无需逐版升级；优先使用 8 个 GitHub 国内镜像，全部失败后回退 ZOS。
 
-碑牌词缀分别使用魔法、稀有样本中位价：接近时合并，其余按从低到高显示，E/C/D 和合并标准随当前市场动态变化。提供“检查更新”、当前版本说明、赞赏码及聊天/bug反馈群:168887742；支持签名增量包下载、自动重启安装和失败回退。客户端通过公开 HTTPS 地址检查签名更新；上传配置和密钥不随软件分发。保留通货、传奇、岛屿传言、每小时物价更新及还原功能。
+碑牌词缀分别使用魔法、稀有样本中位价：接近时合并，其余按从低到高显示，E/C/D 和合并标准随当前市场动态变化。提供“检查更新”、当前版本说明、赞赏码及聊天/bug反馈群:168887742；支持签名验证、差分或完整安装包下载、自动重启安装和下载失败重试。客户端通过公开 HTTPS 地址检查签名更新；上传配置和密钥不随软件分发。保留通货、传奇、岛屿传言、每小时物价更新及还原功能。
 
-[下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [ZOS 增量发布配置](docs/软件增量更新与ZOS发布.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
+[下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [安装版更新与发布](docs/软件增量更新与ZOS发布.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
-提供 **Setup 安装版**和 **ZIP 免安装版**，两种版本都内置运行环境。免安装版只需将压缩包完整解压到一个文件夹，双击其中的 `物价补丁.exe` 即可运行，后续启动无需重复解包；不要只取出 EXE 或直接在压缩包内运行。
+从 **v1.0.0** 起只提供 **Windows x64 Setup 安装版**，内置运行环境。在线更新使用 NSIS / electron-updater，支持跳过中间版本直升最新版；国内 GitHub 镜像全部不可用时回退 ZOS。0.x 用户通过本次 Setup 完成一次迁移，保留现有设置。
 
 ---
 
@@ -60,6 +60,12 @@
 ---
 
 ## 更新日志
+
+### 26/9/22 更新（v1.0.0）
+
+- 只保留安装版，软件更新使用成熟的 NSIS / electron-updater；从 1.0.0 起跨版本直接升级，无需历史增量基线。
+- 保留 POE1 / POE2 物价、汉化、还原、每小时更新和桌面设置，下载按国内 GitHub 镜像优先、ZOS 兜底。
+- 标准更新清单通过 Ed25519 分离签名验证，差分不可用时回退完整安装包。
 
 ### 26/9/22 更新（v0.9.4）
 
@@ -274,15 +280,14 @@
 
 前往 [GitHub Releases](https://github.com/weixiao030/poe2_price/releases/latest) 下载：
 
-- `POE-Price-Patch-0.8.8-x64-Setup.exe`：安装版，推荐日常使用。
-- `POE-Price-Patch-0.8.8-x64-NoInstall.zip`：免安装版，完整解压后双击 `物价补丁.exe`；EXE、DLL、`resources` 等文件必须保留在同一文件夹中。
+- `POE-Price-Patch-1.0.0-x64-Setup.exe`：完整安装版，普通用户只需下载此文件。
 - `SHA256SUMS.txt`：发行文件校验值。
 
 ### 2. 安装
 
-安装版按提示选择安装位置；免安装版可放在任意可写目录。无需放进游戏根目录，也无需另装 Python 或 .NET。应用内选择包含 `Content.ggpk` 或 `Bundles2\\_.index.bin` 的游戏目录。
+运行 Setup 并按提示选择安装位置，使用安装后的快捷方式启动。无需放进游戏根目录，也无需另装 Python 或 .NET。应用内选择包含 `Content.ggpk` 或 `Bundles2\\_.index.bin` 的游戏目录。
 
-从旧版迁移或移动免安装版文件夹后，先运行新位置的 `物价补丁.exe`；已开启自启时会自动核对当前路径。若设置页提示被 Windows 禁用，请在任务管理器的“启动应用”中启用。
+从旧版迁移后，先运行新安装位置的 `物价补丁.exe`；已开启自启时会自动核对当前路径。若设置页提示被 Windows 禁用，请在任务管理器的“启动应用”中启用。
 
 > 💡 **提示：** 自动识别会检查已安装程序、注册表、WeGame/Steam 游戏库与 Epic 清单；未识别到或有多个客户端时，请手动选择并核对游戏版本、服区和目录。
 
@@ -347,11 +352,12 @@ python -m pytest tests -q
 npm --prefix desktop test
 npm --prefix desktop run dist
 node desktop/scripts/verify-startup.mjs --packaged
-node desktop/scripts/verify-no-install.mjs
+node desktop/scripts/verify-installer.mjs
+npm --prefix desktop run test:software-updates
 node desktop/scripts/verify-compatibility.mjs
 ```
 
-输出目录：`desktop/dist`，包含 Setup 安装版、免安装版 ZIP 和未压缩应用目录。推送 main 执行构建与验证；只有与应用版本一致的标签才发布 Release，发布附带 SHA256 校验值。发行包暂未配置项目代码签名。
+输出目录：`desktop/dist`，包含 Setup、blockmap、标准更新元数据和供测试使用的未压缩目录。运行 `npm --prefix desktop run updates:build` 生成独立的签名发布目录 `desktop/dist/update-publish`。正式发布保持 GitHub 与 ZOS 字节一致；未压缩目录不分发给用户。发行包暂未配置 Windows 代码签名，在线更新使用内置 Ed25519 公钥验证清单。详见[发布指南](docs/软件增量更新与ZOS发布.md)和[1.0.0 更新设计](docs/1.0.0安装版与在线更新设计.md)。
 
 ### 调试参数
 

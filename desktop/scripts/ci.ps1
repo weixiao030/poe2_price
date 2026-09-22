@@ -17,3 +17,5 @@ Invoke-Checked { npx electron-builder --publish never }
 Invoke-Checked { node scripts/verify-package.mjs --ci }
 Invoke-Checked { node scripts/verify-startup.mjs --packaged }
 Invoke-Checked { node scripts/verify-update-recovery.mjs --packaged }
+Invoke-Checked { node scripts/verify-installer.mjs }
+Invoke-Checked { npm run test:software-updates }

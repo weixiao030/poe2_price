@@ -42,6 +42,7 @@ import {
 import type { AutoUpdateSchedule, ConfirmedUpdate } from './auto-update'
 import { reconcileAutoStart, shouldShowSecondInstance } from './startup'
 import { SoftwareUpdater } from './software-update'
+import { NsisUpdateDriver } from './software-update-driver'
 import type { UpdateConfig } from '../shared/software-update'
 import type {
   AppSettings,
@@ -542,23 +543,14 @@ else {
       const currentRelease = JSON.parse(await fs.readFile(path.join(softwareResources, 'current-release.json'), 'utf8'))
       softwareUpdater = new SoftwareUpdater({
         version: app.getVersion(), notes: currentRelease.notes, config: updateConfig,
-        appRoot: path.dirname(app.getPath('exe')),
-        transactionRoot: path.join(app.getPath('userData'), 'software-updates'),
-        helperSource: path.join(softwareResources, 'install-software-update.ps1'),
+        stateRoot: path.join(app.getPath('userData'), 'software-updates'),
+        driver: new NsisUpdateDriver(log),
         packaged: app.isPackaged,
         canInstall: () => !active && !pendingQueries.size && !workers.size && !maintenanceRunning,
-        changed: state => send('software:state', state),
-        quit: () => { quitting = true; cancelSchedule(); app.quit() }
+        changed: state => send('software:state', state)
       })
       await softwareUpdater.previousResult()
-      handle('software:ui-ready', async () => {
-        const token = process.argv.find(arg => arg.startsWith('--software-update-token='))?.split('=')[1]
-        if (!token || !/^[a-f0-9-]{36}$/.test(token)) return
-        const dir = path.join(app.getPath('userData'), 'software-updates', token)
-        const plan = JSON.parse(await fs.readFile(path.join(dir, 'plan.json'), 'utf8'))
-        if (plan.version === app.getVersion() && plan.token === token)
-          await fs.writeFile(path.join(dir, 'health.json'), JSON.stringify({ token, version: app.getVersion() }))
-      })
+      handle('software:ui-ready', () => softwareUpdater!.uiReady())
       handle('software:state', () => softwareUpdater!.snapshot)
       handle('software:check', () => softwareUpdater!.check())
       handle('software:download', () => softwareUpdater!.download())

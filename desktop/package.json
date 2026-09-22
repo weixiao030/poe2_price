@@ -1,6 +1,6 @@
 {
   "name": "poe-price-patch-desktop",
-  "version": "0.9.4",
+  "version": "1.0.0",
   "description": "POE1 / POE2 物价补丁桌面应用",
   "main": "out/main/index.js",
   "author": "POE Price Patch",
@@ -25,19 +25,20 @@
     "test:software-updates": "tsx scripts/verify-software-updates.ts"
   },
   "dependencies": {
+    "builder-util-runtime": "9.7.0",
     "electron-log": "^5.2.0",
     "electron-store": "^10.0.0",
-    "yauzl": "^3.4.0"
+    "electron-updater": "6.8.9",
+    "js-yaml": "4.3.2"
   },
   "devDependencies": {
     "@iconify-json/ph": "^1.2.2",
     "@iconify/vue": "^4.1.2",
+    "@types/js-yaml": "4.0.9",
     "@types/node": "^22.0.0",
-    "@types/yauzl": "^3.4.0",
-    "@types/yazl": "^3.3.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "electron": "^44.4.1",
-    "electron-builder": "^26.0.12",
+    "electron-builder": "26.15.3",
     "electron-vite": "^5.0.0",
     "naive-ui": "^2.41.0",
     "pinia": "^3.0.3",
@@ -49,8 +50,7 @@
     "unocss": "^66.5.1",
     "vite": "^7.0.6",
     "vue": "^3.5.18",
-    "vue-tsc": "^3.0.0",
-    "yazl": "^3.3.1"
+    "vue-tsc": "^3.0.0"
   },
   "build": {
     "appId": "com.poepricepatch.desktop",
@@ -61,7 +61,7 @@
     },
     "asar": true,
     "compression": "normal",
-    "artifactName": "POE-Price-Patch-${version}-${arch}-NoInstall.${ext}",
+    "artifactName": "POE-Price-Patch-${version}-${arch}-Setup.${ext}",
     "files": [
       "out/**/*",
       "package.json"
@@ -82,13 +82,10 @@
       {
         "from": "resources/current-release.json",
         "to": "current-release.json"
-      },
-      {
-        "from": "resources/install-software-update.ps1",
-        "to": "install-software-update.ps1"
       }
     ],
     "win": {
+      "electronUpdaterCompatibility": ">=6.8.9",
       "icon": "resources/icon.png",
       "executableName": "物价补丁",
       "requestedExecutionLevel": "asInvoker",
@@ -98,14 +95,12 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64"
-          ]
         }
       ]
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://price-up.guangxi-5.zos.ctyun.cn/poe-updates/installer/"
     },
     "nsis": {
       "oneClick": false,

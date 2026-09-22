@@ -36,6 +36,7 @@ output/
 release-desktop/
 # Software update signing keys are publisher-only, never shipped or committed.
 desktop/.release-keys/
+desktop/.publisher-tools/
 /增量包key.txt
 # Publisher settings, extracted game data and local diagnostic artifacts.
 /publisher.local.json

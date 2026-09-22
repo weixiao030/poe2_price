@@ -145,9 +145,7 @@ onUnmounted(() => detach?.())
         </h3>
         <p v-if="props.busy">物价任务完成后即可安装软件更新。</p>
         <p v-else-if="state?.totalBytes">
-          {{ state.packageKind === 'delta' ? '增量更新' : '完整更新' }}，{{
-            size(state.totalBytes)
-          }}。下载完成后自动重启。
+          更新安装包 {{ size(state.totalBytes) }}。下载完成后自动重启。
         </p>
         <p v-else>有新版本时，可在这里一键下载并安装。</p>
         <n-progress

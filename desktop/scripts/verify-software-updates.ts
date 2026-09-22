@@ -1,49 +1,160 @@
-import { _electron as electron } from 'playwright'
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import os from 'node:os'
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import crypto from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import fs from 'node:fs/promises'
 import https from 'node:https'
-import { spawnSync } from 'node:child_process'
+import os from 'node:os'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { buildPackage, signRelease } from './build-software-update'
-import { APP_ID, hashFile, verifyInventory } from '../src/main/software-update-protocol'
-import type { SoftwareRelease } from '../src/shared/software-update'
+import { _electron as electron } from 'playwright'
+import { buildRelease } from './build-software-update'
+import { installerName, hashFile } from '../src/main/software-update-protocol'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const appArgument = process.argv.indexOf('--app-dir')
-const sourceApp = appArgument >= 0 ? path.resolve(process.argv[appArgument + 1]) : path.join(root, 'dist/win-unpacked')
-const reportDir = path.join(root, 'test-results/software-updates')
-await fs.mkdir(reportDir, { recursive: true })
-const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-software-真实更新-'))
-const before = path.join(sandbox, 'current'),
-  after = path.join(sandbox, 'target')
-const userdata = path.join(sandbox, 'userdata'),
+const require = createRequire(import.meta.url)
+const { build: bundle } = require('esbuild')
+const { build: pack, Platform, Arch } = require('electron-builder')
+const asar = require('@electron/asar')
+const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-nsis-qa-'))
+const runId = crypto.randomUUID().slice(0, 8)
+const name = 'poe-price-patch-update-qa-' + runId
+// NSIS also detects running apps by executable name, so isolate that identity too.
+const executableName = name + '-验证'
+const appId = 'com.poepricepatch.updaterqa.' + runId
+const installed = path.join(sandbox, '已安装的验证程序')
+const oldVersion = '1.0.0',
+  newVersion = '2.4.0'
+const oldOutput = path.join(sandbox, 'old'),
+  newOutput = path.join(sandbox, 'new'),
   published = path.join(sandbox, 'published')
-const certificate = spawnSync(
-  'python',
-  ['-X', 'utf8', path.join(root, 'scripts/make-update-test-cert.py'), sandbox],
-  { windowsHide: true, encoding: 'utf8' }
-)
-if (certificate.status !== 0) throw new Error(certificate.stderr)
-const transportRequests: string[] = []
+const entry = path.join(sandbox, 'fixture.cjs')
+const project = path.join(sandbox, 'project')
+const configPath = path.join(sandbox, 'qa-config.json')
+const cache = path.join(process.env.LOCALAPPDATA!, name + '-updater')
+const requests: { source: string; file: string; range?: string }[] = []
+const modes: Record<string, string> = {}
+const checks: string[] = []
+let application: Awaited<ReturnType<typeof electron.launch>> | undefined
+let bootPid: number | undefined
+
+async function run(command: string, args: string[], env = process.env) {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: root,
+      env,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    let output = ''
+    child.stdout.on('data', (bytes) => {
+      output = (output + bytes).slice(-16000)
+    })
+    child.stderr.on('data', (bytes) => {
+      output = (output + bytes).slice(-16000)
+    })
+    child.once('error', reject)
+    child.once('exit', (code) =>
+      code === 0
+        ? resolve()
+        : reject(new Error(`${path.basename(command)} exited ${code}: ${output}`))
+    )
+  })
+}
+async function until(check: () => Promise<boolean>, label: string, timeout = 60000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await check().catch(() => false)) return
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  throw new Error('Timed out: ' + label)
+}
+const readVersion = () =>
+  JSON.parse(
+    asar.extractFile(path.join(installed, 'resources/app.asar'), 'package.json').toString()
+  ).version
+async function close() {
+  if (application) {
+    await application.close()
+    application = undefined
+  }
+}
+async function launch() {
+  application = await electron.launch({
+    executablePath: path.join(installed, executableName + '.exe'),
+    env: {
+      ...process.env,
+      POE_INSTALLER_QA_CONFIG: configPath,
+      NODE_EXTRA_CA_CERTS: path.join(sandbox, 'local-cert.pem')
+    }
+  })
+  await until(() => application!.evaluate(() => !!(globalThis as any).qaReady), 'fixture startup')
+}
+async function command(method: 'check' | 'download' | 'install') {
+  return application!.evaluate(
+    async (_electron, action) => (globalThis as any).qaUpdater[action](),
+    method
+  )
+}
+async function clearPending() {
+  // The cache identity belongs to this run only; never touch production updater caches.
+  assert.equal(path.basename(cache), name + '-updater')
+  const pending = path.join(cache, 'pending')
+  for (const file of [installerName(newVersion), 'update-info.json', 'current.blockmap'])
+    await fs.unlink(path.join(pending, file)).catch(() => {})
+}
+
+await run('python', ['-X', 'utf8', path.join(root, 'scripts/make-update-test-cert.py'), sandbox])
+const cert = await fs.readFile(path.join(sandbox, 'local-cert.pem'))
 const server = https.createServer(
-  {
-    key: await fs.readFile(path.join(sandbox, 'local-key.pem')),
-    cert: await fs.readFile(path.join(sandbox, 'local-cert.pem'))
-  },
+  { key: await fs.readFile(path.join(sandbox, 'local-key.pem')), cert },
   async (req, res) => {
+    const url = new URL(req.url!, 'https://127.0.0.1')
+    const source = url.pathname.split('/')[1],
+      file = path.basename(url.pathname)
+    requests.push({ source, file, range: req.headers.range })
+    const mode = modes[source]
+    if (mode === 'offline') {
+      res.writeHead(503)
+      res.end()
+      return
+    }
+    if (mode === 'bad-signature' && file.endsWith('.sig')) {
+      res.end('invalid')
+      return
+    }
+    const oldBlockmap = file === installerName(oldVersion) + '.blockmap'
+    if (oldBlockmap && modes.oldBlockmap === 'missing') {
+      res.writeHead(404)
+      res.end()
+      return
+    }
+    const sourcePath = path.join(oldBlockmap ? oldOutput : published, file)
     try {
-      transportRequests.push(req.url!)
-      if (req.url!.startsWith('/primary/')) {
-        res.writeHead(503); res.end(); return
+      const stat = await fs.stat(sourcePath)
+      const match = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/)
+      const start = match ? Number(match[1]) : 0,
+        end = match && match[2] ? Number(match[2]) : stat.size - 1
+      if (start > end || end >= stat.size) {
+        res.writeHead(416)
+        res.end()
+        return
       }
-      const name = path.basename(new URL(req.url!, 'https://localhost').pathname)
-      const bytes = await fs.readFile(path.join(published, name))
-      res.writeHead(200, { 'Content-Length': bytes.length, 'Cache-Control': 'no-store' })
-      res.end(bytes)
+      const headers: Record<string, string | number> = {
+        'Content-Length': end - start + 1,
+        'Accept-Ranges': 'bytes'
+      }
+      if (match) headers['Content-Range'] = `bytes ${start}-${end}/${stat.size}`
+      res.writeHead(match ? 206 : 200, headers)
+      if (req.method === 'HEAD') {
+        res.end()
+        return
+      }
+      const stream = createReadStream(sourcePath, { start, end })
+      stream.on('error', () => res.destroy())
+      res.on('close', () => stream.destroy())
+      stream.pipe(res)
     } catch {
       res.writeHead(404)
       res.end()
@@ -51,247 +162,218 @@ const server = https.createServer(
   }
 )
 await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-const baseUrl = `https://127.0.0.1:${(server.address() as { port: number }).port}/`
-const keypair = crypto.generateKeyPairSync('ed25519')
-const privateKey = keypair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
-const publicKey = keypair.publicKey.export({ type: 'spki', format: 'pem' }).toString()
-const evidence: Record<string, unknown> = { sandbox, checks: [], screenshots: [], errors: [] }
-const checks = evidence.checks as string[],
-  errors = evidence.errors as string[]
-let running: Awaited<ReturnType<typeof electron.launch>> | undefined
+const base = `https://127.0.0.1:${(server.address() as { port: number }).port}`
+const keys = crypto.generateKeyPairSync('ed25519')
+const privateKey = keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+const publicKey = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+
 try {
-  await fs.cp(sourceApp, before, { recursive: true })
   await fs.writeFile(
-    path.join(before, 'resources/update-config.json'),
-    JSON.stringify({ manifestUrls: [baseUrl + 'latest.json'], publicKey,
-      github: { repository: 'owner/update-test', mirrorPrefixes: [baseUrl + 'primary/', baseUrl + 'backup/'] } })
+    configPath,
+    JSON.stringify({
+      root: sandbox,
+      fingerprint: new crypto.X509Certificate(cert).fingerprint256,
+      update: {
+        publicKey,
+        github: {
+          repository: 'qa/release',
+          mirrorPrefixes: [base + '/primary/', base + '/backup/']
+        },
+        manifestUrls: [base + '/zos/latest.yml']
+      }
+    })
   )
-  await fs.cp(before, after, { recursive: true })
-  const asar = createRequire(import.meta.url)('@electron/asar')
-  const extracted = path.join(sandbox, 'asar-source')
-  asar.extractAll(path.join(after, 'resources/app.asar'), extracted)
-  const packageFile = path.join(extracted, 'package.json')
-  const pkg = JSON.parse(await fs.readFile(packageFile, 'utf8'))
-  const originalVersion = pkg.version
-  const [major, minor, patch] = originalVersion.split('.').map(Number)
-  pkg.version = `${major}.${minor}.${patch + 1}`
-  await fs.writeFile(packageFile, JSON.stringify(pkg))
-  await asar.createPackage(extracted, path.join(after, 'resources/app.asar'))
-  await fs.writeFile(
-    path.join(after, 'resources/current-release.json'),
-    JSON.stringify({ version: pkg.version, notes: ['隔离验证：软件增量更新与自动重启。'] })
-  )
-  const asset = await buildPackage({
-    to: after,
-    from: before,
-    version: pkg.version,
-    fromVersion: originalVersion,
-    output: published,
-    baseUrl
+  // Bundle only test startup plus production updater modules. Native updater stays a real dependency.
+  await bundle({
+    entryPoints: [path.join(root, 'scripts/installer-fixture-main.ts')],
+    outfile: entry,
+    bundle: true,
+    platform: 'node',
+    target: 'node22',
+    format: 'cjs',
+    packages: 'external'
   })
-  const release: SoftwareRelease = {
-    appId: APP_ID,
-    version: pkg.version,
-    publishedAt: new Date().toISOString(),
-    notes: ['隔离验证：下载签名增量包，并在更新后自动重启。'],
-    packages: [asset]
+  await fs.mkdir(project)
+  await fs.copyFile(entry, path.join(project, 'main.cjs'))
+  // A separate project prevents production file/extraResources arrays being merged into the fixture.
+  const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
+  const copied = new Map<string, string>()
+  async function copyDependency(dependency: string, from: string) {
+    const manifest = require.resolve(dependency + '/package.json', { paths: [from] })
+    const metadata = JSON.parse(await fs.readFile(manifest, 'utf8'))
+    if (copied.has(dependency)) {
+      assert.equal(copied.get(dependency), metadata.version)
+      return
+    }
+    copied.set(dependency, metadata.version)
+    const source = path.dirname(manifest)
+    await fs.cp(source, path.join(project, 'node_modules', dependency), {
+      recursive: true,
+      filter: (file) => path.basename(file) !== 'node_modules'
+    })
+    for (const child of Object.keys(metadata.dependencies || {}))
+      await copyDependency(child, source)
   }
-  await fs.writeFile(
-    path.join(published, 'latest.json'),
-    JSON.stringify(signRelease(release, privateKey))
-  )
-  await fs.writeFile(path.join(before, '玩家自存文件.txt'), '不得修改')
-  evidence.package = asset
-  const executableHash = await hashFile(path.join(before, '物价补丁.exe'))
-  const env = {
-    ...process.env,
-    POE_DESKTOP_DATA: userdata,
-    NODE_EXTRA_CA_CERTS: path.join(sandbox, 'local-cert.pem')
-  }
-  delete env.ELECTRON_RUN_AS_NODE
-  running = await electron.launch({
-    executablePath: path.join(before, '物价补丁.exe'),
-    env,
-    timeout: 30_000
-  })
-  // Packaged Electron may ignore NODE_EXTRA_CA_CERTS. Trust only this test CA,
-  // inside this disposable process; production TLS verification stays enabled.
-  await running.evaluate(
-    (_, pem) => {
-      const tls = process.getBuiltinModule('node:tls')
-      tls.setDefaultCACertificates([...tls.getCACertificates('default'), pem])
-    },
-    await fs.readFile(path.join(sandbox, 'local-cert.pem'), 'utf8')
-  )
-  let page = await running.firstWindow()
-  await page.emulateMedia({ reducedMotion: 'reduce' })
-  await running.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].setPosition(-20000, -20000)
-  )
-  page.on('pageerror', (error) => errors.push(error.message))
-  await page.getByRole('heading', { name: '物价补丁', exact: true }).waitFor()
-  const navigation = page.getByRole('navigation', { name: '主导航' }).getByRole('button')
-  assert.equal(await navigation.count(), 4)
-  assert.equal(await navigation.nth(3).innerText(), '检查更新')
-  await navigation.nth(3).click()
-  let available = await page.evaluate(() => window.desktop.getSoftwareUpdate())
-  const checkDeadline = Date.now() + 30_000
-  while (!['available', 'error'].includes(available.status) && Date.now() < checkDeadline) {
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    available = await page.evaluate(() => window.desktop.getSoftwareUpdate())
-  }
-  assert.equal(available.status, 'available', available.message)
-  assert.equal(available.packageKind, 'delta')
-  await page.locator('.appreciation-image img').evaluate(async (image: HTMLImageElement) => {
-    await image.decode()
-  })
-  const imageBox = await page.locator('.appreciation-image').boundingBox()
-  const button = page.getByRole('button', { name: '立即更新', exact: true })
-  const buttonBox = await button.boundingBox()
-  evidence.initialLayout = {
-    imageBox,
-    buttonBox,
-    viewport: await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
-  }
-  assert.ok(
-    imageBox && buttonBox && imageBox.y + imageBox.height < buttonBox.y,
-    '扫码与更新按钮不能重叠'
-  )
-  assert.ok(
-    buttonBox.y + buttonBox.height <= (await page.evaluate(() => innerHeight)),
-    '更新按钮须在首屏内'
-  )
-  assert.ok(await button.isEnabled())
-  await page.screenshot({
-    path: path.join(reportDir, 'updates-available-light.png'),
-    fullPage: true
-  })
-  await page.getByRole('button', { name: '查看完整赞赏码' }).click()
-  await page
-    .locator('.appreciation-modal img')
-    .evaluate(async (image: HTMLImageElement) => image.decode())
-  await page.keyboard.press('Escape')
-  await page.locator('.feedback-link').click()
-  assert.equal(await running.evaluate(({ clipboard }) => clipboard.readText()), '168887742')
-  await page.locator('.n-message').waitFor({ state: 'hidden' })
-  checks.push('真实发行版第四导航、更新说明、原图赞赏码和反馈群复制可用')
-  await page.evaluate(() => window.desktop.saveSettings({ theme: 'dark' }))
-  await page.locator('.theme-root.dark').waitFor()
-  await page.screenshot({
-    path: path.join(reportDir, 'updates-available-dark.png'),
-    fullPage: true
-  })
-  await page.evaluate(() => window.desktop.saveSettings({ theme: 'light' }))
-  await running.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(820, 620))
-  await page.waitForFunction(() => innerWidth < 900)
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-  for (const selector of ['.appreciation-image', '.software-update-buttons']) {
-    const box = await page.locator(selector).boundingBox()
-    assert.ok(
-      box && box.y >= 0 && box.y + box.height <= (await page.evaluate(() => innerHeight)),
-      `${selector} 须完整出现在紧凑窗口首屏`
-    )
-  }
-  await page.screenshot({ path: path.join(reportDir, 'updates-compact.png'), fullPage: true })
-  checks.push('浅色、深色、820×620紧凑布局，无横向溢出')
-  evidence.screenshots = [
-    'updates-available-light.png',
-    'updates-available-dark.png',
-    'updates-compact.png'
-  ]
-  await running.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1200, 860))
-  const oldProcess = running.process()
-  const closed = new Promise<void>((resolve) => oldProcess.once('exit', () => resolve()))
-  await button.click()
-  const installDeadline = Date.now() + 30_000
-  while (Date.now() < installDeadline && oldProcess.exitCode === null) {
-    const installing = await page
-      .evaluate(() => window.desktop.getSoftwareUpdate())
-      .catch(() => undefined)
-    if (installing?.status === 'error') throw new Error(installing.message)
-    await new Promise((resolve) => setTimeout(resolve, 250))
-  }
-  let exitTimer: ReturnType<typeof setTimeout>
-  try {
-    await Promise.race([
-      closed,
-      new Promise((_, reject) => {
-        exitTimer = setTimeout(() => reject(new Error('旧版本未自动退出')), 60_000)
+  for (const dependency of ['electron-updater', 'builder-util-runtime', 'js-yaml'])
+    await copyDependency(dependency, root)
+  for (const [version, output] of [
+    [oldVersion, oldOutput],
+    [newVersion, newOutput]
+  ]) {
+    console.log(`Building isolated NSIS fixture ${version}`)
+    await fs.writeFile(
+      path.join(project, 'package.json'),
+      JSON.stringify({
+        name,
+        version,
+        main: 'main.cjs',
+        description: 'Isolated updater verification',
+        author: 'QA',
+        dependencies: Object.fromEntries(
+          ['electron-updater', 'builder-util-runtime', 'js-yaml'].map((dep) => [
+            dep,
+            pkg.dependencies[dep]
+          ])
+        ),
+        build: {
+          appId,
+          productName: name,
+          directories: { output },
+          electronVersion: require('electron/package.json').version,
+          artifactName: 'POE-Price-Patch-${version}-x64-Setup.${ext}',
+          files: ['main.cjs', 'package.json'],
+          extraResources: [{ from: configPath, to: 'qa-config.json' }],
+          win: { executableName, icon: path.join(root, 'resources/icon.png'), target: ['nsis'] },
+          publish: { provider: 'generic', url: base + '/zos/' },
+          nsis: {
+            oneClick: false,
+            perMachine: false,
+            allowToChangeInstallationDirectory: true,
+            createDesktopShortcut: false,
+            createStartMenuShortcut: false,
+            runAfterFinish: false,
+            deleteAppDataOnUninstall: false
+          }
+        }
       })
-    ])
-  } finally {
-    clearTimeout(exitTimer!)
-  }
-  running = undefined
-  const transactionRoot = path.join(userdata, 'software-updates')
-  const { token } = JSON.parse(
-    await fs.readFile(path.join(transactionRoot, 'last-update.json'), 'utf8')
-  )
-  const transaction = path.join(transactionRoot, token)
-  let result
-  const deadline = Date.now() + 90_000
-  while (Date.now() < deadline) {
-    result = JSON.parse(
-      await fs.readFile(path.join(transaction, 'result.json'), 'utf8').catch(() => '{}')
     )
-    if (result.status) break
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    await pack({
+      projectDir: project,
+      targets: Platform.WINDOWS.createTarget(['nsis'], Arch.x64),
+      publish: 'never'
+    })
+    const bundled = JSON.parse(
+      asar
+        .extractFile(path.join(output, 'win-unpacked/resources/app.asar'), 'package.json')
+        .toString()
+    )
+    assert.equal(bundled.name, name)
+    assert.equal(bundled.version, version)
+    assert.equal(bundled.main, 'main.cjs')
   }
-  assert.equal(result?.status, 'completed', JSON.stringify(result))
-  const health = JSON.parse(await fs.readFile(path.join(transaction, 'health.json'), 'utf8'))
-  assert.equal(health.version, pkg.version)
-  const plan = JSON.parse(await fs.readFile(path.join(transaction, 'plan.json'), 'utf8'))
-  await verifyInventory(before, plan.targetFiles)
-  assert.equal(await hashFile(path.join(before, '物价补丁.exe')), executableHash)
-  assert.equal(await fs.readFile(path.join(before, '玩家自存文件.txt'), 'utf8'), '不得修改')
-  evidence.health = health
-  evidence.result = result
-  checks.push(
-    `真实HTTPS读取签名说明、只下载变化文件、旧进程退出、外部安装、新版本${pkg.version}界面启动回执成功`
+  await buildRelease({
+    directory: newOutput,
+    output: published,
+    privateKey,
+    publicKey,
+    notes: { version: newVersion, notes: ['隔离验证跨版本安装'] }
+  })
+  await fs.mkdir(path.join(sandbox, 'userdata'), { recursive: true })
+  const settings = path.join(sandbox, 'userdata/desktop-settings.json')
+  await fs.writeFile(
+    settings,
+    JSON.stringify({ theme: 'dark', league: 'fixed', autoUpdate: true, history: ['preserve'] })
   )
-  for (const resource of ['latest.json', new URL(asset.url).pathname.split('/').pop()!]) {
-    const primary = transportRequests.findIndex(url => url.startsWith('/primary/') && url.endsWith('/' + resource))
-    const backup = transportRequests.findIndex(url => url.startsWith('/backup/') && url.endsWith('/' + resource))
-    assert.ok(primary >= 0 && backup > primary, `${resource} 应先主源失败再从备用源成功`)
-  }
-  evidence.transportRequests = transportRequests
-  checks.push('实际 Electron 更新中，主源返回 503，备用源提供同一签名清单和更新包，安装与重启完成')
-  checks.push('完整目标发行文件逐一哈希回读通过，Electron可执行文件未改动，玩家自存文件保留')
-  assert.deepEqual(errors, [])
-} catch (error) {
-  evidence.failure = String(error)
-  if (running) {
-    const page = await running.firstWindow().catch(() => undefined)
-    evidence.failureState = await page
-      ?.evaluate(() => window.desktop.getSoftwareUpdate())
-      .catch(() => undefined)
-  }
-  throw error
+  const beforeSettings = await fs.readFile(settings)
+  await run(path.join(oldOutput, installerName(oldVersion)), ['/S', '/D=' + installed])
+  await until(async () => readVersion() === oldVersion, 'initial NSIS install', 90000)
+  checks.push('真实 NSIS 首次安装成功，使用独立应用 ID 和中文安装路径')
+
+  // No old package or blockmap: every mirror fails and ZOS serves one complete target.
+  await fs.unlink(path.join(cache, 'installer.exe')).catch(() => {})
+  await fs.unlink(path.join(cache, 'current.blockmap')).catch(() => {})
+  modes.primary = modes.backup = 'offline'
+  modes.oldBlockmap = 'missing'
+  await launch()
+  assert.equal((await command('check')).status, 'available')
+  assert.equal((await command('download')).status, 'ready')
+  assert.ok(
+    requests.some((r) => r.source === 'zos' && r.file === installerName(newVersion) && !r.range)
+  )
+  checks.push('1.0.0 无基线直接下载 2.4.0；国内源失败后使用 ZOS，旧 blockmap 缺失回退全量')
+  await close()
+  assert.equal(readVersion(), oldVersion)
+  checks.push('下载后普通退出不触发自动安装')
+
+  // With a matching cached installer, native blockmap/range download is exercised.
+  await clearPending()
+  await fs.mkdir(cache, { recursive: true })
+  await fs.copyFile(
+    path.join(oldOutput, installerName(oldVersion)),
+    path.join(cache, 'installer.exe')
+  )
+  await fs.unlink(path.join(cache, 'current.blockmap')).catch(() => {})
+  delete modes.backup
+  delete modes.oldBlockmap
+  modes.primary = 'bad-signature'
+  const beforeRequests = requests.length
+  await launch()
+  assert.equal((await command('check')).status, 'available')
+  assert.equal((await command('download')).status, 'ready')
+  assert.ok(
+    requests.slice(beforeRequests).some((r) => r.range),
+    'Native differential download must issue Range requests'
+  )
+  assert.ok(
+    !requests.slice(beforeRequests).some((r) => r.file === installerName(newVersion) && !r.range),
+    'Native differential download must finish without a full-file fallback'
+  )
+  const downloadPath = await application!.evaluate(
+    () => (globalThis as any).qaDriver.updater.installerPath
+  )
+  assert.equal(
+    await hashFile(downloadPath),
+    await hashFile(path.join(published, installerName(newVersion)))
+  )
+  checks.push('签名异常切换备用元数据源；真实 electron-updater 差分下载结果与完整安装包一致')
+
+  const exit = application!.waitForEvent('close')
+  await command('install').catch(() => {})
+  await exit
+  application = undefined
+  await until(
+    async () => {
+      const boot = JSON.parse(
+        await fs.readFile(path.join(sandbox, `boot-${newVersion}.json`), 'utf8')
+      )
+      bootPid = boot.pid
+      return (
+        boot.version === newVersion &&
+        path.resolve(boot.executable) ===
+          path.resolve(path.join(installed, executableName + '.exe'))
+      )
+    },
+    'NSIS upgrade and target restart',
+    120000
+  )
+  assert.equal(readVersion(), newVersion)
+  assert.deepEqual(await fs.readFile(settings), beforeSettings)
+  const receipt = JSON.parse(
+    await fs.readFile(path.join(sandbox, 'userdata/software-updates/installer-result.json'), 'utf8')
+  )
+  assert.equal(receipt.status, 'completed')
+  checks.push('真实 NSIS 从 1.0.0 跨版本安装 2.4.0 并重启，设置逐字节保留，目标启动回执完成')
+  console.log(JSON.stringify({ sandbox, checks }, null, 2))
 } finally {
-  if (running) await running.close().catch(() => {})
+  await close().catch(() => {})
+  if (bootPid) await run('taskkill.exe', ['/PID', String(bootPid), '/T', '/F']).catch(() => {})
+  const uninstaller = path.join(installed, `Uninstall ${executableName}.exe`)
+  if (await fs.stat(uninstaller).catch(() => null)) await run(uninstaller, ['/S']).catch(() => {})
   server.closeAllConnections()
   server.close()
-  // Only terminate processes whose executable is inside this disposable test application.
-  const cleanupScript = path.join(sandbox, 'close-test-app.ps1')
+  await fs.mkdir(path.join(root, 'test-results'), { recursive: true })
   await fs.writeFile(
-    cleanupScript,
-    '\ufeffparam([string]$TestExe)\n$ErrorActionPreference="Stop"\nGet-Process | Where-Object { $_.Path -eq $TestExe } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue; $_.WaitForExit(10000) | Out-Null }\nif (Get-Process | Where-Object { $_.Path -eq $TestExe }) { throw "Test application still running" }\n'
+    path.join(root, 'test-results/software-updates.json'),
+    JSON.stringify({ sandbox, appId, cache, checks, requests }, null, 2)
   )
-  const cleaned = spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      cleanupScript,
-      '-TestExe',
-      await fs.realpath(path.join(before, '物价补丁.exe'))
-    ],
-    { windowsHide: true }
-  )
-  assert.equal(cleaned.status, 0, cleaned.stderr?.toString())
-  evidence.testProcessesCleaned = true
-  await fs.writeFile(path.join(reportDir, 'evidence.json'), JSON.stringify(evidence, null, 2))
 }
-console.log(JSON.stringify(evidence, null, 2))

@@ -1,161 +1,116 @@
 import fs from 'node:fs/promises'
-import { createWriteStream } from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
-import { createRequire } from 'node:module'
-import yazl from 'yazl'
+import { dump, load } from 'js-yaml'
 import {
-  APP_ID,
   hashFile,
-  relativeFile,
-  versionParts,
-  newerVersion,
-  updateUrl
+  installerName,
+  MANIFEST_NAME,
+  signManifest,
+  verifyRelease
 } from '../src/main/software-update-protocol'
-import type {
-  UpdateFile,
-  UpdatePackage,
-  UpdateAsset,
-  SoftwareRelease
-} from '../src/shared/software-update'
 
-export async function inventory(root: string): Promise<UpdateFile[]> {
-  const output: UpdateFile[] = []
-  async function walk(dir: string) {
-    for (const entry of (await fs.readdir(dir, { withFileTypes: true })).sort((a, b) =>
-      a.name.localeCompare(b.name)
-    )) {
-      const file = path.join(dir, entry.name)
-      // electron-builder adds this NSIS-only helper after creating NoInstall.zip.
-      // Our updater never uses it; exclude it so both editions share one baseline.
-      if (path.relative(root, file).split(path.sep).join('/').toLowerCase() === 'resources/elevate.exe') continue
-      if (entry.isSymbolicLink()) throw new Error('发行目录不能包含符号链接')
-      if (entry.isDirectory()) await walk(file)
-      else if (entry.isFile())
-        output.push({
-          path: relativeFile(path.relative(root, file).split(path.sep).join('/')),
-          size: (await fs.stat(file)).size,
-          sha256: await hashFile(file)
-        })
+/** Sign the final, standard NSIS metadata. No old release is an input. */
+export async function buildRelease(options: {
+  directory: string
+  output: string
+  privateKey: string
+  publicKey: string
+  notes: { version: string; notes: string[] }
+}) {
+  const { directory, output, notes } = options
+  const signingKey = crypto.createPrivateKey(options.privateKey)
+  const bundledKey = crypto.createPublicKey(options.publicKey)
+  if (
+    signingKey.asymmetricKeyType !== 'ed25519' ||
+    !crypto
+      .createPublicKey(signingKey)
+      .export({ type: 'spki', format: 'der' })
+      .equals(bundledKey.export({ type: 'spki', format: 'der' }))
+  )
+    throw new Error('签名私钥与客户端公钥不对应')
+  const info = load(await fs.readFile(path.join(directory, MANIFEST_NAME), 'utf8')) as Record<
+    string,
+    unknown
+  >
+  if (info.version !== notes.version || !Array.isArray(notes.notes))
+    throw new Error('发行版本与更新说明不一致')
+  const name = installerName(notes.version)
+  const installer = path.join(directory, name),
+    blockmap = installer + '.blockmap'
+  const file = (info.files as { url: string; size: number; sha512: string }[])?.[0]
+  if (
+    !file ||
+    file.url !== name ||
+    file.size !== (await fs.stat(installer)).size ||
+    file.sha512 !== (await hashFile(installer, 'sha512'))
+  )
+    throw new Error('安装包与 builder 元数据不一致')
+  const blockmapBytes = (await fs.stat(blockmap)).size
+  if (!blockmapBytes || blockmapBytes > 16 * 1024 * 1024) throw new Error('缺少有效的 blockmap')
+  info.releaseNotes = notes.notes.join('\n')
+  const bytes = Buffer.from(dump(info, { lineWidth: -1 }), 'utf8')
+  const signature = signManifest(bytes, options.privateKey)
+  const release = verifyRelease(bytes, signature, options.publicKey)
+  // Never silently replace a previously prepared release with different bytes.
+  await fs.mkdir(output, { recursive: true })
+  async function writeImmutable(name: string, contents: Buffer) {
+    const destination = path.join(output, name)
+    try {
+      await fs.writeFile(destination, contents, { flag: 'wx' })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (!(await fs.readFile(destination)).equals(contents))
+        throw new Error(`拒绝覆盖已有发行文件：${name}`)
     }
   }
-  await walk(root)
-  for (const required of ['物价补丁.exe', 'resources/app.asar'])
-    if (!output.some((file) => file.path === required)) throw new Error(`发行目录缺少 ${required}`)
-  return output
-}
-export async function buildPackage(options: {
-  to: string
-  from?: string
-  version: string
-  fromVersion?: string
-  output: string
-  baseUrl: string
-  allowLocalhost?: boolean
-}): Promise<UpdateAsset> {
-  versionParts(options.version)
-  if (options.from) {
-    versionParts(options.fromVersion || '')
-    if (!newerVersion(options.version, options.fromVersion!))
-      throw new Error('目标版本必须高于基线版本')
-  }
-  const targetFiles = await inventory(options.to)
-  const baseFiles = options.from ? await inventory(options.from) : []
-  const base = new Map(baseFiles.map((file) => [file.path, file]))
-  const files = targetFiles.filter(
-    (file) => file.sha256 !== base.get(file.path)?.sha256 || file.size !== base.get(file.path)?.size
+  await writeImmutable(name, await fs.readFile(installer))
+  await writeImmutable(name + '.blockmap', await fs.readFile(blockmap))
+  await writeImmutable(MANIFEST_NAME, bytes)
+  await writeImmutable(MANIFEST_NAME + '.sig', Buffer.from(signature + '\n'))
+  const names = [name, name + '.blockmap', MANIFEST_NAME, MANIFEST_NAME + '.sig']
+  const hashes = await Promise.all(
+    names.map(async (name) => `${await hashFile(path.join(output, name))}  ${name}`)
   )
-  const kind = options.from ? 'delta' : 'full'
-  const manifest: UpdatePackage = {
-    schema: 1,
-    appId: APP_ID,
-    version: options.version,
-    kind,
-    ...(options.from ? { fromVersion: options.fromVersion } : {}),
-    executable: '物价补丁.exe',
-    files,
-    baseFiles,
-    targetFiles
-  }
-  await fs.mkdir(options.output, { recursive: true })
-  const name = `POE-Price-Patch-${options.fromVersion ? options.fromVersion + '-to-' : ''}${options.version}-${kind}.zip`
-  const destination = path.join(options.output, name)
-  const zip = new yazl.ZipFile()
-  const writing = pipeline(zip.outputStream, createWriteStream(destination, { flags: 'wx' }))
-  zip.addBuffer(Buffer.from(JSON.stringify(manifest)), 'update.json')
-  for (const file of files) zip.addFile(path.join(options.to, file.path), 'files/' + file.path)
-  zip.end()
-  await writing
-  const url = updateUrl(
-    new URL(name, options.baseUrl.replace(/\/?$/, '/')).href,
-    options.allowLocalhost
-  )
+  await writeImmutable('SHA256SUMS.txt', Buffer.from(hashes.join('\n') + '\n'))
   return {
-    kind,
-    ...(options.from ? { fromVersion: options.fromVersion } : {}),
-    url,
-    size: (await fs.stat(destination)).size,
-    sha256: await hashFile(destination)
+    version: release.version,
+    output,
+    files: [...names, 'SHA256SUMS.txt'],
+    installerBytes: release.installer.size
   }
 }
-export function signRelease(release: SoftwareRelease, privateKey: string) {
-  const payload = Buffer.from(JSON.stringify(release))
-  return {
-    schema: 1,
-    payload: payload.toString('base64'),
-    signature: crypto.sign(null, payload, privateKey).toString('base64')
-  }
-}
+
 async function main() {
+  const root = fileURLToPath(new URL('../', import.meta.url))
   const args = process.argv.slice(2)
   const option = (name: string) => {
     const i = args.indexOf('--' + name)
-    return i >= 0 ? args[i + 1] : undefined
+    return i < 0 ? undefined : args[i + 1]
   }
-  const to = option('to'),
-    output = option('out'),
-    baseUrl = option('base-url'),
-    key = option('key')
-  if (!to || !output || !baseUrl || !key)
-    throw new Error(
-      '用法：--to win-unpacked --out 发布目录 --base-url HTTPS目录/ --key 私钥文件 [--from 旧版目录]'
-    )
-  const require = createRequire(import.meta.url)
-  const asar = require('@electron/asar')
-  const packagedVersion = (dir: string) =>
-    JSON.parse(asar.extractFile(path.join(dir, 'resources/app.asar'), 'package.json').toString())
-      .version as string
-  const version = packagedVersion(to)
-  const from = option('from')
-  const deltaOnly = args.includes('--delta-only')
-  if (deltaOnly && !from) throw new Error('--delta-only 必须提供 --from 旧版基线')
-  const fromVersion = from ? packagedVersion(from) : undefined
-  const notes = JSON.parse(
-    await fs.readFile(option('notes') || path.resolve('resources/current-release.json'), 'utf8')
+  if (args.some((arg) => ['--from', '--to', '--delta-only', '--base-url'].includes(arg)))
+    throw new Error('1.0.0 使用完整安装包和 blockmap；无需旧版基线。使用 --directory 和 --out。')
+  const directory = path.resolve(option('directory') || path.join(root, 'dist'))
+  const output = path.resolve(option('out') || path.join(directory, 'update-publish'))
+  if (directory === output) throw new Error('签名发行输出目录必须独立于构建目录')
+  const config = JSON.parse(
+    await fs.readFile(option('config') || path.join(root, 'resources/update-config.json'), 'utf8')
   )
-  if (notes.version !== version || !Array.isArray(notes.notes))
-    throw new Error('发布说明与目标应用版本不一致')
-  const privateKey = await fs.readFile(key, 'utf8')
-  const config = JSON.parse(await fs.readFile(path.join(to, 'resources/update-config.json'), 'utf8'))
-  const signingPublic = crypto.createPublicKey(privateKey).export({ type: 'spki', format: 'der' })
-  const bundledPublic = crypto.createPublicKey(config.publicKey).export({ type: 'spki', format: 'der' })
-  if (!signingPublic.equals(bundledPublic)) throw new Error('签名私钥与目标发行版的更新公钥不对应')
-  const packages: UpdateAsset[] = []
-  if (from) packages.push(await buildPackage({ to, from, version, fromVersion, output, baseUrl }))
-  if (!deltaOnly) packages.push(await buildPackage({ to, version, output, baseUrl }))
-  const release: SoftwareRelease = {
-    appId: APP_ID,
-    version,
-    notes: notes.notes,
-    publishedAt: new Date().toISOString(),
-    packages
-  }
-  const envelope = signRelease(release, privateKey)
-  await fs.writeFile(path.join(output, 'latest.json'), JSON.stringify(envelope, null, 2))
-  await fs.writeFile(path.join(output, 'release-info.json'), JSON.stringify(release, null, 2))
-  console.log(JSON.stringify({ version, output, packages }, null, 2))
+  const notes = JSON.parse(
+    await fs.readFile(option('notes') || path.join(root, 'resources/current-release.json'), 'utf8')
+  )
+  const privateKey = await fs.readFile(
+    option('key') || path.join(root, '.release-keys/update-private.pem'),
+    'utf8'
+  )
+  console.log(
+    JSON.stringify(
+      await buildRelease({ directory, output, privateKey, publicKey: config.publicKey, notes }),
+      null,
+      2
+    )
+  )
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   main().catch((error) => {

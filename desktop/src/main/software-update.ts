@@ -1,46 +1,50 @@
-import { updateFs as fs } from './software-update-fs'
+import fs from 'node:fs/promises'
 import path from 'node:path'
-import crypto from 'node:crypto'
-import { spawn } from 'node:child_process'
-import type {
-  SoftwareUpdateState,
-  UpdateConfig,
-  UpdateAsset,
-  UpdatePackage,
-  UpdateFile
-} from '../shared/software-update'
+import type { SoftwareRelease, SoftwareUpdateState, UpdateConfig } from '../shared/software-update'
 import {
-  hashFile,
+  MANIFEST_LIMIT,
   newerVersion,
-  safeFile,
-  selectAsset,
-  unpackUpdate,
   updateUrl,
-  verifyInventory,
+  verifyInstaller,
   verifyRelease
 } from './software-update-protocol'
-import { manifestSources, packageSources } from './software-update-sources'
+import { installerSources, manifestSources } from './software-update-sources'
+import type { InstallerSource } from './software-update-sources'
 
+export interface UpdateDriver {
+  download(
+    release: SoftwareRelease,
+    source: InstallerSource,
+    signal: AbortSignal,
+    progress: (transferred: number, total: number) => void
+  ): Promise<string>
+  install(onError: (error: Error) => void): void
+}
 export interface UpdateOptions {
   version: string
   notes: string[]
   config: UpdateConfig
-  appRoot: string
-  transactionRoot: string
-  helperSource: string
+  stateRoot: string
   packaged: boolean
+  driver: UpdateDriver
   canInstall: () => boolean
   changed: (state: SoftwareUpdateState) => void
-  quit: () => void
   allowLocalhost?: boolean
+  manifestTimeoutMs?: number
+  sourceIdleTimeoutMs?: number
   sourceTimeoutMs?: number
 }
+
 export class SoftwareUpdater {
   private state: SoftwareUpdateState
   private abort?: AbortController
-  private staged?: { dir: string; manifest: UpdatePackage }
+  private downloaded?: string
+  private readonly receiptPath: string
   constructor(private options: UpdateOptions) {
-    const configured = (options.config.manifestUrls.length > 0 || !!options.config.github) && !!options.config.publicKey
+    const configured =
+      (options.config.manifestUrls.length > 0 || !!options.config.github) &&
+      !!options.config.publicKey
+    this.receiptPath = path.join(options.stateRoot, 'installer-result.json')
     this.state = {
       status: configured ? 'idle' : 'unconfigured',
       currentVersion: options.version,
@@ -63,10 +67,9 @@ export class SoftwareUpdater {
   private fail(error: unknown) {
     this.set({ status: 'error', message: error instanceof Error ? error.message : String(error) })
   }
-  private async response(url: string, signal: AbortSignal): Promise<Response> {
+  private async fetchBytes(url: string, limit: number, signal: AbortSignal): Promise<Buffer> {
     for (let redirect = 0; redirect <= 4; redirect++) {
-      url = updateUrl(url, this.options.allowLocalhost)
-      const response = await fetch(url, {
+      const response = await fetch(updateUrl(url, this.options.allowLocalhost), {
         redirect: 'manual',
         signal,
         headers: {
@@ -75,308 +78,248 @@ export class SoftwareUpdater {
         }
       })
       if (response.status >= 300 && response.status < 400) {
-        const next = response.headers.get('location')
         await response.body?.cancel()
+        const next = response.headers.get('location')
         if (!next) throw new Error('更新服务器重定向无效')
         url = new URL(next, url).href
-      } else {
-        if (!response.ok || !response.body) {
-          await response.body?.cancel()
-          throw new Error(`更新服务器返回 ${response.status}`)
-        }
-        return response
+        continue
       }
+      if (!response.ok || !response.body) {
+        await response.body?.cancel()
+        throw new Error(`更新服务器返回 ${response.status}`)
+      }
+      const chunks: Uint8Array[] = []
+      let size = 0
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        size += chunk.length
+        if (size > limit) throw new Error('更新说明超过大小限制')
+        chunks.push(chunk)
+      }
+      return Buffer.concat(chunks)
     }
     throw new Error('更新服务器重定向过多')
   }
   async check(): Promise<SoftwareUpdateState> {
-    if (['checking', 'downloading', 'installing', 'ready'].includes(this.state.status))
+    if (
+      ['unconfigured', 'checking', 'downloading', 'ready', 'installing'].includes(this.state.status)
+    )
       return this.snapshot
-    if ((!this.options.config.manifestUrls.length && !this.options.config.github) || !this.options.config.publicKey)
-      return this.snapshot
-    this.set({ status: 'checking', message: '正在检查新版本…', release: undefined })
-    let lastError: unknown
-    let sources
+    this.downloaded = undefined
+    this.set({
+      status: 'checking',
+      release: undefined,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      message: '正在检查新版本…'
+    })
+    let lastError: unknown = new Error('更新源不可用')
+    let hasOlderRelease = false
     try {
-      sources = manifestSources(this.options.config, this.options.allowLocalhost)
-    } catch (error) {
-      this.fail(error)
-      return this.snapshot
-    }
-    for (const { url, name } of sources) {
-      try {
-        this.set({ message: `正在通过${name}检查新版本…` })
+      for (const source of manifestSources(this.options.config, this.options.allowLocalhost)) {
+        this.set({ message: `正在通过${source.name}检查新版本…` })
         const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 20_000)
-        let release
+        const timeout = setTimeout(
+          () => controller.abort(new Error('检查更新超时')),
+          this.options.manifestTimeoutMs ?? 20_000
+        )
         try {
-          const response = await this.response(url, controller.signal)
-          const chunks: Uint8Array[] = []
-          let length = 0
-          for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-            length += chunk.length
-            if (length > 1_100_000) {
-              controller.abort()
-              throw new Error('更新说明大小超限')
-            }
-            chunks.push(chunk)
+          const [manifest, signature] = await Promise.all([
+            this.fetchBytes(source.url, MANIFEST_LIMIT, controller.signal),
+            this.fetchBytes(source.url + '.sig', 1024, controller.signal)
+          ])
+          const release = verifyRelease(
+            manifest,
+            signature.toString('utf8'),
+            this.options.config.publicKey
+          )
+          // A lagging mirror must not offer a downgrade or hide a newer fallback.
+          if (newerVersion(this.options.version, release.version)) {
+            hasOlderRelease = true
+            continue
           }
-          release = verifyRelease(
-            JSON.parse(Buffer.concat(chunks).toString('utf8')),
-            this.options.config.publicKey,
-            this.options.allowLocalhost
+          const available = newerVersion(release.version, this.options.version)
+          this.set({
+            status: available ? 'available' : 'current',
+            release,
+            checkedAt: new Date().toISOString(),
+            totalBytes: available ? release.installer.size : 0,
+            message: available ? `发现新版本 v${release.version}` : '当前已是最新版本'
+          })
+          return this.snapshot
+        } catch (error) {
+          lastError = new Error(
+            `${source.name}：${error instanceof Error ? error.message : String(error)}`
           )
         } finally {
           clearTimeout(timeout)
+          controller.abort()
         }
-        const available = newerVersion(release.version, this.options.version)
-        const asset = available ? selectAsset(release, this.options.version) : undefined
-        this.set({
-          status: available ? 'available' : 'current',
-          release,
-          checkedAt: new Date().toISOString(),
-          packageKind: asset?.kind,
-          totalBytes: asset?.size || 0,
-          downloadedBytes: 0,
-          message: available ? `发现新版本 v${release.version}` : '当前已是最新版本'
-        })
-        return this.snapshot
-      } catch (error) {
-        lastError = new Error(`${name}：${error instanceof Error ? error.message : String(error)}`)
       }
+      if (hasOlderRelease)
+        this.set({
+          status: 'current',
+          checkedAt: new Date().toISOString(),
+          message: '当前版本高于更新源中的版本，无需降级。'
+        })
+      else this.fail(lastError)
+    } catch (error) {
+      this.fail(error)
     }
-    this.fail(lastError)
     return this.snapshot
   }
   cancel() {
-    if (this.state.status === 'downloading') this.abort?.abort()
-  }
-  private async downloadFrom(url: string, archive: string, asset: UpdateAsset, signal: AbortSignal) {
-    const controller = new AbortController()
-    const combined = AbortSignal.any([signal, controller.signal])
-    const deadline = setTimeout(
-      () => controller.abort(new Error('当前下载源超时')),
-      this.options.sourceTimeoutMs ?? 3 * 60_000
-    )
-    let idle: ReturnType<typeof setTimeout>
-    const touch = () => {
-      clearTimeout(idle)
-      idle = setTimeout(() => controller.abort(new Error('当前下载源长时间无响应')), 30_000)
-    }
-    touch()
-    try {
-      const response = await this.response(url, combined)
-      const output = await fs.open(archive, 'wx')
-      const hash = crypto.createHash('sha256')
-      let size = 0
-      let lastSent = 0
-      try {
-        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-          touch()
-          size += chunk.length
-          if (size > asset.size) throw new Error('更新包大小超过发布清单')
-          hash.update(chunk)
-          await output.writeFile(chunk)
-          if (Date.now() - lastSent > 100) {
-            this.set({ downloadedBytes: size })
-            lastSent = Date.now()
-          }
-        }
-      } finally {
-        await output.close()
-      }
-      combined.throwIfAborted()
-      if (size !== asset.size || hash.digest('hex') !== asset.sha256)
-        throw new Error('更新包校验失败，请重新下载')
-      return size
-    } finally {
-      clearTimeout(deadline)
-      clearTimeout(idle!)
-      controller.abort()
-    }
+    if (this.state.status === 'downloading') this.abort?.abort(new Error('用户取消下载'))
   }
   async download(): Promise<SoftwareUpdateState> {
     if (this.state.status !== 'available' || !this.state.release)
       throw new Error('请先检查可用的软件更新')
-    const release = this.state.release
-    const asset = selectAsset(release, this.options.version)
-    this.abort = new AbortController()
-    const token = crypto.randomUUID()
-    const dir = path.join(this.options.transactionRoot, token)
-    const archive = path.join(dir, 'update.zip')
+    const release = structuredClone(this.state.release)
+    const controller = new AbortController()
+    this.abort = controller
     this.set({
       status: 'downloading',
       downloadedBytes: 0,
-      totalBytes: asset.size,
-      message: '正在下载更新包…'
+      totalBytes: release.installer.size,
+      message: '正在下载安装包…'
     })
-    const timeout = setTimeout(
-      () => this.abort?.abort(new Error('下载更新包超时，请重试')),
-      15 * 60_000
-    )
     try {
-      await fs.mkdir(dir, { recursive: true })
-      let size = 0
-      let downloaded = false
-      let lastError: unknown
-      for (const source of packageSources(this.options.config, release, asset, this.options.allowLocalhost)) {
-        this.abort.signal.throwIfAborted()
-        this.set({ downloadedBytes: 0, message: `正在通过${source.name}下载更新包…` })
+      let lastError: unknown = new Error('所有更新下载源均不可用')
+      for (const source of installerSources(
+        this.options.config,
+        release,
+        this.options.allowLocalhost
+      )) {
+        controller.signal.throwIfAborted()
+        this.set({
+          downloadedBytes: 0,
+          totalBytes: release.installer.size,
+          message: `正在通过${source.name}下载更新…`
+        })
+        const attempt = new AbortController()
+        const signal = AbortSignal.any([controller.signal, attempt.signal])
+        const deadline = setTimeout(
+          () => attempt.abort(new Error('当前下载源超时')),
+          this.options.sourceTimeoutMs ?? 30 * 60_000
+        )
+        let idle: ReturnType<typeof setTimeout>
+        const touch = () => {
+          clearTimeout(idle)
+          idle = setTimeout(
+            () => attempt.abort(new Error('当前下载源长时间无响应')),
+            this.options.sourceIdleTimeoutMs ?? 60_000
+          )
+        }
+        touch()
         try {
-          size = await this.downloadFrom(source.url, archive, asset, this.abort.signal)
-          downloaded = true
-          break
+          const file = await this.options.driver.download(
+            release,
+            source,
+            signal,
+            (transferred, total) => {
+              if (signal.aborted) return
+              touch()
+              this.set({ downloadedBytes: transferred, totalBytes: total })
+            }
+          )
+          signal.throwIfAborted()
+          try {
+            await verifyInstaller(file, release)
+          } catch (error) {
+            await fs.unlink(file).catch(() => {})
+            throw error
+          }
+          signal.throwIfAborted()
+          this.downloaded = file
+          this.set({
+            status: 'ready',
+            downloadedBytes: release.installer.size,
+            totalBytes: release.installer.size,
+            message: '安装包已就绪，重启后完成软件更新。'
+          })
+          return this.snapshot
         } catch (error) {
-          await fs.rm(archive, { force: true })
-          this.abort.signal.throwIfAborted()
-          lastError = new Error(`${source.name}：${error instanceof Error ? error.message : String(error)}`)
+          controller.signal.throwIfAborted()
+          lastError = new Error(
+            `${source.name}：${attempt.signal.reason?.message || (error instanceof Error ? error.message : String(error))}`
+          )
+        } finally {
+          clearTimeout(deadline)
+          clearTimeout(idle!)
+          attempt.abort()
         }
       }
-      if (!downloaded) throw lastError || new Error('所有更新下载源均不可用')
-      if (this.abort.signal.aborted) throw new Error('下载已取消')
-      this.set({ downloadedBytes: size, message: '正在校验更新文件…' })
-      const manifest = await unpackUpdate(archive, path.join(dir, 'files'), asset, release)
-      if (this.abort.signal.aborted) throw new Error('下载已取消')
-      if (asset.kind === 'delta') await verifyInventory(this.options.appRoot, manifest.baseFiles)
-      this.staged = { dir, manifest }
-      this.set({ status: 'ready', message: '更新包已就绪，安装时软件将自动重启。' })
+      throw lastError
     } catch (error) {
-      // Keep bounded evidence for diagnosis; no application file has been changed.
-      await fs.rm(archive, { force: true }).catch(() => {})
-      if (this.abort.signal.aborted && !this.abort.signal.reason?.message?.includes('超时'))
-        this.set({ status: 'available', downloadedBytes: 0, message: '下载已取消，可以重新开始。' })
+      if (controller.signal.aborted)
+        this.set({
+          status: 'available',
+          downloadedBytes: 0,
+          totalBytes: release.installer.size,
+          message: '下载已取消，可以重新开始。'
+        })
       else this.fail(error)
     } finally {
-      clearTimeout(timeout)
       this.abort = undefined
     }
     return this.snapshot
   }
+  private async receipt(value: Record<string, unknown>) {
+    await fs.mkdir(this.options.stateRoot, { recursive: true })
+    const temp = this.receiptPath + '.new'
+    await fs.writeFile(temp, JSON.stringify(value), 'utf8')
+    await fs.rename(temp, this.receiptPath)
+  }
   async install(): Promise<SoftwareUpdateState> {
-    if (this.state.status !== 'ready' || !this.staged) throw new Error('更新包尚未准备完成')
-    if (!this.options.packaged) throw new Error('开发模式不替换程序文件，请使用发行版验证安装')
+    if (this.state.status !== 'ready' || !this.downloaded || !this.state.release)
+      throw new Error('安装包尚未准备完成')
+    if (!this.options.packaged) throw new Error('开发模式不安装软件更新，请使用安装版验证')
     if (!this.options.canInstall()) throw new Error('请等待物价补丁和后台查询完成后再安装')
+    // Acquire the application-wide task guard before any await.
     this.set({ status: 'installing', message: '正在准备重启并安装…' })
-    const { dir, manifest } = this.staged
     try {
-      if (manifest.kind === 'delta') await verifyInventory(this.options.appRoot, manifest.baseFiles)
-      await verifyInventory(path.join(dir, 'files'), manifest.files)
-      const probe = path.join(this.options.appRoot, '.poe-update-write-' + crypto.randomUUID())
-      await fs.writeFile(probe, '', { flag: 'wx' })
-      await fs.unlink(probe)
-      const target = new Set(manifest.targetFiles.map((file) => file.path))
-      const removeFiles = manifest.baseFiles.filter((file) => !target.has(file.path))
-      const beforeFiles: (UpdateFile & { exists: boolean })[] = []
-      for (const file of [...manifest.files, ...removeFiles]) {
-        const current = await safeFile(this.options.appRoot, file.path)
-        const stat = await fs.stat(current).catch((e) => {
-          if (e.code === 'ENOENT') return null
-          throw e
-        })
-        beforeFiles.push({
-          path: file.path,
-          size: stat?.size || 0,
-          sha256: stat ? await hashFile(current) : '',
-          exists: !!stat
-        })
-      }
-      const token = path.basename(dir)
-      const plan = {
-        schema: 1,
-        token,
-        version: manifest.version,
-        parentPid: process.pid,
-        appRoot: this.options.appRoot,
-        stageRoot: path.join(dir, 'files'),
-        backupRoot: path.join(dir, 'backup'),
-        executable: manifest.executable,
-        restart: true,
-        files: manifest.files,
-        removeFiles,
-        beforeFiles,
-        baseFiles: manifest.baseFiles,
-        targetFiles: manifest.targetFiles
-      }
-      await fs.writeFile(path.join(dir, 'plan.json'), JSON.stringify(plan))
-      const helper = path.join(dir, 'install.ps1')
-      await fs.copyFile(this.options.helperSource, helper)
-      await fs.writeFile(
-        path.join(dir, 'recover.ps1'),
-        '\ufeff& (Join-Path $PSScriptRoot "install.ps1") -PlanPath (Join-Path $PSScriptRoot "plan.json") -Recover\n'
-      )
-      await fs.writeFile(
-        path.join(this.options.transactionRoot, 'last-update.json'),
-        JSON.stringify({ token })
-      )
-      const powershell = path.join(
-        process.env.SystemRoot || 'C:/Windows',
-        'System32/WindowsPowerShell/v1.0/powershell.exe'
-      )
-      const helperLog = await fs.open(path.join(dir, 'installer.log'), 'a')
-      const child = spawn(
-        powershell,
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          helper,
-          '-PlanPath',
-          path.join(dir, 'plan.json'),
-          '-Launch'
-        ],
-        // The bootstrap opens an independent hidden console; wait for the real
-        // helper's handshake before exiting, even if the bootstrap has returned.
-        { windowsHide: true, stdio: ['ignore', helperLog.fd, helperLog.fd] }
-      )
-      let spawnError: Error | undefined
-      child.on('error', (error) => {
-        spawnError = error
+      await verifyInstaller(this.downloaded, this.state.release)
+      if (!this.options.canInstall()) throw new Error('请等待后台任务结束后安装')
+      await this.receipt({
+        status: 'installing',
+        from: this.options.version,
+        version: this.state.release.version,
+        at: new Date().toISOString()
       })
-      await helperLog.close()
-      let ready = false
-      for (let attempt = 0; attempt < 100; attempt++) {
-        if (spawnError) throw spawnError
-        const result = await fs
-          .readFile(path.join(dir, 'helper-ready.json'), 'utf8')
-          .catch(() => '')
-        if (result && JSON.parse(result).token === token) {
-          ready = true
-          break
-        }
-        if (child.exitCode !== null && child.exitCode !== 0)
-          throw new Error(
-            `更新安装程序未能启动（${child.exitCode}），详情见 ${path.join(dir, 'installer.log')}`
-          )
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-      if (!ready) throw new Error('更新安装程序准备超时，软件尚未退出')
-      child.unref()
-      this.options.quit()
+      this.options.driver.install((error) => {
+        if (this.installing) this.fail(error)
+      })
     } catch (error) {
-      await fs.writeFile(path.join(dir, 'abort'), 'cancelled').catch(() => {})
-      this.staged = undefined
-      this.set({
-        status: 'error',
-        message: `尚未安装：${error instanceof Error ? error.message : String(error)}`
-      })
+      // electron-updater reuses a same-process cache by existence; remove a
+      // failed cache so a retry downloads and verifies the installer again.
+      if (this.downloaded) await fs.unlink(this.downloaded).catch(() => {})
+      this.downloaded = undefined
+      this.fail(error)
     }
     return this.snapshot
   }
   async previousResult() {
     try {
-      const { token } = JSON.parse(
-        await fs.readFile(path.join(this.options.transactionRoot, 'last-update.json'), 'utf8')
-      )
-      if (!/^[a-f0-9-]{36}$/.test(token)) return
-      const result = JSON.parse(
-        await fs.readFile(path.join(this.options.transactionRoot, token, 'result.json'), 'utf8')
-      )
-      if (result.status !== 'completed')
-        this.set({ message: `上次更新未完成：${result.message}`, status: 'error' })
+      const result = JSON.parse(await fs.readFile(this.receiptPath, 'utf8'))
+      if (result.status === 'installing' && result.version !== this.options.version)
+        this.set({
+          message: '上次安装未完成，可重新检查更新或使用完整安装包修复。',
+          status: 'error'
+        })
     } catch {
-      /* No prior update result. */
+      /* No previous installation receipt. */
+    }
+  }
+  async uiReady() {
+    try {
+      const result = JSON.parse(await fs.readFile(this.receiptPath, 'utf8'))
+      if (result.status === 'installing' && result.version === this.options.version)
+        await this.receipt({
+          ...result,
+          status: 'completed',
+          completedAt: new Date().toISOString()
+        })
+    } catch {
+      /* A receipt is diagnostic, never a prerequisite for normal startup. */
     }
   }
 }

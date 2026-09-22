@@ -33,7 +33,7 @@ jobs:
         run: |
           npm ci --prefix desktop
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install pytest
+          python -m pip install pytest cryptography
       - name: Prepare verified engine and runtimes
         run: npm --prefix desktop run prepare:runtime
       - name: Verify migration and core regression
@@ -62,27 +62,44 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node desktop/scripts/verify-update-recovery.mjs --packaged
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node desktop/scripts/verify-no-install.mjs
+          node desktop/scripts/verify-installer.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node desktop/scripts/verify-compatibility.mjs
+      - name: Verify real NSIS cross-version update
+        run: npm --prefix desktop run test:software-updates
       - name: Check version tag and generate hashes
         shell: pwsh
         run: |
           $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag/package version mismatch' }
-          Get-Item "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe", "desktop/dist/POE-Price-Patch-$version-x64-NoInstall.zip" | ForEach-Object {
+          Get-Item "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe", "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe.blockmap" | ForEach-Object {
             '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
           } | Set-Content desktop/dist/SHA256SUMS.txt -Encoding utf8
       - name: Check source and unpacked release privacy
         run: |
           $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
-          python desktop/scripts/verify-release-privacy.py --source --artifact desktop/dist/win-unpacked --artifact "desktop/dist/POE-Price-Patch-$version-x64-NoInstall.zip"
+          python desktop/scripts/verify-release-privacy.py --source --artifact desktop/dist/win-unpacked --artifact "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe"
+      - name: Sign standard update metadata for a release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+        run: |
+          if (-not $env:UPDATE_PRIVATE_KEY) { throw 'UPDATE_PRIVATE_KEY is required to release an online-updatable installer' }
+          $UpdateSigningPath = Join-Path $env:RUNNER_TEMP 'poe-update-signing.pem'
+          [IO.File]::WriteAllText($UpdateSigningPath, $env:UPDATE_PRIVATE_KEY, [Text.UTF8Encoding]::new($false))
+          try {
+            npm --prefix desktop run updates:build -- --key $UpdateSigningPath
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Copy-Item desktop/dist/update-publish/latest.yml, desktop/dist/update-publish/latest.yml.sig, desktop/dist/update-publish/SHA256SUMS.txt -Destination desktop/dist
+          } finally { Remove-Item -LiteralPath $UpdateSigningPath -Force }
       - uses: actions/upload-artifact@v4
         with:
           name: poe-price-patch-desktop
           path: |
             desktop/dist/*-Setup.exe
-            desktop/dist/*-NoInstall.zip
+            desktop/dist/*-Setup.exe.blockmap
+            desktop/dist/latest.yml
+            desktop/dist/latest.yml.sig
             desktop/dist/SHA256SUMS.txt
           if-no-files-found: error
   publish:
@@ -91,24 +108,42 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    concurrency:
+      group: desktop-stable-publish
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: poe-price-patch-desktop
           path: release
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install publishing tools
+        run: |
+          npm ci --prefix desktop
+          python -m pip install boto3
       - name: Publish versioned desktop release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
+          ZOS_ENDPOINT: ${{ secrets.ZOS_ENDPOINT }}
+          ZOS_BUCKET: ${{ secrets.ZOS_BUCKET }}
+          ZOS_CREDENTIALS: ${{ secrets.ZOS_CREDENTIALS }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            # A prepared release may already have signed update packages bound
-            # to its exact files. Rebuilding must never replace that baseline.
+            # A released version is immutable, including manually prepared drafts.
             echo "Release already exists; retaining its assets and publication state."
             exit 0
-          else
-            gh release create "$RELEASE_TAG" release/* --verify-tag --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest
           fi
-          archive_url=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[] | select(.name | endswith("-NoInstall.zip")) | .apiUrl')
-          gh api --method PATCH "$archive_url" -f label="免安装版 ZIP（完整解压后运行物价补丁.exe）"
+          test -n "$ZOS_ENDPOINT" && test -n "$ZOS_BUCKET" && test -n "$ZOS_CREDENTIALS"
+          python -c 'import os,pathlib; pathlib.Path(os.environ["RUNNER_TEMP"], "zos-credentials.json").write_text(os.environ["ZOS_CREDENTIALS"], encoding="utf-8")'
+          trap 'rm -f "$RUNNER_TEMP/zos-credentials.json"' EXIT
+          python desktop/scripts/upload-zos-update.py --endpoint "$ZOS_ENDPOINT" --bucket "$ZOS_BUCKET" --credentials "$RUNNER_TEMP/zos-credentials.json" --directory release
+          gh release create "$RELEASE_TAG" release/* --verify-tag --title "POE 物价补丁 $RELEASE_TAG" --notes-file docs/release-notes.md --latest

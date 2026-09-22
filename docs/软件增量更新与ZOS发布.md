@@ -1,118 +1,64 @@
-# 软件增量更新与 ZOS 发布
+# 安装版在线更新与 GitHub / ZOS 发布
 
-正式主应用版本为 0.9.4。软件更新和每小时物价更新是两个独立功能。
+1.0.0 起只发布 NSIS 安装版。客户端使用 electron-updater，按国内 GitHub 镜像顺序尝试，全部失败后回退 ZOS。软件更新与每小时物价更新是独立功能。完整设计及联网参考见 [1.0.0 安装版与在线更新设计](1.0.0安装版与在线更新设计.md)。
 
-v0.9.4 提供 v0.9.2 增量包和完整更新包。旧 v0.9.3 的 GitHub 与在线更新发行有 7 个文件哈希差异，因此 v0.9.3 使用完整更新包兼容两种发行；保留严格的增量基线校验，不放宽哈希检查。GitHub 与 ZOS 发布字节相同的增量 ZIP、完整更新 ZIP 和签名清单。
+0.x 用户运行一次 1.0.0 Setup 完成迁移；旧 latest.json 和历史发行文件不需要删除。从 1.0.0 起只维护最新版标准元数据，不生成 old-to-new ZIP，不传入旧版目录，不要求逐版升级。
 
-v0.9.3 优先通过 GitHub 国内主源、备用源读取签名清单和专用增量包，全部失败后使用 ZOS。已发布的 v0.9.2 仍按其原配置从 ZOS 升级，升级后采用新的来源顺序。GitHub 提供完整安装包、免安装包和增量包；ZOS 只存放本次增量包及签名更新清单，不上传完整发行包或完整更新包。
+## 构建和校验
 
-## 国内源与 ZOS 的顺序
+同步 package.json、package-lock.json 和 resources/current-release.json 的版本与说明。在 desktop 目录执行：
 
-`resources/update-config.json` 的 `github.repository` 为 `weixiao030/poe2_price`。默认 8 个国内镜像与 POE1 汉化脚本顺序一致：`ghfast.top`、`gh-proxy.com`、`ghproxy.it`、`gh-proxy.org`、`ghproxy.net`、`gh.llkk.cc`、`ghproxy.imciel.com`、`ghfile.geekertao.top`。第一项为主源，其余为备用源；软件更新最后回退 ZOS，不再尝试 GitHub 直连。2026-09-22 实测及复查共移除 4 个异常源（`github.boki.moe` 大包超时、`gh.jasonzeng.dev` TLS 中断、`gh.monlor.com` 和 `gh.ddlc.top` 返回 429），补回 4 个通过内容校验的源（`gh-proxy.org`、`gh.llkk.cc`、`ghproxy.imciel.com`、`ghfile.geekertao.top`），源总数保持 8 个。`ghproxy.it` 会跳转 `ghfast.top`，`ghfile.geekertao.top` 部分请求会跳转 `gh.dpik.top`。检查结果是当时的连通性，不保证第三方源持续可用。
+```powershell
+npm ci
+python -m pip install cryptography
+npm test
+npm run dist
+node scripts/verify-installer.mjs
+npm run test:software-updates
+npm run updates:build
+node --import tsx scripts/verify-update-release.ts dist/update-publish
+```
 
-清单通过各镜像访问 GitHub 的 `releases/latest/download/latest.json`。更新 ZIP 通过镜像访问同仓库的 `releases/download/v版本号/文件名`。所有镜像必须提供签名清单指定的同一份文件，大小和 SHA-256 校验失败会删除部分下载并切换下一源；清单还必须通过内置 Ed25519 公钥验证。每个包下载源最多尝试 3 分钟，连续 30 秒无响应也会切源；用户取消时立即结束，不继续尝试备用源。
+updates:build 从本次 NSIS 构建读取 Setup、blockmap 和 latest.yml，填入本次说明并签名。默认使用本机 .release-keys/update-private.pem；私钥必须独立备份，不提交或分发。输出位于 dist/update-publish，只含 Setup、blockmap、latest.yml、latest.yml.sig、SHA256SUMS.txt。同一输出目录已有不同内容时会拒绝覆盖。尚未发布的候选构建需要重做时，使用 --out 指定新的输出目录；已发布版本必须递增版本号。
 
-`manifestUrls` 保留 ZOS 的签名清单地址，签名清单内的包 `url` 仍保留 ZOS 地址。这使原客户端继续可用，新客户端则先尝试 GitHub 国内镜像。修改 GitHub 仓库时同时修改 `github.repository`；需要自定义镜像时可提供 `github.mirrorPrefixes` 数组，地址须使用 HTTPS 并以 `/` 结尾。未配置 `github` 的客户端保持按 `manifestUrls` 下载。
+所有来源必须使用同一份最终文件。签名后不得改写 latest.yml，修改更新说明也必须重新签名。Setup 内置公钥必须与签名私钥对应。Windows Authenticode 尚未配置，Ed25519 验证用于软件内更新来源校验；两种签名不能混称。
 
-更新包按文件比较 SHA-256，只包含相对指定旧版发生变化的文件。它不是二进制差分：如果重新构建改变了 EXE 的版本资源，整个 EXE 都会进入增量包；仅更新界面代码时通常只需新的 `app.asar`。
+## 客户端下载配置
 
-## 下载配置与密钥边界
+resources/update-config.json 保存公开镜像配置、ZOS 清单 URL 和公钥。默认镜像依次为 ghfast.top、gh-proxy.com、ghproxy.it、gh-proxy.org、ghproxy.net、gh.llkk.cc、ghproxy.imciel.com、ghfile.geekertao.top。不使用 GitHub 直连回退。
 
-客户端只需要**公开 HTTPS 下载清单地址和 Ed25519 公钥**，不需要对象存储上传 Endpoint、Bucket 管理配置、AK/SK 或签名私钥。公开下载地址是客户端必须知道的信息；上传配置和访问密钥仅保留在发布者本机或 CI Secrets 中。
+检查时通过镜像读取 GitHub releases/latest/download/latest.yml 与 latest.yml.sig。安装包及 blockmap 使用已确认版本的 releases/download/v版本号/地址；源切换保持版本与校验值不变。ZOS 使用 poe-updates/installer/目录。各版本完整 Setup 始终可直接下载，差分失败由框架回退全量。
 
-- 签名私钥保存在 `desktop/.release-keys/update-private.pem`，需要独立备份，不能提交、上传或放入客户端。
-- 本地访问密钥文件和 `publisher.local.json` 受 `.gitignore` 保护。发布时仍需检查提交列表和压缩包内容。
-- 测试证据、日志、提取的游戏数据和 PDB 调试文件均不作为发行内容。
-- 在对象存储中按对象设置匿名读取权限。本次 SDK 默认上传为私有，发布工具显式使用 `public-read`，核对匿名下载成功后才上传清单。
-- 客户端使用外网 HTTPS 域名，同资源池内网 IP 不能供玩家下载。下载由主进程完成，不依赖浏览器 CORS。
+检查每个源限时 20 秒；下载连续 60 秒没有进度或单个源超过 30 分钟时切源。用户取消立即终止，不继续备用源。普通退出、关闭到托盘和关机不自动安装；用户发起更新且后台任务结束后才安装。
 
-在 `desktop` 目录配置公开下载地址并生成或复用签名密钥：
+更换公开备用下载目录时执行以下命令，同时更新客户端和 builder 配置。已经发布的客户端仍使用原地址，需要保持旧地址可访问。
 
 ```powershell
 $UpdateDownloadBase = Read-Host '公开 HTTPS 下载目录（以 / 结尾）'
 npm run updates:configure -- --base-url $UpdateDownloadBase
-npm run dist
 ```
-
-`npm run dist` 使用 `--publish never`。首次启用时必须向玩家提供包含正确下载地址和公钥的完整发行版；0.8.8 及更早版本需要手动升级一次。
-
-## 构建正式增量包
-
-保存每个正式版本原样的 `dist/win-unpacked` 作为不可修改的基线。不要使用玩家运行后或改动过的目录。正式发布后不能在相同版本号下更换内容。
-
-1. 同步 `package.json`、`package-lock.json`、`resources/current-release.json` 和相关脚本版本，并填写真实更新说明。
-2. 构建新发行目录，保留原发行目录。
-3. 在 `desktop` 目录运行以下命令；输入旧版基线、新版目录和新的空输出目录。
-
-```powershell
-$UpdateOldBuild = Read-Host '旧版本 win-unpacked 目录'
-$UpdateNewBuild = Read-Host '新版本 win-unpacked 目录'
-$UpdateOutput = Read-Host '新的更新包输出目录'
-$UpdateDownloadBase = Read-Host '公开 HTTPS 下载目录'
-npm run updates:build -- --from $UpdateOldBuild --to $UpdateNewBuild --out $UpdateOutput --base-url $UpdateDownloadBase --key '.\.release-keys\update-private.pem' --notes '.\resources\current-release.json' --delta-only
-```
-
-正式 v0.9.4 使用保存的正式 v0.9.2 基线，运行上面的命令时去掉 `--delta-only`，同时生成增量包和完整更新包。基线必须先与公开发行资源或已签名更新包的目标文件逐项核对。输出为 `*-delta.zip`、`*-full.zip`、签名 `latest.json` 和维护者使用的 `release-info.json`。没有匹配版本增量的客户端自动选择完整更新包；同版本发行被自行改动导致增量校验失败时，使用 Setup 或免安装版手动升级。
 
 ## 上传与公布
 
-同一个正式版本应在 GitHub `v版本号` Release 和 ZOS 放置**字节完全相同**的签名 `latest.json` 及清单引用的全部更新 ZIP。ZOS 不上传 Setup 或 NoInstall；v0.9.4 上传完整更新包以兼容旧版基线差异。免安装 ZIP 和 Setup EXE 不能代替专用更新包。沿用现有构建命令的 ZOS `--base-url` 即可，无需为镜像重新签名或改写清单。
-
-先用最终签名包完成隔离的真实升级测试，再准备 GitHub 草稿 Release 并上传文件，按下述流程上传和校验 ZOS，最后发布 GitHub 正式 Release。标签 CI 遇到已有 Release 时保留其文件与草稿状态，避免重新打包覆盖已经签名绑定的发行基线。不要覆盖已经发布的版本，也不要复用旧的轻量测试发行目录。新客户端下载时会优先尝试国内镜像；镜像尚未同步时自动使用已经可用的 ZOS。
-
-先上传版本 ZIP，核对大小和 SHA-256，并确认匿名 HTTPS 可以下载；**最后上传 `latest.json`**。清单包含 `schema`、`payload`、`signature`，不能手动改内容。发布工具默认拒绝用不同内容覆盖同名版本包。
-
-上传默认采用 8 MiB 分块、单连接和 180 秒读写超时。链路不稳定时可追加 `--part-size-mib 5 --upload-concurrency 1 --read-timeout 180`，减小失败后需要重传的数据量；客户端发行包与签名不受上传分块配置影响。
-
-从项目根目录执行上传命令。Python 需要 `boto3`；AK/SK 从本地文件读取，不写入命令行：
+从项目根目录上传到 ZOS；Python 只在发布机需要 boto3，签名及文件校验复用 Node 工具：
 
 ```powershell
-$UpdateUploadEndpoint = Read-Host '对象存储上传 Endpoint'
+$UpdateUploadEndpoint = Read-Host 'ZOS 上传 Endpoint'
 $UpdateBucket = Read-Host 'Bucket 名称'
 $UpdateCredentials = Read-Host '本地凭据文件路径'
-$UpdateOutput = Read-Host '包含签名 latest.json 和 ZIP 的目录'
-python desktop/scripts/upload-zos-update.py --endpoint $UpdateUploadEndpoint --bucket $UpdateBucket --credentials $UpdateCredentials --directory $UpdateOutput
+python desktop/scripts/upload-zos-update.py --endpoint $UpdateUploadEndpoint --bucket $UpdateBucket --credentials $UpdateCredentials --directory desktop/dist/update-publish
 ```
 
-默认对象前缀为 `poe-updates`，可以通过 `--prefix` 修改。`--check-only` 仅验证上传身份。`--replace-unannounced-sha256` 只允许在清单尚不存在时替换已知哈希的失败首次上传，不适用于已经公布的发行包。
+上传工具先验证签名和全部文件，拒绝覆盖同名不同内容的安装包或 blockmap。上传版本文件并通过匿名 HTTPS 回读验证完整哈希后，保存按版本归档的元数据，最后更新公开 latest.yml.sig 和 latest.yml。两次写入之间短暂不匹配时，客户端会拒绝该组合并重试其他源。版本文件使用 immutable 缓存，最新元数据使用 no-cache。
 
-| 对象 | Content-Type | Cache-Control |
-| --- | --- | --- |
-| `latest.json` | `application/json` | `no-cache, max-age=0` |
-| 带版本号的 ZIP | `application/zip` | `public, max-age=31536000, immutable` |
+ZOS 完整校验成功后，将 update-publish 内五个文件原样上传到 GitHub v版本号 Release。普通用户只需下载 Setup。不要上传 win-unpacked、测试证据、密钥或上传配置。
 
-Setup 安装包和免安装 ZIP 可单独提供，供首次安装和手动修复使用。客户端读取自定义的 `latest.json`，不使用 electron-updater 的 `latest.yml`。保留历史包，避免中断已开始的下载。
+发布通道更新前会验签当前线上元数据，拒绝旧版本覆盖新版，以及同版本不同元数据。CI 串行发布 stable 通道，手动发布也应串行执行。需要撤回故障版本时发布更高版本的修复。
 
-## 安装与失败恢复
+GitHub Actions 标签发布流程自动执行以上顺序。必须配置 UPDATE_PRIVATE_KEY、ZOS_ENDPOINT、ZOS_BUCKET、ZOS_CREDENTIALS；其中 ZOS_CREDENTIALS 为本地凭据文件支持的 JSON 或带标签文本。CI 临时密钥文件在完成后删除，私钥不作为构建产物保存。已有 Release（含草稿）的资产和状态不被重建覆盖。
 
-客户端验证清单签名、下载大小、SHA-256、ZIP 路径和文件清单；增量包还要核验全部旧发行文件。基线不符会停止安装。v0.9.4 清单提供 v0.9.2 增量包；v0.9.3 及其他无匹配增量的版本选择完整更新包。
+## 故障处理
 
-物价任务或查询未结束时禁止安装软件更新。安装器等待旧程序退出，备份涉及文件、替换并校验完整目标。新版界面初始化成功后回传健康回执；失败会尝试恢复旧文件。游戏文件、用户设置和发行清单外的玩家文件不属于软件替换范围。
+下载错误不会替换程序文件，可以重新检查更新。安装前重新校验完整 Setup；后台写入、查询或清理未结束时拒绝安装。安装回执位于用户数据目录 software-updates/installer-result.json；目标界面启动后记为 completed。
 
-事务保存在用户数据目录 `software-updates/<事务 ID>/`。`result.json` 是结果，`journal.json` 是阶段，`backup` 保留被替换的文件；`last-update.json` 指向最近事务。断电导致安装中断时，关闭软件，在对应事务目录运行：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\recover.ps1
-```
-
-恢复脚本只接受安装中或回退失败的事务，正常完成的事务无需恢复。
-
-## 验证
-
-在 `desktop` 目录运行：
-
-```powershell
-npm test
-npm run build
-node --import tsx scripts/verify-software-updates.ts
-```
-
-最后一项复制发行目录，在临时 HTTPS 服务上验证签名、下载、自动重启和失败回退。测试证书仅供测试进程使用，生产 TLS 校验保持启用。
-
-发布前可用正式签名包在本地 HTTPS 暂存服务完成真实升级，而不改写基线或公布版本：
-
-```powershell
-node --import tsx scripts/verify-zos-software-updates.ts --baseline ../release-desktop/baselines/0.9.2/win-unpacked --target ../release-desktop/v0.9.4/win-unpacked --release-dir ../release-desktop/v0.9.4/poe-updates --report-dir test-results/release-094-local-upgrade
-```
-
-该参数只在隔离测试进程中将两个确切的下载地址转向本地 HTTPS，正式包、签名及基线字节保持原样。发布后去掉 `--release-dir` 并使用单独的报告目录，即可检查生产 ZOS 下载、安装、重启及完整目标文件哈希。
+NSIS 不提供新版业务启动失败后的通用自动回滚。安装中断或软件无法启动时使用完整 Setup 修复，用户设置及游戏备份保存在程序目录以外。线上发现异常应暂停推广并发布更高版本的修复，避免依赖自动降级。历史 0.x 的事务恢复说明以对应版本文档为准。

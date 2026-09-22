@@ -1,6 +1,7 @@
 """Read-only source audit using the leagues observed through the packaged app."""
 
 import json
+import argparse
 from pathlib import Path
 import sys
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -19,17 +20,28 @@ def seasonal_url(url, season):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--sources', nargs='+', help='Recheck selected sources after a network or configuration failure')
+    parser.add_argument('--output', type=Path)
+    args = parser.parse_args()
     evidence = json.loads((ROOT / "desktop/test-results/compatibility-evidence.json").read_text(encoding="utf-8"))
-    observed = {(item["gameVersion"], item["china"]): item["leagues"][0] for item in evidence["leagues"]}
+    observed = {(item["gameVersion"], item["china"]): next(league for league in item["leagues"]
+                if league["IsCurrent"] and not league.get("DiscoveryFallback")) for item in evidence["leagues"]}
     assert len(observed) == 4, "Run verify-compatibility.mjs --live first"
     current = observed[("poe2", False)]
-    selection = LeagueSelection(scout=current["ScoutLeague"], poe_ninja=current["PoeNinjaLeague"], source="explicit", discovery_url=current["DiscoveryUrl"])
-    audit.builder.DEFAULT_POECURRENCY_SUMMARY_API = seasonal_url(audit.builder.DEFAULT_POECURRENCY_SUMMARY_API, observed[("poe2", True)]["PoeCurrencySeason"])
-    audit.poe1_builder.DEFAULT_POECURRENCY_SUMMARY_API = seasonal_url(audit.poe1_builder.DEFAULT_POECURRENCY_SUMMARY_API, observed[("poe1", True)]["PoeCurrencySeason"])
+    selection = LeagueSelection(scout=current["ScoutLeague"], poe_ninja=current["PoeNinjaLeague"], source="explicit")
+    for game, module in [('poe2', audit.builder), ('poe1', audit.poe1_builder)]:
+        selected = observed[(game, True)]
+        if not selected['IsCurrent']:
+            module.DEFAULT_POECURRENCY_SUMMARY_API = seasonal_url(module.DEFAULT_POECURRENCY_SUMMARY_API, selected['PoeCurrencySeason'])
     client = audit.RecordingClient(audit.builder.RetryingRequests(max_retries=1, timeout=20, total_timeout=45))
-    report = audit.run_audit(client, max_workers=3, league_resolver=lambda *_args: selection)
+    auditors = audit.DEFAULT_AUDITORS
+    if args.sources:
+        auditors = tuple(item for item in auditors if item[0] in args.sources)
+        assert len(auditors) == len(set(args.sources)), 'Unknown source name'
+    report = audit.run_audit(client, max_workers=3, league_resolver=lambda *_args: selection, auditors=auditors)
     report["selected_desktop_leagues"] = evidence["leagues"]
-    destination = ROOT / "desktop/test-results/selected-source-audit.json"
+    destination = args.output or ROOT / "desktop/test-results/selected-source-audit.json"
     audit.write_report(destination, report)
     assert not report["league"]["used_fallback"]
     assert not report["overall"]["failed_sources"], report["overall"]
