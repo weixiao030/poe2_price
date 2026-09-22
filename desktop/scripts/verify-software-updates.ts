@@ -275,9 +275,9 @@ try {
   const cleanupScript = path.join(sandbox, 'close-test-app.ps1')
   await fs.writeFile(
     cleanupScript,
-    '\ufeffparam([string]$TestExe)\nGet-Process | Where-Object { $_.Path -eq $TestExe } | Stop-Process -Force -ErrorAction SilentlyContinue\n'
+    '\ufeffparam([string]$TestExe)\n$ErrorActionPreference="Stop"\nGet-Process | Where-Object { $_.Path -eq $TestExe } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue; $_.WaitForExit(10000) | Out-Null }\nif (Get-Process | Where-Object { $_.Path -eq $TestExe }) { throw "Test application still running" }\n'
   )
-  spawnSync(
+  const cleaned = spawnSync(
     'powershell.exe',
     [
       '-NoProfile',
@@ -286,10 +286,12 @@ try {
       '-File',
       cleanupScript,
       '-TestExe',
-      path.join(before, '物价补丁.exe')
+      await fs.realpath(path.join(before, '物价补丁.exe'))
     ],
     { windowsHide: true }
   )
+  assert.equal(cleaned.status, 0, cleaned.stderr?.toString())
+  evidence.testProcessesCleaned = true
   await fs.writeFile(path.join(reportDir, 'evidence.json'), JSON.stringify(evidence, null, 2))
 }
 console.log(JSON.stringify(evidence, null, 2))

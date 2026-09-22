@@ -117,6 +117,81 @@ def test_bad_second_page_never_yields_partial_prices(field, value):
         m.fetch_tablet_affix_prices(Client({0: page([quote()], total=2), 1: second}), "http://example.invalid", LEAGUE)
 
 
+def test_old_magic_snapshot_retains_prices_and_sampling_dates():
+    payload = page([quote()], rarity='magic')
+    payload['snapshot'].update(stale=True, published_at='2026-09-22T07:09:35+00:00',
+                               oldest_sample_at='2026-09-22T06:17:39+00:00')
+    prices, report = m.fetch_tablet_affix_prices(Client({0: payload}), 'http://example.invalid',
+        LEAGUE, rarity='magic', allow_stale_snapshot=True)
+    assert prices['Ritual_Tablet'][0].price == 500
+    assert report['snapshot_stale'] is True and report['allow_stale_snapshot'] is True
+    assert report['allow_stale'] is False and report['exchange_rates_stale'] is False
+    assert report['published_at'] == payload['snapshot']['published_at']
+    assert report['oldest_sample_at'] == payload['snapshot']['oldest_sample_at']
+
+
+@pytest.mark.parametrize('section,field,value', [
+    ('snapshot', 'league', 'Standard'), ('exchange_rates', 'league', 'Standard'),
+    ('snapshot', 'stale', None), ('exchange_rates', 'stale', True),
+    ('exchange_rates', 'stale', None), ('snapshot', 'id', 'changed'),
+])
+def test_old_snapshot_permission_keeps_market_currency_and_pagination_checks(section, field, value):
+    first = page([quote()], total=2, rarity='magic')
+    second = page([quote('two')], offset=1, total=2, rarity='magic')
+    first['snapshot']['stale'] = second['snapshot']['stale'] = True
+    if value is None:
+        second[section].pop(field)
+    else:
+        second[section][field] = value
+    with pytest.raises(ValueError):
+        m.fetch_tablet_affix_prices(Client({0: first, 1: second}), 'http://example.invalid',
+            LEAGUE, rarity='magic', allow_stale_snapshot=True)
+
+
+def test_snapshot_retry_restarts_all_pages_without_mixing_prices(monkeypatch):
+    import time
+    waits = []; notices = []
+    monkeypatch.setattr(time, 'sleep', waits.append)
+    old = page([quote(price=500)], total=2)
+    new_first = page([quote(price=750)], total=2)
+    new_last = page([quote('two', price=1000)], offset=1, total=2)
+    new_first['snapshot']['id'] = new_last['snapshot']['id'] = 'new-snapshot'
+    class ChangingClient:
+        def __init__(self): self.responses = iter([old, new_last, new_first, new_last]); self.offsets = []
+        def get_json(self, url):
+            self.offsets.append(int(parse_qs(urlparse(url).query)['offset'][0]))
+            return next(self.responses)
+    client = ChangingClient()
+    prices, report = m.fetch_tablet_affix_prices(client, 'http://example.invalid', LEAGUE,
+        snapshot_retries=2, on_retry=notices.append)
+    assert client.offsets == [0, 1, 0, 1]
+    assert [q.price for q in prices['Ritual_Tablet']] == [750, 1000]
+    assert report['snapshot_attempts'] == 2 and len(report['snapshot_retry_reasons']) == 1
+    assert waits == [1] and len(notices) == 1
+
+
+def test_snapshot_retry_is_bounded_and_does_not_relax_currency_validation(monkeypatch):
+    import time
+    waits = []; monkeypatch.setattr(time, 'sleep', waits.append)
+    payload = page([quote()], rarity='magic')
+    payload['snapshot']['stale'] = True; payload['exchange_rates']['stale'] = True
+    client = Client({0: payload})
+    with pytest.raises(m.TabletSnapshotError) as error:
+        m.fetch_tablet_affix_prices(client, 'http://example.invalid', LEAGUE, rarity='magic',
+            allow_stale_snapshot=True, snapshot_retries=2)
+    assert len(client.urls) == 3 and waits == [1, 2]
+    assert error.value.snapshot_attempts == 3
+    assert len(error.value.snapshot_retry_reasons) == 3
+
+
+def test_wrong_league_is_rejected_without_snapshot_retry():
+    payload = page([quote()]); payload['snapshot']['league'] = 'Standard'
+    client = Client({0: payload})
+    with pytest.raises(ValueError, match='league'):
+        m.fetch_tablet_affix_prices(client, 'http://example.invalid', LEAGUE, snapshot_retries=2)
+    assert len(client.urls) == 1
+
+
 def test_bad_status_and_partial_currency_conversion_are_not_quotes():
     bad = quote(); bad["status"] = "error"
     partial = quote("partial"); partial["converted"]["missing_count"] = 1
@@ -578,7 +653,9 @@ def test_all_affix_lines_are_priced_in_shared_magic_and_rare_descriptions(tmp_pa
     m.validate_csd(output)
 
 
-def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_path):
+@pytest.mark.parametrize('old_magic', [False, True])
+@pytest.mark.parametrize('statistic', ['low_sample_median', 'min'])
+def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_path, old_magic, statistic):
     class SplitClient:
         def __init__(self):
             self.urls = []
@@ -592,9 +669,11 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
             rarity = parse_qs(urlparse(url).query)['rarity'][0]
             row = quote(text='Map has (15-20)% increased Monster Rarity',
                         price=500 if rarity == 'magic' else 1000)
+            row['converted'][statistic] = row['converted'].pop('low_sample_median')
             payload = page([row], rarity=rarity)
             payload['server'] = 'international'; payload['category'] = 'tablet'; payload['rarity'] = rarity
             payload['snapshot']['config']['rarity'] = rarity
+            payload['snapshot']['stale'] = old_magic and rarity == 'magic'
             return payload
 
     source = tmp_path / 'base.dat'; source.write_bytes(synthetic_baseitems())
@@ -625,6 +704,8 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
     assert report['status'] == 'partial'
     assert report['game_coverage']['missing_quotes'][0]['tablet'] == 'Breach_Tablet'
     assert report['api']['rarities']['magic']['status'] == report['api']['rarities']['rare']['status'] == 'ok'
+    assert report['api']['rarities']['magic']['snapshot_stale'] is old_magic
+    assert report['quote_validation']['minimum_price'] == (['one'] if statistic == 'min' else [])
     assert report['resources'][0]['matched'] == 1 and report['redirected_items'] == 1
     assert report['game_mapping'][0]['stat'] == 'test_stat'
     with zipfile.ZipFile(archive) as z:
@@ -698,20 +779,84 @@ def test_trade_query_scope_preserves_filters_and_validates_rarity():
     assert m.trade_query_scope(trade_url('one','rare'),'rare') != m.trade_query_scope(trade_url('two','rare'),'rare')
 
 
-def test_tablet_price_never_falls_back_to_minimum():
-    assert m._tablet_price_from_row({'converted':{'currency':'exalted','min':10}}) == 0
-    assert m._tablet_price_from_row({'prices':{'exalted':{'min':10}}}) == 0
+def test_tablet_price_prefers_medians_and_falls_back_to_minimum():
+    assert m._tablet_price_details({'converted':{'currency':'exalted','min':10}}) == (10, 'min')
+    assert m._tablet_price_details({'prices':{'exalted':{'min':10}}}) == (10, 'min')
     assert m._tablet_price_from_row({'converted':{'currency':'exalted','median':30,'min':10}}) == 30
     assert m._tablet_price_from_row({'converted':{'currency':'exalted','low_sample_median':25,'min':10}}) == 25
+
+
+def test_raw_minimum_converts_all_currencies_but_never_uses_partial_conversion():
+    rates = {'exalted':Decimal('.002'), 'divine':Decimal(1)}
+    row = {'prices':{'exalted':{'min':100},'divine':{'min':Decimal('.1')}}}
+    assert m._tablet_price_details(row, rates) == (50, 'min')
+    row['prices']['unknown'] = {'min':1}
+    assert m._tablet_price_from_row(row, rates) == 0
+    row['converted'] = {'currency':'exalted','min':10,'missing_count':1}
+    assert m._tablet_price_from_row(row, rates) == 0
+    assert m._tablet_price_details({'converted':{'currency':'exalted','min':10},
+        'prices':{'exalted':{'median':30}}}) == (30, 'median')
+
+
+@pytest.mark.parametrize('rarity', ['magic', 'rare'])
+def test_same_league_cache_recovers_api_outage_and_keeps_original_sampling_dates(tmp_path, rarity):
+    payload = page([quote()], rarity=rarity)
+    payload['snapshot']['published_at'] = '2026-09-22T07:09:35+00:00'
+    _, fresh = m.fetch_tablet_affix_prices(Client({0:payload}), 'http://example.invalid', LEAGUE,
+        rarity=rarity, cache_dir=tmp_path)
+    assert fresh['source'] == 'live'
+    cache_path = next(tmp_path.glob('*.json')); saved = cache_path.read_bytes()
+    class Offline:
+        def get_json(self, url): raise ConnectionError('offline after HTTP retries')
+    notices = []
+    prices, cached = m.fetch_tablet_affix_prices(Offline(), 'http://example.invalid', LEAGUE,
+        rarity=rarity, cache_dir=tmp_path, on_retry=notices.append)
+    assert prices['Ritual_Tablet'][0].price == 500
+    assert cached['source'] == 'cache' and cached['freshness'] == 'last_successful_snapshot'
+    assert cached['published_at'] == payload['snapshot']['published_at']
+    assert cached['cache_saved_at'] and 'ConnectionError' in cached['live_error']
+    assert len(notices) == 1 and cache_path.read_bytes() == saved
+    with pytest.raises(ConnectionError):
+        m.fetch_tablet_affix_prices(Offline(), 'http://example.invalid', 'Standard',
+            rarity=rarity, cache_dir=tmp_path)
+    with pytest.raises(ConnectionError):
+        m.fetch_tablet_affix_prices(Offline(), 'http://other.invalid', LEAGUE,
+            rarity=rarity, cache_dir=tmp_path)
+
+
+def test_cache_is_revalidated_and_cannot_mix_leagues_or_pages(tmp_path):
+    payload = page([quote()])
+    m.fetch_tablet_affix_prices(Client({0:payload}), 'http://example.invalid', LEAGUE, cache_dir=tmp_path)
+    cache_path = next(tmp_path.glob('*.json')); cached = json.loads(cache_path.read_text())
+    next(iter(cached['pages'].values()))['snapshot']['league'] = 'Standard'
+    cache_path.write_text(json.dumps(cached), encoding='utf-8')
+    class Offline:
+        def get_json(self, url): raise ConnectionError('offline')
+    with pytest.raises(ValueError, match='cached snapshot rejected.*league'):
+        m.fetch_tablet_affix_prices(Offline(), 'http://example.invalid', LEAGUE, cache_dir=tmp_path)
+
+
+def test_different_rate_revisions_convert_each_price_before_pairing():
+    q = m.Quote('Map contains 1 additional Strongboxes',Decimal(100),1,1,
+                identifier='a', query_scope='same')
+    info = {'rare':{'rates':{'exalted':'.002','chaos':'.1'},'source':'live'},
+            'magic':{'rates':{'exalted':'.004','chaos':'.2'},'source':'cache'}}
+    _, audit = m.pair_tablet_quotes({'rare':{'Ritual_Tablet':[q]},'magic':{'Ritual_Tablet':[q]}},info)
+    row = audit[0]
+    assert Decimal(row['rare_divine']) == Decimal('.2')
+    assert Decimal(row['magic_divine']) == Decimal('.4')
+    assert row['label'] == '2~4C'
 
 
 def test_pairing_requires_identical_ids_and_modifier_details():
     from dataclasses import replace
     q = m.Quote('Map contains 1 additional Strongboxes',Decimal(10),1,1,identifier='a')
     info = {rarity:{'rates':{'exalted':'0.002','chaos':'0.1'}} for rarity in ('magic','rare')}
-    with pytest.raises(ValueError,match='coverage differs'):
-        m.pair_tablet_quotes({'rare':{'Ritual_Tablet':[q]},'magic':{'Ritual_Tablet':[replace(q,identifier='b')]}},info)
-    with pytest.raises(ValueError,match='identity differs'):
+    q = replace(q, query_scope='same')
+    _, audit = m.pair_tablet_quotes({'rare':{'Ritual_Tablet':[q]},
+        'magic':{'Ritual_Tablet':[replace(q,identifier='b')]}},info)
+    assert [(r['id'],r['price_rarities']) for r in audit] == [('a',['rare']),('b',['magic'])]
+    with pytest.raises(ValueError,match='identities'):
         m.pair_tablet_quotes({'rare':{'Ritual_Tablet':[q]},'magic':{'Ritual_Tablet':[replace(q,text='Map contains 2 additional Strongboxes')]}},info)
 
 

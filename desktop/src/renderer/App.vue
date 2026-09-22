@@ -172,21 +172,30 @@ function stop() {
       })
   })
 }
+function scrollLogToLatest() {
+  if (followLog.value && logElement.value)
+    logElement.value.scrollTop = logElement.value.scrollHeight
+}
+// The workspace is recreated after navigation; unchanged text must still scroll.
+watch([() => app.logText, followLog, logElement], scrollLogToLatest, { flush: 'post' })
+const logResizeObserver = new ResizeObserver(scrollLogToLatest)
 watch(
-  () => app.logText,
-  async () => {
-    if (followLog.value) {
-      await nextTick()
-      if (logElement.value) logElement.value.scrollTop = logElement.value.scrollHeight
-    }
-  }
+  logElement,
+  (element) => {
+    logResizeObserver.disconnect()
+    if (element) logResizeObserver.observe(element)
+  },
+  { flush: 'post' }
 )
 onMounted(async () => {
   await app.init()
   await nextTick()
   if (app.state.version) await desktop.softwareUiReady()
 })
-onUnmounted(() => app.dispose())
+onUnmounted(() => {
+  logResizeObserver.disconnect()
+  app.dispose()
+})
 </script>
 
 <template>

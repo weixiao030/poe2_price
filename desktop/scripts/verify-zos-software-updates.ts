@@ -172,8 +172,10 @@ try {
   localServer?.closeAllConnections()
   localServer?.close()
   const cleanup = path.join(sandbox, 'close-isolated-app.ps1')
-  await fs.writeFile(cleanup, '\ufeffparam([string]$TestExe)\nGet-Process | Where-Object { $_.Path -eq $TestExe } | Stop-Process -Force -ErrorAction SilentlyContinue\n')
-  spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', cleanup, '-TestExe', exe], { windowsHide: true })
+  await fs.writeFile(cleanup, '\ufeffparam([string]$TestExe)\n$ErrorActionPreference="Stop"\nGet-Process | Where-Object { $_.Path -eq $TestExe } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue; $_.WaitForExit(10000) | Out-Null }\nif (Get-Process | Where-Object { $_.Path -eq $TestExe }) { throw "Test application still running" }\n')
+  const cleaned = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', cleanup, '-TestExe', await fs.realpath(exe)], { windowsHide: true })
+  assert.equal(cleaned.status, 0, cleaned.stderr?.toString())
+  evidence.testProcessesCleaned = true
   await fs.writeFile(path.join(reportDir, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
 }
 console.log(JSON.stringify(evidence, null, 2))

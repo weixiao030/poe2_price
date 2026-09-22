@@ -3352,6 +3352,7 @@ $BuildArgs = @(
     "--en-baseitems", $EnBaseItems,
     "--tc-baseitems", $TcBaseItems,
     "--out-dir", $BuildStageDir,
+    "--tablet-cache-dir", (Join-Path $RepoRoot "output\tablet_market_cache"),
     "--output-zip", $StagePatchZip,
     "--patch-script", (Join-Path $CodeToolsRoot "poe2_name_price_patch.py"),
     "--mode", $PatchBuildMode,

@@ -3442,6 +3442,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--tablet-map-csd", type=Path)
     parser.add_argument("--tablet-global-csd", type=Path)
     parser.add_argument("--tablet-report", type=Path)
+    parser.add_argument("--tablet-cache-dir", type=Path,
+                        help="Persistent same-league tablet snapshots used only when the live source fails")
     parser.add_argument(
         "--no-tablet-affixes",
         action="store_true",
@@ -4176,8 +4178,14 @@ def main(argv: list[str]) -> int:
                         tablet_mods=args.tablet_mods,
                         tablet_stats=args.tablet_stats,
                         tablet_tags=args.tablet_tags,
+                        on_retry=progress,
+                        cache_dir=args.tablet_cache_dir,
                     )
                     tablet_result = summary["tablet_affixes"]
+                    magic_source = tablet_result.get("api", {}).get("rarities", {}).get("magic", {})
+                    if magic_source.get("status") == "ok" and magic_source.get("snapshot_stale"):
+                        sampled_at = magic_source.get("oldest_sample_at") or magic_source.get("published_at") or "未提供"
+                        progress(f"魔法行情快照已过期，继续使用同赛季旧报价（最早采样：{sampled_at}）")
                     if tablet_result["status"] == "partial":
                         unavailable = [name for name in ("api", "poe_ninja_precursor_tablets", "affix_templates")
                                        if name in tablet_result and tablet_result[name].get("status") != "ok"]
@@ -4190,12 +4198,17 @@ def main(argv: list[str]) -> int:
                             details.append(f"{len(excluded)} 组交易条件无法准确匹配，保留无价")
                         if missing:
                             details.append(f"游戏表中 {len(missing)} 组词缀没有可用行情，保留无价")
+                        if not tablet_result.get("resources"):
+                            details.append("碑牌词缀没有可用在线行情或同赛季缓存，本轮未写入词缀价格")
                         progress("碑牌标价部分完成；" + "；".join(details))
                     else:
                         progress("碑牌名称和词缀标价完成")
                     single = tablet_result.get("quote_validation", {}).get("single_source", [])
                     if single:
-                        progress(f"{len(single)} 组词缀采用可用的单侧中位价")
+                        progress(f"{len(single)} 组词缀采用可用的单侧报价")
+                    minimum = tablet_result.get("quote_validation", {}).get("minimum_price", [])
+                    if minimum:
+                        progress(f"{len(minimum)} 组词缀缺少中位价，使用可校验的最低价兜底，来源已记入报告")
                     references = tablet_result.get("quote_validation", {}).get("reference_quotes", [])
                     if references:
                         progress(f"{len(references)} 组词缀显示网站参考报价，查询范围说明已记入报告")

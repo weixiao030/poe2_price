@@ -5,7 +5,9 @@ from dataclasses import dataclass, replace
 from collections import Counter
 import base64
 import gzip
+import hashlib
 import io
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import html
 import json
@@ -82,6 +84,7 @@ class Quote:
     query_exact: bool | None = None
     query_context: str = ""
     query_reference: bool = False
+    price_statistic: str = "median"
 
 
 def trade_query_scope(url, rarity):
@@ -122,6 +125,7 @@ def pair_tablet_quotes(quotes_by_rarity, api_reports):
             if row['status'] == 'priced':
                 row[missing + '_divine'] = None
                 row['price_rarities'] = [rarity]
+                row['price_statistics'] = {rarity: row['price_statistics'][rarity]}
                 row['single_source_reason'] = missing + ' snapshot unavailable'
         return result, audit
     result = {}; audit = []; eligible = []
@@ -129,50 +133,57 @@ def pair_tablet_quotes(quotes_by_rarity, api_reports):
     magic_rate = decimal(api_reports['magic']['rates'].get('exalted'))
     if rare_rate <= 0 or magic_rate <= 0:
         raise ValueError('tablet exchange rates are missing')
-    # Do not mix rate revisions between the two snapshots.
+    # Convert each snapshot with its own rates, then display all prices using
+    # one common revision. This also supports a cached side during an outage.
     rates = {k: decimal(v) for k, v in api_reports['rare']['rates'].items()}
-    if rates != {k: decimal(v) for k, v in api_reports['magic']['rates'].items()}:
-        raise ValueError('magic and rare display exchange rates differ; retry the snapshot')
+    if api_reports['rare'].get('source') == 'cache' and api_reports['magic'].get('source') != 'cache':
+        rates = {k: decimal(v) for k, v in api_reports['magic']['rates'].items()}
     rates['divine'] = Decimal(1)
     for slug in TABLET_SLUGS:
         rare = {q.identifier:q for q in quotes_by_rarity['rare'].get(slug, [])}
         magic = {q.identifier:q for q in quotes_by_rarity['magic'].get(slug, [])}
-        if rare.keys() != magic.keys():
-            raise ValueError(f'{slug}: magic/rare median coverage differs')
-        for identifier, q in rare.items():
-            other = magic[identifier]
+        for identifier in sorted(rare.keys() | magic.keys()):
+            rare_q, magic_q = rare.get(identifier), magic.get(identifier)
+            q, other = rare_q or magic_q, magic_q or rare_q
             if not identifier or (q.text, q.name, q.generation, q.low, q.high) != (other.text, other.name, other.generation, other.low, other.high):
-                raise ValueError(f'{slug}: magic/rare modifier identity differs: {identifier}')
-            rare_d, magic_d = q.price * rare_rate, other.price * magic_rate
+                audit.append({'tablet':slug, 'id':identifier, 'text':q.text, 'status':'excluded',
+                              'reason':'magic/rare modifier identity differs'})
+                continue
+            rare_d = rare_q.price * rare_rate if rare_q else None
+            magic_d = magic_q.price * magic_rate if magic_q else None
             exact = (q.query_exact, other.query_exact)
-            single = None
+            single = 'magic' if rare_q is None else 'rare' if magic_q is None else None
+            single_reason = 'other rarity has no usable quote' if single else ''
             reference = (q.query_reference and other.query_reference
                          and q.query_scope == other.query_scope)
             if (exact in ((True, False), (False, True)) and q.query_context
                     and q.query_context == other.query_context):
                 single = 'rare' if q.query_exact else 'magic'
+                single_reason = 'other query also matches a different available game modifier'
             elif (not q.query_scope or q.query_scope != other.query_scope
                     or False in exact and not reference):
                 audit.append({'tablet':slug, 'id':identifier, 'text':q.text, 'status':'excluded',
                               'reason':('trade query includes a different available game modifier'
                                         if False in exact else 'trade query scope is missing or differs between rarities')})
                 continue
-            eligible.append((slug, q, other, rare_d, magic_d, single, reference))
+            eligible.append((slug, q, other, rare_d, magic_d, single, reference, single_reason))
     if not eligible:
-        raise ValueError('no tablet pairs have matching trade query scopes')
+        raise ValueError('no tablet pairs have matching trade query scopes or identities')
     values = lambda r, m, single: (r, r) if single == 'rare' else (m, m) if single == 'magic' else (r, m)
     anchors = market_anchors([values(row[3], row[4], row[5]) for row in eligible])
-    for slug, q, other, rare_d, magic_d, single, reference in eligible:
+    for slug, q, other, rare_d, magic_d, single, reference, single_reason in eligible:
         counts = Counter()
         if single != 'magic': counts.update(dict(q.sample_currencies))
         if single != 'rare': counts.update(dict(other.sample_currencies))
         label, policy = format_pair(*values(rare_d, magic_d, single), rates, anchors, counts)
         result.setdefault(slug, []).append(replace(q, label=label))
         audit.append({'tablet':slug, 'id':q.identifier, 'text':q.text, 'name':q.name,
-                      'generation':q.generation, 'rare_divine':str(rare_d),
-                      'magic_divine':str(magic_d), 'label':label, 'status':'priced',
+                      'generation':q.generation, 'rare_divine':str(rare_d) if rare_d is not None else None,
+                      'magic_divine':str(magic_d) if magic_d is not None else None, 'label':label, 'status':'priced',
                       'price_rarities':[single] if single else ['magic', 'rare'],
-                      'single_source_reason':'other query also matches a different available game modifier' if single else '',
+                      'price_statistics':{r: quote.price_statistic for r, quote in [('rare',q),('magic',other)]
+                                          if not single or r == single},
+                      'single_source_reason':single_reason,
                       'query_scope_warning':('website reference price; query can also match a different game modifier'
                                              if reference else ''),
                       'display_mode':'range' if '~' in label else 'single', 'policy':policy})
@@ -203,33 +214,138 @@ def quote_for_record(quote, text):
 
 
 def _tablet_price_from_row(row, rates=None) -> Decimal:
+    return _tablet_price_details(row, rates)[0]
+
+
+def _tablet_price_details(row, rates=None):
     converted = row.get("converted") or {}
+    fallback = (Decimal(0), '')
     if str(converted.get("currency", "")).lower() in {"exalted", "exalted orb"}:
         # An incomplete conversion must not silently turn a subset into the total.
         if converted.get("missing_count", 0):
-            return Decimal(0)
+            return Decimal(0), ''
         for key in ("median", "low_sample_median"):
             if decimal(converted.get(key)) > 0:
-                return decimal(converted[key])
+                return decimal(converted[key]), key
+        if decimal(converted.get('min')) > 0:
+            fallback = (decimal(converted['min']), 'min')
     rates = rates or {}
-    values = []
-    for unit, sample in (row.get("prices") or {}).items():
+    groups = row.get("prices") or {}
+    values = []; medians = []
+    for unit, sample in groups.items():
         if not isinstance(sample, dict):
-            continue
-        value = next((decimal(sample[k]) for k in ("median", "low_sample_median")
-                      if decimal(sample.get(k)) > 0), Decimal(0))
+            return fallback
+        factor = Decimal(1)
         if unit != "exalted":
             if decimal(rates.get("exalted")) <= 0 or decimal(rates.get(unit)) <= 0:
-                continue
-            value *= decimal(rates[unit]) / decimal(rates["exalted"])
-        if value > 0:
-            values.append(value)
-    # Separate-currency medians cannot reconstruct a combined median. Only use
-    # the raw fallback when there is exactly one complete currency group.
-    return values[0] if len(values) == 1 and len(row.get("prices") or {}) == 1 else Decimal(0)
+                return fallback
+            factor = decimal(rates[unit]) / decimal(rates["exalted"])
+        for key in ('median', 'low_sample_median'):
+            if decimal(sample.get(key)) > 0:
+                medians.append((decimal(sample[key]) * factor, key))
+                break
+        values.append(decimal(sample.get('min')) * factor)
+    # Currency-group medians cannot reconstruct a combined median. Their
+    # minima can reconstruct the minimum when every group is convertible.
+    if len(groups) == 1 and medians:
+        return medians[0]
+    if fallback[0] > 0:
+        return fallback
+    if values and all(v > 0 for v in values):
+        return min(values), 'min'
+    return Decimal(0), ''
 
 
-def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_stale=False):
+class TabletSnapshotError(ValueError):
+    """A successful response contains an unavailable or inconsistent snapshot."""
+
+
+def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_stale=False,
+                             allow_stale_snapshot=False, snapshot_retries=0, on_retry=None,
+                             cache_dir=None):
+    identity = {'api_base':api_base.rstrip('/'), 'league':league, 'rarity':rarity}
+    cache_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    cache_path = Path(cache_dir) / (cache_key + '.json') if cache_dir else None
+    pages = {}
+    class RecordingClient:
+        def get_json(self, url):
+            result = client.get_json(url)
+            pages[url] = result
+            return result
+    try:
+        prices, report = _fetch_tablet_with_retry(RecordingClient(), api_base, league, rarity,
+            allow_stale, allow_stale_snapshot, snapshot_retries, on_retry)
+        if not prices and cache_path and cache_path.exists():
+            raise TabletSnapshotError('tablet snapshot contains no usable prices')
+    except Exception as live_error:
+        if cache_path is None or not cache_path.exists():
+            raise
+        try:
+            cached = json.loads(cache_path.read_text(encoding='utf-8'))
+            if cached.get('schema') != 1 or cached.get('identity') != identity:
+                raise ValueError('cached tablet market does not match selection')
+            class CachedClient:
+                def get_json(self, url): return cached['pages'][url]
+            prices, report = _fetch_tablet_affix_snapshot(CachedClient(), api_base, league, rarity,
+                allow_stale, allow_stale_snapshot)
+            if not prices:
+                raise ValueError('cached tablet snapshot contains no usable prices')
+        except Exception as cache_error:
+            raise ValueError(f'{live_error}; cached snapshot rejected: {cache_error}') from live_error
+        report.update(source='cache', cache_saved_at=cached['saved_at'],
+            live_error=f'{type(live_error).__name__}: {live_error}',
+            snapshot_attempts=getattr(live_error, 'snapshot_attempts', 1),
+            snapshot_retry_reasons=getattr(live_error, 'snapshot_retry_reasons', []),
+            freshness='last_successful_snapshot')
+        if on_retry:
+            name = '魔法' if rarity == 'magic' else '稀有'
+            on_retry(f"碑牌{name}在线行情不可用，使用同赛季本地缓存（保存于 {cached['saved_at']}）：{live_error}")
+        return prices, report
+    report['source'] = 'live'
+    if cache_path and prices:
+        temporary = None
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix='.tablet-', suffix='.json', dir=cache_path.parent)
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                json.dump({'schema':1, 'identity':identity, 'saved_at':datetime.now(timezone.utc).isoformat(),
+                           'pages':pages}, stream, ensure_ascii=False)
+            os.replace(temporary, cache_path)
+        except OSError as exc:
+            report['cache_write_error'] = str(exc)
+        finally:
+            if temporary: Path(temporary).unlink(missing_ok=True)
+    return prices, report
+
+
+def _fetch_tablet_with_retry(client, api_base, league, rarity, allow_stale,
+                            allow_stale_snapshot, snapshot_retries, on_retry):
+    # HTTP failures already have a deadline and retries in the transport client.
+    # Restart pagination only for transient snapshot failures, never mix pages.
+    import time
+    reasons = []
+    for attempt in range(max(0, min(2, snapshot_retries)) + 1):
+        try:
+            prices, report = _fetch_tablet_affix_snapshot(
+                client, api_base, league, rarity, allow_stale, allow_stale_snapshot)
+            if not prices and snapshot_retries:
+                raise TabletSnapshotError('tablet snapshot contains no usable prices')
+            report.update(snapshot_attempts=attempt + 1, snapshot_retry_reasons=reasons)
+            return prices, report
+        except TabletSnapshotError as exc:
+            reasons.append(str(exc))
+            exc.snapshot_attempts = attempt + 1
+            exc.snapshot_retry_reasons = list(reasons)
+            if attempt >= max(0, min(2, snapshot_retries)):
+                raise
+            if on_retry:
+                name = '魔法' if rarity == 'magic' else '稀有'
+                on_retry(f'碑牌{name}快照暂不可用，{attempt + 1} 秒后从第一页重试（第 {attempt + 2} 次）：{exc}')
+            time.sleep(attempt + 1)
+
+
+def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
+                               allow_stale_snapshot):
     if not league:
         raise ValueError("tablet league is required")
     if rarity not in {"magic", "rare"}:
@@ -243,7 +359,7 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
         ))
         payload = client.get_json(api_base.rstrip('/') + '/api/v1/prices?' + query)
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-            raise ValueError("invalid tablet prices response")
+            raise TabletSnapshotError("invalid tablet prices response")
         state = payload.get("snapshot") or {}
         exchange = payload.get("exchange_rates") or {}
         if (state.get("league") != league or exchange.get("league") != league):
@@ -256,19 +372,21 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
                 or payload.get("rarity") is not None and payload.get("rarity") != rarity
                 or config.get("rarity") is not None and config.get("rarity") != rarity):
             raise ValueError("tablet API snapshot rarity does not match selection")
-        if (state.get("stale") is not False or exchange.get("stale") is not False) and not allow_stale:
-            raise ValueError("tablet API snapshot or exchange rates are stale")
+        snapshot_usable = (state.get("stale") is False
+                           or allow_stale_snapshot and state.get("stale") is True)
+        if (not snapshot_usable or exchange.get("stale") is not False) and not allow_stale:
+            raise TabletSnapshotError("tablet API snapshot or exchange rates are stale")
         if not state.get("id") or snapshot and state["id"] != snapshot:
-            raise ValueError("tablet snapshot changed during pagination")
+            raise TabletSnapshotError("tablet snapshot changed during pagination")
         if total is not None and payload.get("total") != total:
-            raise ValueError("tablet pagination total changed")
+            raise TabletSnapshotError("tablet pagination total changed")
         snapshot = state["id"]; total = int(payload.get("total", 0)); pages += 1
         if total <= 0 or total > 12000 or int(payload.get("offset", -1)) != offset:
-            raise ValueError("invalid tablet pagination")
+            raise TabletSnapshotError("invalid tablet pagination")
         current_rates = {k: decimal(v) for k, v in exchange.get("values", {}).items()}
         current_rates["divine"] = Decimal(1)
         if rates and rates != current_rates:
-            raise ValueError("tablet exchange rates changed during pagination")
+            raise TabletSnapshotError("tablet exchange rates changed during pagination")
         rates = current_rates
         for row in payload["data"]:
             if any(row.get(k) is not None and row[k] != v for k, v in
@@ -276,13 +394,13 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
                 raise ValueError('tablet row market does not match the requested rarity')
             identifier = row.get("id")
             if not identifier or identifier in seen:
-                raise ValueError("tablet pagination contains missing or duplicate IDs")
+                raise TabletSnapshotError("tablet pagination contains missing or duplicate IDs")
             seen.add(identifier)
             slug = row.get("tablet")
             if slug not in TABLET_SLUGS or row.get("status") != "ok" or int(row.get("sample_count", 0)) <= 0:
                 continue
             text = str(row.get("text_en") or "")
-            value = _tablet_price_from_row(row, rates)
+            value, statistic = _tablet_price_details(row, rates)
             if not text or value <= 0:
                 continue
             numbers = re.findall(r'\((\d+)-(\d+)\)|(\b\d+\b)', text)
@@ -294,6 +412,7 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
             result.setdefault(slug, []).append(Quote(text, value, low, high,
                 identifier=identifier, name=str(row.get('name_en') or ''),
                 generation=str(row.get('generation') or ''),
+                price_statistic=statistic,
                 query_scope=trade_query_scope(row.get('trade_url'), rarity),
                 sample_currencies=tuple((unit, int(sample.get('count', 0)))
                     for unit, sample in (row.get('prices') or {}).items()
@@ -302,14 +421,18 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
         if offset == total:
             break
         if not size or offset > total or pages >= 60:
-            raise ValueError("incomplete tablet snapshot")
+            raise TabletSnapshotError("incomplete tablet snapshot")
     return result, {"league": league, "rarity": rarity, "snapshot": snapshot, "pages": pages, "total": total,
                     "rows": sum(map(len, result.values())), "rates": {k: str(v) for k, v in rates.items()},
                     "query_config": state.get("config", {}),
+                    "published_at": state.get("published_at"),
+                    "oldest_sample_at": state.get("oldest_sample_at"),
                     "snapshot_stale": state.get("stale"),
                     "exchange_rates_stale": exchange.get("stale"),
-                    "allow_stale": bool(allow_stale), "price_statistic":"sample_median",
-                    "minimum_price_fallback":False}
+                    "allow_stale_snapshot": bool(allow_stale_snapshot),
+                    "allow_stale": bool(allow_stale), "price_statistic":"median_then_minimum",
+                    "minimum_price_fallback":True,
+                    "minimum_price_ids":[q.identifier for quotes in result.values() for q in quotes if q.price_statistic == 'min']}
 
 
 def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL):
@@ -559,17 +682,22 @@ def _redirect_tablet_base_items(data, tablet_types):
 def build_tablet_affix_resources(*, client, api_base, league, template_it, template_csd,
                                 source_baseitems, patched_baseitems, output_zip, game_path, resource_report,
                                 english_baseitems=None, template_map_csd=None, template_global_csd=None,
-                                allow_stale=False, tablet_mods=None, tablet_stats=None, tablet_tags=None):
+                                allow_stale=False, tablet_mods=None, tablet_stats=None, tablet_tags=None,
+                                on_retry=None, cache_dir=None):
     reports = {}; quotes_by_rarity = {}; ninja = {}
     api_reports = {}
     for rarity in ("magic", "rare"):
         try:
             quotes_by_rarity[rarity], api_reports[rarity] = fetch_tablet_affix_prices(
-                client, api_base, league, rarity=rarity, allow_stale=allow_stale)
+                client, api_base, league, rarity=rarity, allow_stale=allow_stale,
+                allow_stale_snapshot=rarity == "magic", snapshot_retries=2, on_retry=on_retry,
+                cache_dir=cache_dir)
             api_reports[rarity]['status'] = 'ok'
         except Exception as exc:
             api_reports[rarity] = {'status':'unavailable', 'rarity':rarity,
-                                   'reason':f'{type(exc).__name__}: {exc}'}
+                                   'reason':f'{type(exc).__name__}: {exc}',
+                                   'snapshot_attempts':getattr(exc, 'snapshot_attempts', 1),
+                                   'snapshot_retry_reasons':getattr(exc, 'snapshot_retry_reasons', [])}
     # Keep the two snapshots independent, including their failure states.
     has_quotes = any(quotes_by_rarity.values())
     api_ok = [api_reports[r].get('status') == 'ok' for r in ("magic", "rare")]
@@ -597,12 +725,15 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
         from poe2_tablet_catalog import bind_game_stats, game_affix_catalog, report_game_coverage
         catalog = game_affix_catalog(mods_path=tablet_mods, stats_path=tablet_stats,
             tags_path=tablet_tags, baseitems_path=english_baseitems or source_baseitems)
+        quoted_mapping = []
         for rarity in quotes_by_rarity:
-            quotes_by_rarity[rarity], quoted_mapping = bind_game_stats(quotes_by_rarity[rarity], game_catalog=catalog)
+            quotes_by_rarity[rarity], rarity_mapping = bind_game_stats(quotes_by_rarity[rarity], game_catalog=catalog)
+            quoted_mapping.extend(rarity_mapping)
         reports['game_coverage'] = report_game_coverage(catalog, quoted_mapping)
         quotes, pair_audit = pair_tablet_quotes(quotes_by_rarity, api_reports)
         excluded = [row for row in pair_audit if row['status'] == 'excluded']
         reports['quote_validation'] = {'status':'partial' if excluded else 'ok', 'excluded':excluded,
+            'minimum_price': [row['id'] for row in pair_audit if 'min' in row.get('price_statistics', {}).values()],
             'single_source': [row['id'] for row in pair_audit if row.get('single_source_reason')],
             'reference_quotes': [row['id'] for row in pair_audit if row.get('query_scope_warning')]}
         quotes, mapping = bind_game_stats(quotes, game_catalog=catalog)
@@ -634,7 +765,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
                 blocks.append(modified); used.update(found); edits += changed
         unmatched = [q.identifier for q in modifiers if q.identifier not in used]
         if unmatched or not edits:
-            raise ValueError(f'{slug}: game descriptions do not cover all paired medians: {unmatched}')
+            raise ValueError(f'{slug}: game descriptions do not cover all selected prices: {unmatched}')
         text = clean_chinese_markup(''.join(blocks)); validate_csd(text)
         csd_name = f'data/statdescriptions/poe2price/{short.lower()}_tablet_stat_descriptions.csd'
         it_name = f'metadata/items/toweraugments/poe2price/{short.lower()}.it'
@@ -671,11 +802,11 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
     patched_baseitems.write_bytes(redirected)
     status = 'ok' if all(source.get('status') == 'ok' for source in reports.values()) else 'partial'
     report = {'status':status, **reports, 'resources':resource_rows, 'redirected_items':count, 'base_names':named_rows,
-              'price_display':'ascending_magic_rare_medians', 'price_pairs':pair_audit, 'game_mapping':mapping,
+              'price_display':'ascending_magic_rare_prices', 'price_pairs':pair_audit, 'game_mapping':mapping,
               'merge_rule':{'relative_gap_max':'20% to 10%, log interpolation',
                             'anchors':'P75 and max(P95, 2*P75), from query-consistent pairs',
                             'currencies':'dynamic E/C/D with one common rate revision',
-                            'single_price':'mean_of_two_medians', 'equal_formatted_values':'collapse'},
+                            'single_price':'mean_of_two_selected_prices', 'equal_formatted_values':'collapse'},
               'rarity_queries': {r: {'status': api_reports.get(r, {}).get('status'),
                                     'snapshot': api_reports.get(r, {}).get('snapshot'),
                                     'rows': api_reports.get(r, {}).get('rows', 0),
