@@ -1,6 +1,10 @@
 from decimal import Decimal
+import base64
+import gzip
+import json
 from pathlib import Path
 import struct
+import subprocess
 import sys
 from urllib.parse import parse_qs, urlparse
 import zipfile
@@ -25,7 +29,7 @@ def synthetic_baseitems():
     metadata = ["Metadata/Items/TowerAugment/RitualAugment", "Metadata/Items/TowerAugment/BreachAugment", "Metadata/Items/Currency/CurrencyAddModToRare"]
     rows = bytearray(4 + len(metadata) * 360)
     struct.pack_into("<I", rows, 0, len(metadata))
-    strings = bytearray()
+    strings = bytearray(b'\xbb' * 8)
 
     def add(text):
         at = len(strings)
@@ -42,13 +46,41 @@ def synthetic_baseitems():
 
 def quote(identifier="one", text="Map has (15-20)% increased Monster Rarity", price=500):
     return {"id": identifier, "tablet": "Ritual_Tablet", "text_en": text, "status": "ok", "sample_count": 10,
+            "name_en":"Challenger's", "generation":"prefix",
             "converted": {"currency": "exalted", "low_sample_median": price, "missing_count": 0}}
 
 
-def page(rows, offset=0, total=None):
-    return {"snapshot": {"id": "snapshot", "league": LEAGUE, "stale": False, "config": {"min_uses": 10}},
+def game_tables(tmp_path):
+    def table(name, width, identifier, configure=None):
+        fixed = bytearray(4 + width); struct.pack_into('<I', fixed, 0, 1)
+        heap = bytearray(b'\xbb' * 8)
+        def append(data):
+            pointer = len(heap); heap.extend(data); return pointer
+        struct.pack_into('<Q', fixed, 4, append((identifier+'\0').encode('utf-16-le')))
+        if configure: configure(fixed, append)
+        path = tmp_path/(name+'.datc64'); path.write_bytes(fixed+heap); return path
+    def mod(fixed, append):
+        struct.pack_into('<I',fixed,4+94,34)
+        struct.pack_into('<Q',fixed,4+98,append("Challenger's\0".encode('utf-16-le')))
+        struct.pack_into('<I',fixed,4+106,1)
+        struct.pack_into('<QQ',fixed,4+158,1,append(struct.pack('<QQ',0,0)))
+        struct.pack_into('<QQ',fixed,4+677,1,append(struct.pack('<i',1)))
+    return dict(tablet_mods=table('mods',693,'test_mod',mod),
+                tablet_stats=table('stats',106,'test_stat'),tablet_tags=table('tags',44,'default'))
+
+
+def page(rows, offset=0, total=None, rarity='rare'):
+    rows = [dict(row, trade_url=row.get('trade_url') or trade_url(row['id'], rarity)) for row in rows]
+    return {"snapshot": {"id": "snapshot", "league": LEAGUE, "stale": False, "config": {"min_uses": 10, "rarity": rarity}},
             "exchange_rates": {"league": LEAGUE, "stale": False, "primary": "divine", "values": {"exalted": 0.002, "chaos": 0.1}},
             "offset": offset, "total": len(rows) if total is None else total, "data": rows}
+
+
+def trade_url(identifier, rarity):
+    query = {'filters': {'type_filters': {'filters': {'rarity': {'option': rarity}}}},
+             'stats': [{'type': 'and', 'filters': [{'id': 'explicit.' + identifier}]}]}
+    token = base64.urlsafe_b64encode(gzip.compress(json.dumps(query).encode())).decode().rstrip('=')
+    return 'https://www.pathofexile.com/trade2/search/poe2/Forbidden%20Rites/' + token
 
 
 class Client:
@@ -94,7 +126,7 @@ def test_bad_status_and_partial_currency_conversion_are_not_quotes():
 
 @pytest.mark.parametrize("unit,amount,expected", [("divine", 5, "2500"), ("chaos", 5, "250"), ("exalted", 5, "5")])
 def test_raw_currency_conversion(unit, amount, expected):
-    assert m._tablet_price_from_row({"prices":{unit:{"min":amount}}}, {"divine":Decimal(1), "exalted":Decimal("0.002"), "chaos":Decimal("0.1")}) == Decimal(expected)
+    assert m._tablet_price_from_row({"prices":{unit:{"low_sample_median":amount,"min":1}}}, {"divine":Decimal(1), "exalted":Decimal("0.002"), "chaos":Decimal("0.1")}) == Decimal(expected)
 
 
 def test_link_text_and_plural_forms_match_market_text():
@@ -231,13 +263,11 @@ def test_constant_before_variable_is_not_used_as_price_range():
     assert m.quote_for_record(q,'After {0} seconds, grants {1}% Effectiveness') is None
 
 
-def test_overlapping_queries_are_counted_as_covered_after_price_emission():
+def test_overlapping_conflicting_quotes_never_silently_choose_the_minimum():
     first=m.Quote('Map has (15-20)% increased Monster Rarity',Decimal(500),15,20)
     second=m.Quote('Map has 15% increased Monster Rarity',Decimal(1000),15,15)
-    text,used,changed=m.price_block(csd(),[first,second],Decimal(500))
-    assert used=={first.text,second.text} and changed==4
-    assert '15 "地圖增加{0}%[MonsterRarity|怪物稀有度]=1.00D"' in text
-    assert '=2.00D' not in text
+    with pytest.raises(ValueError,match='ambiguous tablet prices'):
+        m.price_block(csd(),[first,second],Decimal(500))
 
 
 def test_legacy_name_suffix_migrates_and_markup_only_patch_is_detected(tmp_path):
@@ -255,7 +285,7 @@ def test_legacy_name_suffix_migrates_and_markup_only_patch_is_detected(tmp_path)
     assert records[1]['tablet_reference_patched']=='False'
 
 
-def test_sources_fail_independently_and_zero_match_cannot_succeed(tmp_path):
+def test_missing_game_mapping_cannot_mutate_patch_even_when_ninja_fails(tmp_path):
     source = tmp_path / "base.dat"; source.write_bytes(synthetic_baseitems())
     patched = tmp_path / "patched.dat"; patched.write_bytes(source.read_bytes())
     template = tmp_path / "template.it"; template.write_text('Mods\n{\nstat_description_list = "Data/StatDescriptions/tablet_stat_descriptions.csd"\n}\n', encoding='utf-8')
@@ -265,16 +295,12 @@ def test_sources_fail_independently_and_zero_match_cannot_succeed(tmp_path):
     class Partial:
         def get_json(self, url):
             if 'poe.ninja' in url: raise TimeoutError('offline')
-            return page([quote()])
+            return page([quote()], rarity=parse_qs(urlparse(url).query)['rarity'][0])
     args = dict(client=Partial(),api_base='http://example.invalid',league=LEAGUE,template_it=template,template_csd=descriptions,source_baseitems=source,patched_baseitems=patched,output_zip=archive,game_path='data/balance/traditional chinese/baseitemtypes.datc64',resource_report=tmp_path/'report.json')
-    report = m.build_tablet_affix_resources(**args)
-    assert report['status'] == 'partial'
-    assert report['poe_ninja_precursor_tablets']['status'] == 'unavailable'
-    before = archive.read_bytes()
-    descriptions.write_bytes(csd().replace('Monster Rarity', 'Unrelated Text').encode('utf-8'))
-    with pytest.raises(ValueError, match='no tablet descriptions matched'):
+    before = archive.read_bytes(); before_dat = patched.read_bytes()
+    with pytest.raises(ValueError, match='Mods/Stats/Tags'):
         m.build_tablet_affix_resources(**args)
-    assert archive.read_bytes() == before
+    assert archive.read_bytes() == before and patched.read_bytes() == before_dat
 
 
 def test_cache_cleanup_removes_resources_and_clears_references(tmp_path):
@@ -287,6 +313,48 @@ def test_cache_cleanup_removes_resources_and_clears_references(tmp_path):
     with zipfile.ZipFile(path) as z:
         assert len(z.namelist()) == 1
         assert z.read(z.namelist()[0])[:1084] == original[:1084]
+
+
+@pytest.mark.parametrize('runtime', ['isolated', 'embedded'])
+def test_tablet_cli_validates_and_cleans_with_isolated_python(tmp_path, runtime):
+    python = ROOT / 'desktop/.runtime/tools/python/poe_python.exe'
+    if runtime == 'embedded' and not python.exists():
+        pytest.skip('prepare the bundled Python runtime first')
+    command = [sys.executable, '-I'] if runtime == 'isolated' else [str(python)]
+    command.append(str(ROOT / '物价补丁/tools/poe2_tablet_refs.py'))
+    original = synthetic_baseitems()
+    redirected, _ = m._redirect_tablet_base_items(original, {'Ritual'})
+    base_path = 'data/balance/traditional chinese/baseitemtypes.datc64'
+    it_path = 'metadata/items/toweraugments/poe2price/ritual.it'
+    csd_path = 'data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd'
+    archive = tmp_path / '碑牌补丁.zip'
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr(base_path, redirected)
+        z.writestr(it_path, f'Mods\n{{\nstat_description_list = "{csd_path}"\n}}\n')
+        z.writestr(csd_path, csd())
+        z.writestr('data/balance/words.datc64', b'preserved words')
+
+    def run(*args):
+        return subprocess.run(command + [str(archive), *args], cwd=tmp_path,
+                              capture_output=True, timeout=30)
+
+    validated = run('--validate')
+    assert validated.returncode == 0, validated.stderr
+    english = tmp_path / '英文底材.datc64'
+    english.write_bytes(redirected)
+    cleaned = run('--english', str(english))
+    assert cleaned.returncode == 0, cleaned.stderr
+    with zipfile.ZipFile(archive) as z:
+        assert not any('/poe2price/' in name for name in z.namelist())
+        for entry in (base_path, 'data/balance/baseitemtypes.datc64'):
+            assert z.read(entry) == refs.clean_tablet_layer(redirected)
+        assert z.read('data/balance/words.datc64') == b'preserved words'
+    assert run('--validate').returncode == 0
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr(base_path, redirected)
+    invalid = run('--validate')
+    assert invalid.returncode != 0
+    assert b'missing referenced template' in invalid.stderr
 
 
 def test_disabled_core_build_clears_old_test_inheritance_and_detects_it(tmp_path):
@@ -378,7 +446,8 @@ def test_api_available_without_templates_still_updates_ninja_names(tmp_path):
         z.writestr('metadata/items/toweraugments/poe2price/ritual.it', b'old')
     class Both:
         def get_json(self, url):
-            if 'poe.ninja' not in url: return page([quote()])
+            if 'poe.ninja' not in url:
+                return page([quote()], rarity=parse_qs(urlparse(url).query)['rarity'][0])
             return {'core':{'primary':'divine','rates':{'exalted':500}},'lines':[
                 {'baseType':'Ritual Tablet','variant':'Normal','primaryValue':1,'listingCount':10,'corrupted':False}]}
     report = m.build_tablet_affix_resources(client=Both(),api_base='http://unused',league=LEAGUE,
@@ -412,6 +481,62 @@ def test_restore_and_disabled_build_remove_tablet_name_prices_in_both_languages(
     names.build_patch(source, prices, archive, patched, 'data/balance/baseitemtypes.datc64', '=', False, 'append', False, None, True)
     assert names.scan_base_item_names(patched.read_bytes())[0].name == '祭祀碑牌'
     assert refs.clean_tablet_layer(patched.read_bytes()) == patched.read_bytes()
+
+
+def test_repeated_restore_keeps_saved_english_bytes_instead_of_recleaning_live_table(tmp_path):
+    baseline = synthetic_baseitems()
+    priced, _ = m.price_tablet_names(baseline, {'Ritual_Tablet': selected('0.38D')})
+    live, _ = m._redirect_tablet_base_items(priced, {'Ritual'})
+    english = tmp_path / 'live.dat'
+    english.write_bytes(live)
+    archive = tmp_path / 'restore.zip'
+    key = 'data/balance/baseitemtypes.datc64'
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr(key, baseline)
+    for _ in range(2):
+        refs.clean_zip(archive, english)
+        with zipfile.ZipFile(archive) as z:
+            assert z.read(key) == baseline
+
+
+def test_restore_refreshes_english_baseline_when_official_structure_changes(tmp_path):
+    old = synthetic_baseitems()
+    current = old.replace('RitualAugment'.encode('utf-16-le'), 'TempleAugment'.encode('utf-16-le'))
+    english = tmp_path / 'current.dat'
+    english.write_bytes(current)
+    archive = tmp_path / 'restore.zip'
+    key = 'data/balance/baseitemtypes.datc64'
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr(key, old)
+    refs.clean_zip(archive, english)
+    with zipfile.ZipFile(archive) as z:
+        assert z.read(key) == current
+
+
+@pytest.mark.parametrize('row,new_name', [(0, 'New Ritual Tablet'), (2, 'New Exalted Orb')])
+@pytest.mark.parametrize('append', [False, True])
+def test_restore_refreshes_official_name_changes_without_structure_changes(tmp_path, row, new_name, append):
+    old = synthetic_baseitems()
+    entry = names.scan_base_item_names(old)[row]
+    current = bytearray(old)
+    if append:
+        offset = len(current) - names.detect_base_item_layout(old).string_base
+        struct.pack_into('<I', current, entry.name_pointer_pos, offset)
+        current.extend((new_name + '\0').encode('utf-16-le'))
+    else:
+        # Same-length official string edit leaves every pointer unchanged.
+        current[entry.name_start:entry.name_end] = ('新' * len(entry.name)).encode('utf-16-le')
+    current = bytes(current)
+    assert names.build_structure_signature(old) == names.build_structure_signature(current)
+    english = tmp_path / 'current.dat'
+    english.write_bytes(current)
+    archive = tmp_path / 'restore.zip'
+    key = 'data/balance/baseitemtypes.datc64'
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr(key, old)
+    refs.clean_zip(archive, english)
+    with zipfile.ZipFile(archive) as z:
+        assert z.read(key) == current
 
 
 def test_original_breach_typo_is_removed_from_priced_and_fallback_lines(tmp_path):
@@ -451,3 +576,158 @@ def test_all_affix_lines_are_priced_in_shared_magic_and_rare_descriptions(tmp_pa
     for i,(_,_,chinese) in enumerate(stats):
         assert f'{chinese}]={i+1:.2f}D' in output
     m.validate_csd(output)
+
+
+def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_path):
+    class SplitClient:
+        def __init__(self):
+            self.urls = []
+
+        def get_json(self, url):
+            self.urls.append(url)
+            if 'poe.ninja' in url:
+                return {'core': {'primary': 'divine', 'rates': {'exalted': 500}}, 'lines': [
+                    {'baseType': 'Ritual Tablet', 'variant': 'Normal', 'primaryValue': 1,
+                     'listingCount': 10, 'corrupted': False}]}
+            rarity = parse_qs(urlparse(url).query)['rarity'][0]
+            row = quote(text='Map has (15-20)% increased Monster Rarity',
+                        price=500 if rarity == 'magic' else 1000)
+            payload = page([row], rarity=rarity)
+            payload['server'] = 'international'; payload['category'] = 'tablet'; payload['rarity'] = rarity
+            payload['snapshot']['config']['rarity'] = rarity
+            return payload
+
+    source = tmp_path / 'base.dat'; source.write_bytes(synthetic_baseitems())
+    patched = tmp_path / 'patched.dat'; patched.write_bytes(source.read_bytes())
+    template = tmp_path / 'template.it'
+    template.write_text('Mods\n{\nstat_description_list = "Data/StatDescriptions/tablet_stat_descriptions.csd"\n'
+                        'enable_rarity = "normal"\nenable_rarity = "magic"\nenable_rarity = "rare"\n'
+                        'enable_rarity = "unique"\n}\n', encoding='utf-8')
+    descriptions = tmp_path / 'tablet.csd'; descriptions.write_bytes(csd().encode())
+    archive = tmp_path / 'patch.zip'
+    with zipfile.ZipFile(archive, 'w') as z:
+        z.writestr('data/balance/traditional chinese/baseitemtypes.datc64', source.read_bytes())
+
+    client = SplitClient()
+    report = m.build_tablet_affix_resources(
+            client=client, api_base='http://example.invalid', league=LEAGUE,
+            template_it=template, template_csd=descriptions,
+            source_baseitems=source, patched_baseitems=patched,
+            output_zip=archive,
+            game_path='data/balance/traditional chinese/baseitemtypes.datc64',
+            resource_report=tmp_path / 'report.json',
+            **game_tables(tmp_path),
+        )
+    report = json.loads((tmp_path/'report.json').read_text(encoding='utf-8'))
+    queries = [parse_qs(urlparse(url).query).get('rarity', [''])[0] for url in client.urls
+               if '/api/v1/prices?' in url]
+    assert queries == ['magic', 'rare']
+    assert report['status'] == 'ok'
+    assert report['api']['rarities']['magic']['status'] == report['api']['rarities']['rare']['status'] == 'ok'
+    assert report['resources'][0]['matched'] == 1 and report['redirected_items'] == 1
+    assert report['game_mapping'][0]['stat'] == 'test_stat'
+    with zipfile.ZipFile(archive) as z:
+        text = z.read('data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd').decode()
+        it = z.read('metadata/items/toweraugments/poe2price/ritual.it').decode()
+        assert text.count('=1~2D') == 2
+        assert it.count('stat_description_list') == 1
+        assert '魔法价格' not in text and '稀有价格' not in text
+
+
+@pytest.mark.parametrize('returned', ['rare', None])
+def test_magic_request_rejects_wrong_or_unidentified_rarity(returned):
+    response = page([quote()], rarity=returned)
+    with pytest.raises(ValueError, match='rarity'):
+        m.fetch_tablet_affix_prices(Client({0:response}), 'http://example.invalid', LEAGUE, rarity='magic')
+
+
+def test_resource_validation_rejects_repeated_single_description_field():
+    redirected, _ = m._redirect_tablet_base_items(synthetic_baseitems(), {'Ritual'})
+    entries = {
+        'data/balance/baseitemtypes.datc64': redirected,
+        'metadata/items/toweraugments/poe2price/ritual.it': (
+            'Mods\n{\nstat_description_list = "magic.csd"\n'
+            'stat_description_list = "rare.csd"\n'
+            'enable_rarity = "magic"\nenable_rarity = "rare"\n}\n').encode(),
+        'magic.csd': csd().encode(), 'rare.csd': csd().encode(),
+    }
+    with pytest.raises(ValueError, match='repeats a single stat_description_list'):
+        refs.validate_resources(entries)
+
+
+@pytest.mark.parametrize('rare,magic,expected', [
+    ('5','16','5~16D'), ('16','5','5~16D'),
+    ('0.05','0.06','5.5E'), ('0.06','0.05','5.5E'),
+    ('0.05','0.16','5~16E'), ('1','1','100E'),
+    ('5','5.5','5.25D'), ('5','5.51','5~5.51D'),
+])
+def test_dual_price_order_and_shared_currency(rare, magic, expected):
+    rates = {'divine':Decimal(1), 'chaos':Decimal('.1'), 'exalted':Decimal('.01')}
+    label, _ = m.format_pair(Decimal(rare), Decimal(magic), rates,
+                             (Decimal('.06'), Decimal('.12')), {'exalted':20})
+    assert label == expected
+
+
+def test_market_scaling_does_not_change_merge_decisions():
+    from poe2_tablet_display import market_anchors, format_pair
+    pairs = [(Decimal(a), Decimal(b)) for a,b in [('5','6'), ('6','7'), ('11','13'), ('16','17')]]
+    decisions = []
+    for factor in map(Decimal, ['.01','.1','1','10','100']):
+        scaled = [(a*factor,b*factor) for a,b in pairs]
+        anchors = market_anchors(scaled)
+        decisions.append([format_pair(a,b,{'divine':Decimal(1)},anchors)[1]['merged'] for a,b in scaled])
+    assert all(row == decisions[0] for row in decisions)
+
+
+def test_query_mismatch_is_excluded_from_both_price_and_market_anchors():
+    from dataclasses import replace
+    q = m.Quote('Map contains 1 additional Strongboxes',Decimal(10),1,1,identifier='a',query_scope='same')
+    expensive = replace(q, identifier='b', price=Decimal(1_000_000), query_scope='different')
+    info = {rarity:{'rates':{'exalted':'.002','chaos':'.1'}} for rarity in ('rare','magic')}
+    result, audit = m.pair_tablet_quotes({'rare':{'Ritual_Tablet':[q,expensive]},
+        'magic':{'Ritual_Tablet':[q,replace(expensive,query_scope='other')]}},info)
+    assert [quote.identifier for quote in result['Ritual_Tablet']] == ['a']
+    assert next(row for row in audit if row['id']=='b')['status'] == 'excluded'
+    assert Decimal(next(row for row in audit if row['id']=='a')['policy']['low_anchor_divine']) == Decimal('.02')
+
+
+def test_trade_query_scope_preserves_filters_and_validates_rarity():
+    assert m.trade_query_scope(trade_url('one','rare'),'rare') == m.trade_query_scope(trade_url('one','magic'),'magic')
+    assert m.trade_query_scope(trade_url('one','rare'),'magic') == ''
+    assert m.trade_query_scope(trade_url('one','rare'),'rare') != m.trade_query_scope(trade_url('two','rare'),'rare')
+
+
+def test_tablet_price_never_falls_back_to_minimum():
+    assert m._tablet_price_from_row({'converted':{'currency':'exalted','min':10}}) == 0
+    assert m._tablet_price_from_row({'prices':{'exalted':{'min':10}}}) == 0
+    assert m._tablet_price_from_row({'converted':{'currency':'exalted','median':30,'min':10}}) == 30
+    assert m._tablet_price_from_row({'converted':{'currency':'exalted','low_sample_median':25,'min':10}}) == 25
+
+
+def test_pairing_requires_identical_ids_and_modifier_details():
+    from dataclasses import replace
+    q = m.Quote('Map contains 1 additional Strongboxes',Decimal(10),1,1,identifier='a')
+    info = {rarity:{'rates':{'exalted':'0.002','chaos':'0.1'}} for rarity in ('magic','rare')}
+    with pytest.raises(ValueError,match='coverage differs'):
+        m.pair_tablet_quotes({'rare':{'Ritual_Tablet':[q]},'magic':{'Ritual_Tablet':[replace(q,identifier='b')]}},info)
+    with pytest.raises(ValueError,match='identity differs'):
+        m.pair_tablet_quotes({'rare':{'Ritual_Tablet':[q]},'magic':{'Ritual_Tablet':[replace(q,text='Map contains 2 additional Strongboxes')]}},info)
+
+
+def test_similar_text_on_different_stats_does_not_receive_the_same_pair():
+    q = m.Quote('Map has (15-20)% increased Monster Rarity',Decimal(500),15,20,
+                stat='test_stat',label='1~2D')
+    other = csd().replace('test_stat','different_stat')
+    text, used, changed = m.price_block(other,[q],Decimal(500))
+    assert text == other and not used and not changed
+
+
+def test_wrong_game_modifier_identity_is_rejected(tmp_path):
+    from poe2_tablet_catalog import bind_game_stats
+    files = game_tables(tmp_path)
+    source = tmp_path/'base.dat'; source.write_bytes(synthetic_baseitems())
+    q = m.Quote('Map has (15-20)% increased Monster Rarity',Decimal(500),15,20,
+                identifier='a',name='Unknown modifier',generation='prefix')
+    with pytest.raises(ValueError,match='identity is not unique'):
+        bind_game_stats({'Ritual_Tablet':[q]},mods_path=files['tablet_mods'],
+                        stats_path=files['tablet_stats'],tags_path=files['tablet_tags'],baseitems_path=source)

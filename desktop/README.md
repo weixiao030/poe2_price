@@ -1,6 +1,6 @@
 # 物价补丁桌面应用
 
-当前版本 v0.8.8。使用说明、目录结构及核心迁移记录见[项目 README](../README.md)。
+当前版本 v0.9.2。使用说明、目录结构及核心迁移记录见[项目 README](../README.md)。
 
 ```powershell
 npm ci
@@ -16,3 +16,5 @@ npm run dist
 `test-real-games.mjs` 和 `verify-real-controls.mjs` 会实际修改明确指定的游戏目录，只在需要实机验证时手动执行，不启动游戏可执行文件。原始实机证据与四份可重建/回滚材料保存在本地 `verification/desktop-v0.7.0`，不进入发行包。
 
 设置位于 Electron 用户配置目录。可用 `POE_DESKTOP_DATA` 指定隔离目录。首次运行将内置引擎校验后释放到该目录，后续更新与还原继续使用原项目的客户端专属基线。
+
+软件更新的签名、ZOS 配置、增量包生成与恢复步骤见[发布指南](../docs/软件增量更新与ZOS发布.md)。检查更新与每小时物价更新为两项独立功能。

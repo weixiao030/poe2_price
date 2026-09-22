@@ -683,19 +683,23 @@ function New-Poe1PhysicalRestoreZip {
         [Parameter(Mandatory = $true)]$InstallInfo,
         [Parameter(Mandatory = $true)][string]$CurrentBaseItems,
         [Parameter(Mandatory = $true)][string]$OutputZip,
-        [Parameter(Mandatory = $true)][string]$RepoRoot
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [string]$OfficialBaseDir = ""
     )
 
     $Bundles2Dir = (Resolve-Path -LiteralPath (Join-Path $Poe1Dir "Bundles2")).Path
     $Descriptors = @(Get-Poe1PhysicalRestoreFileDescriptors -Poe1Dir $Poe1Dir)
     $Signature = Get-Poe1BaseItemsSignature -SourceDat $CurrentBaseItems -RepoRoot $RepoRoot
+    if ([string]::IsNullOrWhiteSpace($OfficialBaseDir)) { $OfficialBaseDir = $Poe1Dir }
+    $BaseFingerprint = Get-Poe2PhysicalBaseFingerprint -Poe2Dir $OfficialBaseDir
     $Manifest = [ordered]@{
         kind = "poe1-price-patch-physical-restore"
-        version = 1
+        version = 2
         created_at_utc = (Get-Date).ToUniversalTime().ToString("o")
         install_kind = [string]$InstallInfo.InstallKind
         target_path = [string]$InstallInfo.TcBaseItemsPath
         baseitems_signature = $Signature
+        base_fingerprint = $BaseFingerprint
         restore_files = $Descriptors
     }
 
@@ -800,6 +804,7 @@ function Assert-Poe1PhysicalRestoreZip {
         [Parameter(Mandatory = $true)][string]$CurrentBaseItems,
         [Parameter(Mandatory = $true)][string]$RepoRoot,
         [string]$Poe1Dir = "",
+        [string]$OfficialBaseDir = "",
         [switch]$RequireCurrentPhysical
     )
 
@@ -812,7 +817,7 @@ function Assert-Poe1PhysicalRestoreZip {
         if ($null -eq $ManifestEntry) { throw "POE1 真实还原包缺少 manifest。" }
         $Reader = New-Object System.IO.StreamReader($ManifestEntry.Open(), [System.Text.Encoding]::UTF8)
         try { $Manifest = $Reader.ReadToEnd() | ConvertFrom-Json } finally { $Reader.Dispose() }
-        if ([string]$Manifest.kind -ne "poe1-price-patch-physical-restore" -or [int]$Manifest.version -ne 1) {
+        if ([string]$Manifest.kind -ne "poe1-price-patch-physical-restore" -or [int]$Manifest.version -notin @(1, 2)) {
             throw "POE1 真实还原包 manifest 类型或版本无效。"
         }
         if ([string]$Manifest.install_kind -ne [string]$InstallInfo.InstallKind) {
@@ -820,6 +825,19 @@ function Assert-Poe1PhysicalRestoreZip {
         }
         if ([string]$Manifest.target_path -ne [string]$InstallInfo.TcBaseItemsPath) {
             throw "POE1 真实还原包目标资源路径与当前客户端不一致。"
+        }
+        if ([string]::IsNullOrWhiteSpace($OfficialBaseDir)) { $OfficialBaseDir = $Poe1Dir }
+        if (-not [string]::IsNullOrWhiteSpace($OfficialBaseDir)) {
+            if ([int]$Manifest.version -ne 2) {
+                throw "POE1 旧版真实还原包未绑定官方底板，需使用逻辑还原或重建安全基线。"
+            }
+            # Both games use the same official Bundles2 inventory contract.
+            $BaseManifest = [pscustomobject]@{
+                kind = 'poe2-price-patch-physical-restore'
+                version = 2
+                base_fingerprint = $Manifest.base_fingerprint
+            }
+            Assert-Poe2PhysicalRestoreManifestCurrent -Manifest $BaseManifest -Poe2Dir $OfficialBaseDir | Out-Null
         }
         $CurrentSignature = Get-Poe1BaseItemsSignature -SourceDat $CurrentBaseItems -RepoRoot $RepoRoot
         if (-not ([string]$Manifest.baseitems_signature.compatibility_sha256).Equals(
@@ -872,7 +890,7 @@ function Restore-Poe1PhysicalBundles2 {
     )
 
     $Manifest = Assert-Poe1PhysicalRestoreZip -ZipPath $ZipPath -InstallInfo $InstallInfo `
-        -CurrentBaseItems $CurrentBaseItems -RepoRoot $RepoRoot
+        -CurrentBaseItems $CurrentBaseItems -RepoRoot $RepoRoot -Poe1Dir $Poe1Dir
     $Bundles2Dir = (Resolve-Path -LiteralPath (Join-Path $Poe1Dir "Bundles2")).Path
     Assert-Poe2GameFilesAvailable -Poe2Dir $Poe1Dir -IndexPath (Join-Path $Bundles2Dir "_.index.bin")
     $Transaction = [Guid]::NewGuid().ToString("N")
@@ -907,6 +925,7 @@ function Restore-Poe1PhysicalBundles2 {
     $RollbackLib = Join-Path $Rollback "LibGGPK3"
     $LibMoved = $false
     $LibInstalled = $false
+    $PreserveRollback = $false
     try {
         foreach ($Name in $KnownTop) {
             $Current = Join-Path $Bundles2Dir $Name
@@ -942,6 +961,8 @@ function Restore-Poe1PhysicalBundles2 {
     }
     catch {
         $Failure = $_
+        $PreserveRollback = $true
+        try {
         if ($LibInstalled -and (Test-Path -LiteralPath $CurrentLib -PathType Container)) {
             Remove-Item -LiteralPath $CurrentLib -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -958,10 +979,16 @@ function Restore-Poe1PhysicalBundles2 {
                 [System.IO.File]::Move($Item.Backup, $Item.Current)
             }
         }
+        $PreserveRollback = $false
+        } catch {
+            throw "POE1 还原失败：$($Failure.Exception.Message)；回退失败：$($_.Exception.Message)；操作前备份已保留：$Rollback"
+        }
         throw $Failure
     }
     finally {
-        foreach ($Path in @($Stage, $Rollback)) {
+        $CleanupPaths = @($Stage)
+        if (-not $PreserveRollback) { $CleanupPaths += $Rollback }
+        foreach ($Path in $CleanupPaths) {
             if (Test-Path -LiteralPath $Path -PathType Container) {
                 Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
             }

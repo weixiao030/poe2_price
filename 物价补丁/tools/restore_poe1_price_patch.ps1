@@ -22,7 +22,7 @@ else {
 }
 Set-Location -LiteralPath $RepoRoot
 $CodeToolsRoot = $PSScriptRoot
-$script:PatchVersion = "v0.6.8"
+$script:PatchVersion = "v0.9.2"
 $script:GameDirectoryMutex = $null
 $ValidationDir = ""
 
@@ -153,7 +153,7 @@ try {
             if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { continue }
             try {
                 Assert-Poe1PhysicalRestoreZip -ZipPath $Candidate -InstallInfo $InstallInfo `
-                    -CurrentBaseItems $Current.LocalizedBaseItems -RepoRoot $RepoRoot | Out-Null
+                    -CurrentBaseItems $Current.LocalizedBaseItems -RepoRoot $RepoRoot -Poe1Dir $Poe1Dir | Out-Null
                 $SelectedPhysical = (Resolve-Path -LiteralPath $Candidate).Path
                 break
             }

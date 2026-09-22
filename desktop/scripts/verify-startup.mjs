@@ -106,7 +106,7 @@ try {
   evidence.openFromTrayMs = Math.round(performance.now() - start)
   assert.deepEqual(
     (await page.locator('nav button').allTextContents()).map((x) => x.replace(/\d+$/, '').trim()),
-    ['物价补丁', '运行记录', '引用设置']
+    ['物价补丁', '运行记录', '引用设置', '检查更新']
   )
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
   const snapshot = await page.evaluate(() => window.desktop.getSnapshot())
@@ -134,7 +134,15 @@ try {
     'chooseBackground',
     'clearBackground',
     'onProgress',
-    'onSnapshot'
+    'onSnapshot',
+    'getSoftwareUpdate',
+    'checkSoftwareUpdate',
+    'downloadSoftwareUpdate',
+    'installSoftwareUpdate',
+    'cancelSoftwareUpdate',
+    'onSoftwareUpdate',
+    'copyFeedbackGroup',
+    'softwareUiReady'
   ]
   assert.deepEqual(await page.evaluate(() => Object.keys(window.desktop).sort()), allowed.sort())
   await page.getByRole('button', { name: '引用设置', exact: true }).click()

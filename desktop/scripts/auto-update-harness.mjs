@@ -57,6 +57,7 @@ export function createHarness(root, initial = {}) {
     path,
     crypto,
     maintenanceRunning: false,
+    softwareUpdater: { installing: false },
     quitting: false,
     Date: class extends Date {
       constructor(...args) {
@@ -161,6 +162,9 @@ export function createHarness(root, initial = {}) {
     },
     set maintenance(value) {
       context.maintenanceRunning = value
+    },
+    set softwareInstalling(value) {
+      context.softwareUpdater.installing = value
     },
     jump(ms) {
       now += ms

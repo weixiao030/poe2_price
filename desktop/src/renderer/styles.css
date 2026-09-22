@@ -1090,3 +1090,8 @@ p {
     align-items: flex-start;
   }
 }
+
+.sidebar-feedback { border: 0; background: none; color: var(--muted); padding: 0; display: flex; align-items: flex-start; gap: 7px; font-size: 11px; text-align: left; line-height: 1.7; }
+.sidebar-feedback svg { flex-shrink: 0; font-size: 16px; margin-top: 2px; }
+.sidebar-feedback strong { display: block; color: var(--accent); font-size: 15px; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.sidebar-feedback:hover { color: var(--accent); }

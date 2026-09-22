@@ -12,18 +12,18 @@
     {
       "path": "物价补丁/tools/build_poe1_price_patch.py",
       "upstream_blob": "2c9c4c1778020fa65a58bc95e295246bc29fb84bdc4de67fdc4df52ec29a58b3",
-      "local_sha256": "89c9c379b879c38f75c459d9ace723c24ddd7b029e2dc3d8876a06a490ef62fa",
+      "local_sha256": "b664b6dd6c34559b99aa90d6aefa69df333782887f2c5aea4787e1cae14586f6",
       "equivalent": false,
-      "normalized_sha256": "89c9c379b879c38f75c459d9ace723c24ddd7b029e2dc3d8876a06a490ef62fa",
-      "local_changes": "赛季解析失败不使用 Standard；固定赛季补缺禁止切季；允许国服主价独立构建。接入普通汇总 OCR 分侧历史校验；禁止国际汇率换算国服报价。"
+      "normalized_sha256": "b664b6dd6c34559b99aa90d6aefa69df333782887f2c5aea4787e1cae14586f6",
+      "local_changes": "赛季解析失败不使用 Standard；固定赛季补缺禁止切季；允许国服主价独立构建。接入普通汇总 OCR 分侧历史校验；禁止国际汇率换算国服报价。 v0.9.2：中文同名物品需英文身份消歧，歧义报价不再写入。"
     },
     {
       "path": "物价补丁/tools/build_poe2scout_price_patch.py",
       "upstream_blob": "4d8c98bd9471f79ab4070366e5f38a38191f23f06015fd60d82a2b77f44df7d0",
-      "local_sha256": "a00ef1d8bd8a37c163fee6a6dbc95fc94bbc737a55b67281dbb321069564495b",
+      "local_sha256": "f266979c99dc3632807491e6cb301da4b8c259c65d0feb18d833d05669247d33",
       "equivalent": false,
-      "normalized_sha256": "a00ef1d8bd8a37c163fee6a6dbc95fc94bbc737a55b67281dbb321069564495b",
-      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。"
+      "normalized_sha256": "f266979c99dc3632807491e6cb301da4b8c259c65d0feb18d833d05669247d33",
+      "local_changes": "支持已解析的来源标识，跳过缺失来源，避免再次发现和旧赛季默认值。接入普通汇总 OCR 分侧历史校验与诊断；国际价差只标记不覆盖国服价格。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。 v0.9.0：接入碑牌双中位数、动态币种及交易筛选范围核对。 v0.9.2：中文同名且英文身份不明时跳过，避免按 DAT 顺序误标。"
     },
     {
       "path": "物价补丁/tools/data_source_contract_baseline.json",
@@ -35,16 +35,18 @@
     {
       "path": "物价补丁/tools/localize_poe1.ps1",
       "upstream_blob": "9b7dd21b04012d0d5f92cb43b22d22a9b90240820fb6ab0eb66c83a9d71b7606",
-      "local_sha256": "5bf54d0a085c95310abd606979d03a894217fcc813e67a4b7d9bf92e5cc9a0be",
-      "equivalent": true,
-      "normalized_sha256": "8ab7a97209817a6bf785e28c6c920178635531adb32646c25ca9ddd517712062"
+      "local_sha256": "7f22da568e374b2e495589532419cbcac0f64abe1894365033796584d4386a97",
+      "equivalent": false,
+      "normalized_sha256": "6e8a068a16d712df7b9adbb84f324bec424b1eca09a0c56f69ce3bdd43b0a4f7",
+      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：汉化下载摘要仅信任官方元数据，镜像只传输经过独立摘要校验的载荷。"
     },
     {
       "path": "物价补丁/tools/poe1_patch_common.ps1",
       "upstream_blob": "4a02ee5e3450328d14616865b923325ccb80089972ed1404ecd277fa9dd4331b",
-      "local_sha256": "cbebd3e56f4f845c59fa8addabd666dfa0267d3158ffa3d98b1ef2e69adb2757",
-      "equivalent": true,
-      "normalized_sha256": "919a35e17b59698293f54b8d3b78269ebbe34d345043ba87ce54e542ad05a080"
+      "local_sha256": "79c704a17c1d6b44e1414c5c3b52057871baee1ef23c3f9776776d2d067ff8b1",
+      "equivalent": false,
+      "normalized_sha256": "18698acf0a16eb64abdaf60ca4b63565565198043189d30c6003837fc1231d78",
+      "local_changes": "v0.9.2：真实还原包 v2 绑定官方底板，回退失败保留唯一备份。"
     },
     {
       "path": "物价补丁/tools/poe2_island_rumour_patch.py",
@@ -79,33 +81,34 @@
     {
       "path": "物价补丁/tools/restore_poe1_price_patch.ps1",
       "upstream_blob": "04e4fb232f20d25f744f2ef5d8623fede25a9996cac235f3eb27049be8825c68",
-      "local_sha256": "a0d6b3f12137b6698bf2113eadc4c334477f5aa12e393ce08c9c5def5e72eaef",
-      "equivalent": true,
-      "normalized_sha256": "81bf858e8a3135d8cd829637cc55a089abdabc14f387cb00e25689663e3a0ce3"
+      "local_sha256": "09b381f1181fe376afcaec198350bcfaeaefff8619e75092c40fb28d7ce4042d",
+      "equivalent": false,
+      "normalized_sha256": "b2dea639b1d0d7b81bcf2dee5879aac532d988434f76c31457ec8657c1663382",
+      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：物理还原前核对官方底板，拒绝过期索引并尝试逻辑还原。"
     },
     {
       "path": "物价补丁/tools/restore_price_patch.ps1",
       "upstream_blob": "c6058a0c8e057a0d620758cc965c537d119ebf327cae1c5c1d4a4cdb44f402e9",
-      "local_sha256": "773f62c9dd4c01ea981a52ade046e9a57debe50b921cfcedd217148577a54de7",
+      "local_sha256": "34872665739a03d3aa8100ca68452db8ac32c81bf89db70b914a595d5772b68a",
       "equivalent": false,
-      "normalized_sha256": "e55fa3610b3798cc485e8368af3abd85a6a3e618ea1348b9f9593460f357cc55",
-      "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。"
+      "normalized_sha256": "62d0217f70016d705b973a69a252fa2da705835f86c1d777041bd5e04a85c6f4",
+      "local_changes": "v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 同步当前版本标识为 v0.9.2。"
     },
     {
       "path": "物价补丁/tools/update_poe1_price_patch.ps1",
       "upstream_blob": "ff1174efa7e2884d507f675e133a791ac0595e86d40de9c291e211363e85e2f5",
-      "local_sha256": "42559863eb5725ede43e57aa1cc6f483eba53d9ec9d43fb8721c2b12d263aa8a",
+      "local_sha256": "196edf406f6a6f49f52b693c35022730bf7c9c0461ca1878f0fa93a97536b21f",
       "equivalent": false,
-      "normalized_sha256": "c015815968c7f8e2ff9ddd687e59d35f8c9af2a498c2622b00d186b5b0b848c1",
-      "local_changes": "接入自动与固定模式、正确国服当前和历史接口、独立国服价格路径及缓存隔离。"
+      "normalized_sha256": "c012f80bb6c79cf2d19166048e7cdcd9ab9561a941da7c13e8fd142701f1845e",
+      "local_changes": "接入自动与固定模式、正确国服当前和历史接口、独立国服价格路径及缓存隔离。 同步当前版本标识为 v0.9.2。 v0.9.2：校验物理还原包官方底板；旧版或过期基线转离线逻辑迁移。"
     },
     {
       "path": "物价补丁/tools/update_price_patch.ps1",
       "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
-      "local_sha256": "e9beed262cbf35ef225d3bc805e01ad94f91737b2750cca512cfe464a3b9f2aa",
+      "local_sha256": "9576f4dfaa2a8885b3a74fcfcd670c38f4582ab517bbc26048675cbb39bbd575",
       "equivalent": false,
-      "normalized_sha256": "2a3230f365d16a0fe63f665d717a761f8f48d6b1b0787527c5cae93f4fcc5064",
-      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。"
+      "normalized_sha256": "5b8e0a46b8f0669f01ca5724737151002ce7c8222436edca2434cba9a6703ba0",
+      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.9.0：接入碑牌双中位数、动态币种及交易筛选范围核对。 保留碑牌 Mods/Stats/Tags 提取文件；透传资源校验失败原因，避免误报为结构不兼容或赛季价格不可用。 同步当前版本标识为 v0.9.2。 v0.9.2：POE2 写入失败后成功回退仍返回失败，防止更新误报成功。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",
@@ -255,17 +258,17 @@
       "path": "物价补丁/tools/poe2_tablet_prices.py",
       "upstream_blob": null,
       "equivalent": false,
-      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。",
-      "local_sha256": "d41954881152037be58631df04d0423399c935fc135c474bd2cad7f164d6e3fb",
-      "normalized_sha256": "d41954881152037be58631df04d0423399c935fc135c474bd2cad7f164d6e3fb"
+      "local_changes": "v0.9.0：分别读取魔法和稀有样本中位价，核对实际交易筛选范围与汇率，绑定当前游戏词缀后动态合并或显示升序区间，按市场选择 E/C/D。",
+      "local_sha256": "aebb6f3c1f11abf58d4bcb351f4326eb865210f6b0f853740be56d3332822ae8",
+      "normalized_sha256": "0c4d225b5b4d25275fb5bfe6f0f5c9434f9a0d7db7bcecdaf4a49232ebeda64d"
     },
     {
       "path": "物价补丁/tools/poe2_tablet_refs.py",
       "upstream_blob": null,
       "equivalent": false,
-      "local_changes": "新增碑牌报价生成、依赖校验与旧引用清理。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。",
-      "local_sha256": "5c761c9aef80951200951473db42528f292d6c8d6eabd22b63500a4972b31e44",
-      "normalized_sha256": "5c761c9aef80951200951473db42528f292d6c8d6eabd22b63500a4972b31e44"
+      "local_changes": "碑牌独立资源引用与清理；验证每个 IT 仅指定一份 CSD，拒绝重复描述字段，魔法与稀有共用正文价签。 修复内置隔离 Python 直接运行校验与清理入口时的本地模块搜索路径。 v0.9.2：还原时保留结构兼容的英文干净基线，防止重复清理改变原始字节。 官方只改显示名称时刷新还原英文基线。",
+      "local_sha256": "6ba1e97de4e135199972935053a4341f0cf33240840bdb4a95883c031664b040",
+      "normalized_sha256": "6ba1e97de4e135199972935053a4341f0cf33240840bdb4a95883c031664b040"
     },
     {
       "path": "物价补丁/tools/poe2_price_labels.py",
@@ -274,6 +277,22 @@
       "local_changes": "从既有暗金装备实现原样提取名称格式和旧价格清理，供碑牌与暗金装备共用。 v0.8.8：碑牌共用暗金名称格式，总督报价回退，固定数字上限词缀及旧标记清理。",
       "normalized_sha256": "d973477632092c9090230cb933051a67d294db6fdaf10879749c7754fa3ce214",
       "local_sha256": "d973477632092c9090230cb933051a67d294db6fdaf10879749c7754fa3ce214"
+    },
+    {
+      "path": "物价补丁/tools/poe2_tablet_catalog.py",
+      "upstream_blob": null,
+      "equivalent": false,
+      "local_changes": "v0.9.0：按游戏词缀身份绑定双中位报价；根据当前市场分布与原始挂牌币种动态显示。",
+      "normalized_sha256": "710d10932e70324a359dfe9823cca19fc18e57bfc3fde3894e6f43d4634358c4",
+      "local_sha256": "710d10932e70324a359dfe9823cca19fc18e57bfc3fde3894e6f43d4634358c4"
+    },
+    {
+      "path": "物价补丁/tools/poe2_tablet_display.py",
+      "upstream_blob": null,
+      "equivalent": false,
+      "local_changes": "v0.9.0：按游戏词缀身份绑定双中位报价；根据当前市场分布与原始挂牌币种动态显示。",
+      "normalized_sha256": "0f2f728977b5fe913cedad050a9f1efda79e5f45e54af050e2e2627133bedd36",
+      "local_sha256": "0f2f728977b5fe913cedad050a9f1efda79e5f45e54af050e2e2627133bedd36"
     }
   ],
   "native_tools": [

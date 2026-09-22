@@ -27,7 +27,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v0.6.8"
+$script:PatchVersion = "v0.9.2"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -204,7 +204,7 @@ function Publish-Poe1PhysicalRestoreZip {
         Copy-Poe2FileAtomically -Source $SourceFull -Destination $DestinationFull | Out-Null
     }
     Assert-Poe1PhysicalRestoreZip -ZipPath $DestinationFull -InstallInfo $InstallInfo `
-        -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot | Out-Null
+        -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot -Poe1Dir $Poe1Dir | Out-Null
     return $DestinationFull
 }
 
@@ -238,10 +238,10 @@ function New-CleanPoe1PhysicalRestoreZipFromPatchedState {
             -LogicalRestoreZip $LogicalRestoreZip -RepoRoot $RepoRoot -Dotnet $MigrationDotnet
         $CleanBaseItems = Get-Poe1ZipEntryTempFile -ZipPath $LogicalRestoreZip -EntryName $InstallInfo.TcBaseItemsPath
         $Created = New-Poe1PhysicalRestoreZip -Poe1Dir $SandboxRoot -InstallInfo $InstallInfo `
-            -CurrentBaseItems $CleanBaseItems -OutputZip $OutputZip -RepoRoot $RepoRoot
+            -CurrentBaseItems $CleanBaseItems -OutputZip $OutputZip -RepoRoot $RepoRoot -OfficialBaseDir $Poe1Dir
         Assert-Poe1PhysicalRestoreZip -ZipPath $Created -InstallInfo $InstallInfo `
             -CurrentBaseItems $CleanBaseItems -RepoRoot $RepoRoot `
-            -Poe1Dir $SandboxRoot -RequireCurrentPhysical | Out-Null
+            -Poe1Dir $SandboxRoot -OfficialBaseDir $Poe1Dir -RequireCurrentPhysical | Out-Null
         Assert-Poe1Bundles2MutationFingerprintCurrent -Expected $MigrationPrecondition -Poe1Dir $Poe1Dir | Out-Null
         Write-Host "POE1 干净还原基线已在离线沙盒中重建并验证。" -ForegroundColor Green
         return $Created
@@ -332,7 +332,7 @@ function Ensure-Poe1PhysicalRestoreZip {
             if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { continue }
             try {
                 $Manifest = Assert-Poe1PhysicalRestoreZip -ZipPath $Path -InstallInfo $InstallInfo `
-                    -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot
+                    -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot -Poe1Dir $Poe1Dir
                 $Resolved = (Resolve-Path -LiteralPath $Path).Path
                 $Candidates.Add([pscustomobject]@{
                         Path = $Resolved
@@ -646,7 +646,7 @@ try {
     $Dotnet = Ensure-DotNet8Runtime -RepoRoot $RepoRoot
     if ($InstallInfo.Mode -eq "Bundles2") {
         Assert-Poe1PhysicalRestoreZip -ZipPath $PhysicalRestoreZip -InstallInfo $InstallInfo `
-            -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot | Out-Null
+            -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot -Poe1Dir $Poe1Dir | Out-Null
         Assert-Poe1Bundles2MutationFingerprintCurrent `
             -Expected $Poe1Bundles2WritePrecondition `
             -Poe1Dir $Poe1Dir | Out-Null

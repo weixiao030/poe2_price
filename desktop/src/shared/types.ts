@@ -82,6 +82,14 @@ export interface AppSnapshot {
   autoStartStatus: string
 }
 export interface DesktopApi {
+  getSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
+  checkSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
+  downloadSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
+  installSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
+  cancelSoftwareUpdate(): Promise<void>
+  copyFeedbackGroup(): Promise<void>
+  softwareUiReady(): Promise<void>
+  onSoftwareUpdate(callback: (state: import('./software-update').SoftwareUpdateState) => void): () => void
   cleanupFiles(
     kind: 'cache' | 'logs',
     remove: boolean

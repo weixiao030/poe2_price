@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v0.8.8</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v0.9.2</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -23,9 +23,11 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v0.8.8` 的碑牌名称复用暗金装备价格格式 `[价格|名称]`，补齐总督底材报价，修复带固定上限的深渊词缀漏价。魔法、稀有碑牌逐条标价，默认随 POE2 通货更新；数据源独立重试和跳过。保留通货、传奇、岛屿传言、自动更新及还原功能。
+`v0.9.2` 修复内置 Python 校验器加载失败被误报为 BaseItemTypes 结构不兼容的问题，保留碑牌构建依赖，并显示实际校验错误。
 
-[下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
+碑牌词缀分别使用魔法、稀有样本中位价：接近时合并，其余按从低到高显示，E/C/D 和合并标准随当前市场动态变化。提供“检查更新”、当前版本说明、赞赏码及聊天/bug反馈群:168887742；支持签名增量包下载、自动重启安装和失败回退。客户端通过公开 HTTPS 地址检查签名更新；上传配置和密钥不随软件分发。保留通货、传奇、岛屿传言、每小时物价更新及还原功能。
+
+[下载最新版](https://github.com/weixiao030/poe2_price/releases/latest) · [本次发布说明](docs/release-notes.md) · [ZOS 增量发布配置](docs/软件增量更新与ZOS发布.md) · [社区交流](https://www.caimogu.cc/post/2403703.html)
 
 提供 **Setup 安装版**和 **ZIP 免安装版**，两种版本都内置运行环境。免安装版只需将压缩包完整解压到一个文件夹，双击其中的 `物价补丁.exe` 即可运行，后续启动无需重复解包；不要只取出 EXE 或直接在压缩包内运行。
 

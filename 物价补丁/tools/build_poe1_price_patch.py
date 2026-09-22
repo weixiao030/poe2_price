@@ -947,6 +947,13 @@ def match_base_items(
             candidates = candidates or by_localized.get(
                 normalize_localized(price.localized_name), []
             )
+            # A translated name can identify unrelated English items. Keep
+            # metadata aliases only after resolving that ambiguity.
+            if len({normalize_english(pair.en_name) for pair in candidates}) > 1:
+                candidates = [
+                    pair for pair in candidates
+                    if price.en_name and normalize_english(pair.en_name) == normalize_english(price.en_name)
+                ]
         if not candidates and price.en_name:
             candidates = by_en.get(normalize_english(price.en_name), [])
         if not candidates:

@@ -65,6 +65,19 @@ def test_poe1_display_units_use_chaos_and_divine_with_small_price_guard():
     assert poe1.format_price(Decimal("159.5"), Decimal("159.5")) == "1D"
 
 
+@pytest.mark.parametrize('english', ['', 'Unrelated', 'Desperation'])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_poe1_localized_collision_needs_english_identity(english, reverse):
+    pairs = [BaseItemPair('Metadata/Despair', 'Despair', '絕望'),
+             BaseItemPair('Metadata/Desperation', 'Desperation', '絕望')]
+    if reverse:
+        pairs.reverse()
+    price = poe1.Poe1Price('fixture', english, '絕望', 'currency', Decimal(100), Decimal(1), 'fixture', display_price='1D')
+    rows, missing = poe1.match_base_items({'fixture': price}, pairs, prefer_localized=True)
+    assert [row['metadata_path'] for row in rows] == (['Metadata/Desperation'] if english == 'Desperation' else [])
+    assert len(missing) == (0 if english == 'Desperation' else 1)
+
+
 def test_poe1_scout_never_replaces_a_missing_pinned_season():
     client = Mock()
     client.get_json.return_value = [
@@ -374,10 +387,10 @@ def test_poe1_localization_release_api_uses_digest_and_exact_size():
     assert result["Tag"] == "v9.8.7"
     assert result["Size"] == 6184600
     assert result["Sha256"] == expected_hash
-    assert result["MetadataSourceName"] == "GitHub API 加速源 gh-proxy.com"
+    assert result["MetadataSourceName"] == "GitHub 官方 API"
 
 
-def test_poe1_localization_release_page_fallback_never_needs_bdnb():
+def test_poe1_localization_release_page_fallback_uses_only_official_metadata():
     localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
     helper = powershell_function(localize, "Get-Poe1LatestLocalizationRelease")
     expected_hash = "b" * 64
@@ -388,11 +401,11 @@ def test_poe1_localization_release_page_fallback_never_needs_bdnb():
         "$script:LatestReleaseApiUrl='https://api.example/latest'; "
         "$script:LatestReleasePageUrl='https://github.com/aianlinb/LibGGPK3/releases/latest'; "
         "function Invoke-RestMethod { throw 'API offline' }; "
-        "function Invoke-WebRequest { param([string]$Uri); "
+        "function Invoke-WebRequest { param([string]$Uri); if(([uri]$Uri).Host -ne 'github.com'){throw 'unexpected metadata mirror'}; "
         "if($Uri -match 'expanded_assets'){return [pscustomobject]@{Content='"
         + f'<a href="{asset}">PoeChinese3_win-x64.exe</a><span>sha256:{expected_hash}</span>'
         + "'}}; "
-        "return [pscustomobject]@{BaseResponse=[pscustomobject]@{ResponseUri=[uri]'https://ghfast.top/https://github.com/aianlinb/LibGGPK3/releases/tag/v9.8.7'};Content=''} }; "
+        "return [pscustomobject]@{BaseResponse=[pscustomobject]@{ResponseUri=[uri]'https://github.com/aianlinb/LibGGPK3/releases/tag/v9.8.7'};Content=''} }; "
         f"{helper}; $result=Get-Poe1LatestLocalizationRelease 3>$null 6>$null; "
         "$result | ConvertTo-Json -Compress"
     )
@@ -402,8 +415,27 @@ def test_poe1_localization_release_page_fallback_never_needs_bdnb():
         "Url": f"https://github.com{asset}",
         "Size": 0,
         "Sha256": expected_hash,
-        "MetadataSourceName": "Release 页面加速源 ghfast.top",
+        "MetadataSourceName": "GitHub 官方 Release 页面",
     }
+
+
+def test_poe1_localization_does_not_trust_mirror_when_official_metadata_is_unavailable():
+    localize = (TOOLS / "localize_poe1.ps1").read_text(encoding="utf-8-sig")
+    helper = powershell_function(localize, "Get-Poe1LatestLocalizationRelease")
+    output = run_powershell(
+        "$ErrorActionPreference='Stop'; $WarningPreference='SilentlyContinue'; "
+        "$script:PatchVersion='test'; $script:LocalizationAssetName='PoeChinese3_win-x64.exe'; "
+        "$script:LatestReleaseApiUrl='https://api.github.com/repos/aianlinb/LibGGPK3/releases/latest'; "
+        "$script:LatestReleasePageUrl='https://github.com/aianlinb/LibGGPK3/releases/latest'; "
+        "$script:MirrorRequests=0; "
+        "function Invoke-RestMethod { param([string]$Uri); "
+        "if(([uri]$Uri).Host -eq 'api.github.com'){throw 'official unavailable'}; "
+        "$script:MirrorRequests++; return [pscustomobject]@{draft=$false;prerelease=$false;tag_name='v9.8.7';assets=@([pscustomobject]@{name='PoeChinese3_win-x64.exe';size=6184600;digest=('sha256:' + ('a'*64));browser_download_url='https://github.com/aianlinb/LibGGPK3/releases/download/v9.8.7/PoeChinese3_win-x64.exe'})} }; "
+        "function Invoke-WebRequest { param([string]$Uri); if(([uri]$Uri).Host -ne 'github.com'){$script:MirrorRequests++}; throw 'official unavailable' }; "
+        f"{helper}; $rejected=$false; try {{Get-Poe1LatestLocalizationRelease 3>$null 6>$null}} catch {{$rejected=$true}}; "
+        "if(!$rejected -or $script:MirrorRequests -ne 0){throw 'untrusted metadata was requested or accepted'}; 'FAIL_CLOSED'"
+    )
+    assert 'FAIL_CLOSED' in output
 
 
 

@@ -20,11 +20,30 @@ build/downloads/*.zip
 desktop/out/
 desktop/dist/
 desktop/.runtime/
+desktop/.runtime-stage-*/
 desktop/test-results/
 desktop/playwright-report/
 .pytest_cache/
 build/downloads/
 verification/
+# Caddy deployment binaries and server access logs remain local.
+/caddy/*.exe
+/caddy/*.log
+/caddy/*.log.gz
+/deploy/updates/*.exe
 物价补丁/output/
 output/
 release-desktop/
+# Software update signing keys are publisher-only, never shipped or committed.
+desktop/.release-keys/
+/增量包key.txt
+# Publisher settings, extracted game data and local diagnostic artifacts.
+/publisher.local.json
+/.playwright-mcp/
+/data/
+/build/BundleExtractor/publish/
+*.pdb
+/docs/analysis/
+/物价补丁/物价补丁.zip
+/deploy/updates/
+/赞赏码.jpg

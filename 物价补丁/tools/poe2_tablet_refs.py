@@ -6,8 +6,14 @@ import os
 import re
 from pathlib import Path
 import struct
+import sys
 import tempfile
 import zipfile
+
+# Embedded Python's isolated search path omits the script directory.
+# This file is also invoked directly for ZIP validation and cache cleanup.
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 ORIGINAL = "Metadata/Items/TowerAugments/TowerAugment"
 TYPES = {"Breach": "Breach", "Expedition": "Expedition", "Delirium": "Delirium",
@@ -80,6 +86,27 @@ def clean_tablet_layer(data: bytes) -> bytes:
     return apply_replacements_append(data, replacements)
 
 
+def same_restore_baseline(saved: bytes, current: bytes) -> bool:
+    """Compare structure and every resolved name, ignoring append-only labels."""
+    from poe2_name_price_patch import (
+        DISPLAY_NAME_FIELD_INDEX, build_structure_signature,
+        detect_base_item_layout, read_string_offset,
+    )
+    if (build_structure_signature(saved)["compatibility_sha256"]
+            != build_structure_signature(current)["compatibility_sha256"]):
+        return False
+    layouts = [detect_base_item_layout(data) for data in (saved, current)]
+    for row in range(layouts[0].row_count):
+        names = []
+        for data, layout in zip((saved, current), layouts):
+            at = 4 + row * layout.row_size + DISPLAY_NAME_FIELD_INDEX * 4
+            pointer = struct.unpack_from("<I", data, at)[0]
+            names.append(read_string_offset(data, layout, pointer)[0])
+        if names[0] != names[1]:
+            return False
+    return True
+
+
 def clean_zip(path: Path, english: Path | None = None) -> None:
     with zipfile.ZipFile(path) as archive:
         entries = {entry.filename: archive.read(entry) for entry in archive.infolist()
@@ -88,9 +115,17 @@ def clean_zip(path: Path, english: Path | None = None) -> None:
         if name.lower().endswith("/baseitemtypes.datc64"):
             entries[name] = clean_tablet_layer(entries[name])
     if english and english.exists():
-        data = english.read_bytes()
-        cleaned = clean_tablet_layer(data)
-        entries["data/balance/baseitemtypes.datc64"] = cleaned
+        data = clean_tablet_layer(english.read_bytes())
+        english_key = next((name for name in entries
+                            if name.lower() == "data/balance/baseitemtypes.datc64"), None)
+        # Keep the saved clean bytes across repeated updates/restores. Cleaning
+        # the live patched table again leaves appended strings and changed
+        # pointers. Also compare resolved names: official name-only changes are
+        # deliberately invisible to the patch compatibility signature.
+        if english_key is None or not same_restore_baseline(entries[english_key], data):
+            if english_key is not None:
+                del entries[english_key]
+            entries["data/balance/baseitemtypes.datc64"] = data
     fd, temporary = tempfile.mkstemp(prefix=".tablet-clean-", suffix=".zip", dir=path.parent)
     os.close(fd)
     try:
@@ -124,10 +159,13 @@ def validate_resources(entries: dict[str, bytes]) -> None:
             if it_path not in files:
                 raise ValueError('tablet ZIP missing referenced template: ' + it_path)
             text = decode_resource(files[it_path])[0]
-            descriptions = re.findall(r'stat_description_list\s*=\s*"([^"]+)"', text)
-            if len(descriptions) != 1 or descriptions[0].lower() not in files:
+            descriptions = re.findall(r'(?im)^\s*stat_description_list\s*=\s*"([^"]+)"', text)
+            if len(descriptions) > 1:
+                raise ValueError('tablet template repeats a single stat_description_list; rarity dispatch is unsupported')
+            if not descriptions or any(description.lower() not in files for description in descriptions):
                 raise ValueError('tablet ZIP missing referenced stat descriptions')
-            validate_csd(decode_resource(files[descriptions[0].lower()])[0])
+            for description in descriptions:
+                validate_csd(decode_resource(files[description.lower()])[0])
 
 
 if __name__ == "__main__":

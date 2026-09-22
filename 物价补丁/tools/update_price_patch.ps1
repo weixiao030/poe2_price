@@ -32,7 +32,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v0.6.8"
+$script:PatchVersion = "v0.9.2"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -2711,36 +2711,41 @@ function Invoke-Poe2BundleExtractBatch {
 function Test-PricePatchZipCompatible {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
-        [Parameter(Mandatory = $true)][string]$ReferenceDat
+        [Parameter(Mandatory = $true)][string]$ReferenceDat,
+        [switch]$ThrowOnFailure
     )
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        return $false
-    }
     $TempDat = Join-Path $env:TEMP ([string]::Concat("poe2_cached_patch_", [Guid]::NewGuid().ToString("N"), ".datc64"))
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     try {
+        Assert-File $Path "待校验物价补丁"
         Get-Poe2ZipEntryCrc32Map -Path $Path | Out-Null
         $TabletValidation = Invoke-Poe2Python -Python (Ensure-PythonRequests -RepoRoot $RepoRoot) -ArgumentList @(
             (Join-Path $CodeToolsRoot "poe2_tablet_refs.py"), $Path, "--validate"
         ) -Quiet
-        if ($TabletValidation.ExitCode -ne 0) { return $false }
+        if ($TabletValidation.ExitCode -ne 0) {
+            throw "碑牌资源校验失败（退出码 $($TabletValidation.ExitCode)）：$($TabletValidation.Text)"
+        }
         $Archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
         try {
             $Entry = $Archive.GetEntry($InstallInfo.TcBaseItemsPath)
             if ($null -eq $Entry -or $Entry.Length -le 1048576) {
-                return $false
+                throw "补丁缺少有效的 BaseItemTypes 条目：$($InstallInfo.TcBaseItemsPath)"
             }
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($Entry, $TempDat, $true)
         }
         finally {
             $Archive.Dispose()
         }
-        return (Test-BaseItemsCompatible -LeftDat $TempDat -RightDat $ReferenceDat)
+        if (-not (Test-BaseItemsCompatible -LeftDat $TempDat -RightDat $ReferenceDat)) {
+            throw "补丁与当前 BaseItemTypes 结构不兼容。"
+        }
+        return $true
     }
     catch {
-        Write-Warning "缓存补丁兼容性检查失败：$($_.Exception.Message)"
+        if ($ThrowOnFailure) { throw }
+        Write-Warning "补丁兼容性检查失败：$($_.Exception.Message)"
         return $false
     }
     finally {
@@ -2949,6 +2954,9 @@ $TabletTemplateIt = Join-Path $LatestDir "metadata\items\toweraugments\toweraugm
 $TabletTemplateCsd = Join-Path $LatestDir "data\statdescriptions\tablet_stat_descriptions.csd"
 $TabletMapCsd = Join-Path $LatestDir "data\statdescriptions\map_stat_descriptions.csd"
 $TabletGlobalCsd = Join-Path $LatestDir "data\statdescriptions\stat_descriptions.csd"
+$TabletMods = Join-Path $LatestDir "data\data_balance_mods.datc64"
+$TabletStats = Join-Path $LatestDir "data\data_balance_stats.datc64"
+$TabletTags = Join-Path $LatestDir "data\data_balance_tags.datc64"
 $UniqueGoldPrices = Join-Path $LatestDir "data\data_balance_uniquegoldprices.datc64"
 $SupportsUniqueWords = Test-Poe2UniqueWordsSupported -WordsPath $TcWordsPath
 $OutDir = Join-Path $RepoRoot "output\poe2_price_patch_latest"
@@ -3186,14 +3194,17 @@ if ($PatchTabletAffixesEnabled -and -not $SkipExtract) {
             [pscustomobject]@{ Path = "metadata/items/toweraugments/toweraugment.it"; Destination = $TabletTemplateIt; Label = "碑牌模板"; Required = $false },
             [pscustomobject]@{ Path = "data/statdescriptions/tablet_stat_descriptions.csd"; Destination = $TabletTemplateCsd; Label = "碑牌描述"; Required = $false },
             [pscustomobject]@{ Path = "data/statdescriptions/map_stat_descriptions.csd"; Destination = $TabletMapCsd; Label = "地图描述"; Required = $false },
-            [pscustomobject]@{ Path = "data/statdescriptions/stat_descriptions.csd"; Destination = $TabletGlobalCsd; Label = "基础描述"; Required = $false }
+            [pscustomobject]@{ Path = "data/statdescriptions/stat_descriptions.csd"; Destination = $TabletGlobalCsd; Label = "基础描述"; Required = $false },
+            [pscustomobject]@{ Path = "data/balance/mods.datc64"; Destination = $TabletMods; Label = "碑牌词缀映射"; Required = $false },
+            [pscustomobject]@{ Path = "data/balance/stats.datc64"; Destination = $TabletStats; Label = "词缀属性映射"; Required = $false },
+            [pscustomobject]@{ Path = "data/balance/tags.datc64"; Destination = $TabletTags; Label = "碑牌底材标签"; Required = $false }
         )
         $TabletSource = if ($GameMode -eq "GGPK") { $ContentGgpk } else { $Bundles2Paths.IndexBin }
         Invoke-Poe2BundleExtractBatch -IndexPath $TabletSource -Entries $TabletEntries `
             -LogPath (Join-Path $LatestDir "tablet-extract.log") -Ggpk:($GameMode -eq "GGPK") | Out-Null
     }
     catch {
-        foreach ($Path in @($TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd)) {
+        foreach ($Path in @($TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd, $TabletMods, $TabletStats, $TabletTags)) {
             Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
         }
         Write-Warning "碑牌模板提取失败，词缀标价将跳过；底材名称和其他更新继续：$($_.Exception.Message)"
@@ -3285,7 +3296,7 @@ $PriceCacheKey = [string]::Concat(
 )
 $CachedPatchZip = Join-Path $PriceCacheDir ($PriceCacheKey + ".zip")
 $CachedSummaryJson = Join-Path $PriceCacheDir ($PriceCacheKey + ".summary.json")
-Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $TcEndgameMaps, $UniqueGoldPrices, $TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd)
+Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $TcEndgameMaps, $UniqueGoldPrices, $TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd, $TabletMods, $TabletStats, $TabletTags)
 $LogicalRestoreReady = $false
 $InstallSuppressedReason = ""
 try {
@@ -3382,6 +3393,9 @@ if ($PatchTabletAffixesEnabled) {
         "--tablet-template-csd", $TabletTemplateCsd,
         "--tablet-map-csd", $TabletMapCsd,
         "--tablet-global-csd", $TabletGlobalCsd,
+        "--tablet-mods", $TabletMods,
+        "--tablet-stats", $TabletStats,
+        "--tablet-tags", $TabletTags,
         "--tablet-report", $StageTabletReportJson
     )
 }
@@ -3429,9 +3443,7 @@ try {
     }
 
     Assert-File $StagePatchZip $PricePatchZipName
-    if (-not (Test-PricePatchZipCompatible -Path $StagePatchZip -ReferenceDat $TcBaseItems)) {
-        throw "新生成补丁与当前 BaseItemTypes 结构不兼容。"
-    }
+    Test-PricePatchZipCompatible -Path $StagePatchZip -ReferenceDat $TcBaseItems -ThrowOnFailure | Out-Null
 
     if ($PatchIslandRumourHintsEnabled) {
         Write-Step "生成岛屿传言提示补丁"
@@ -3529,7 +3541,7 @@ catch {
     else {
         $NoInstall = $true
         Write-Warning "实时构建和兼容缓存均不可用，本次保持游戏与现有补丁原状。原因：$BuildFailure"
-        throw "所选赛季价格暂不可用，现有补丁保持不变，请稍后重试。原因：$BuildFailure"
+        throw "本次物价补丁更新失败，现有补丁保持不变。原因：$BuildFailure"
     }
 }
 finally {
@@ -3585,7 +3597,7 @@ if (-not $NoInstall) {
             }
             Assert-GgpkPatchApplied -ZipPath $RestoreZip
             Write-Warning "本次补丁未安装，但 Content.ggpk 已自动恢复并通过读回校验。"
-            return
+            throw "GGPK 写入失败，已自动恢复。原始错误：$InstallError"
         }
         Write-Host "补丁已写入 Content.ggpk。" -ForegroundColor Green
     }
@@ -3670,7 +3682,7 @@ if (-not $NoInstall) {
                 throw "Bundles2 写入失败，自动恢复也失败。原始错误：$PatchError；还原退出码：$RollbackExitCode"
             }
             Write-Warning "本次补丁未安装，但 Bundles2 已自动恢复到更新前状态。"
-            return
+            throw "Bundles2 写入失败，已自动恢复。原始错误：$PatchError"
         }
     }
 }

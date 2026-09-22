@@ -3036,7 +3036,7 @@ def match_cn_prices_to_base_items(
         if len(candidate_english_names) > 1:
             # A localized translation collision is not enough evidence to
             # apply one market price to unrelated English items.
-            return candidates[:1]
+            return []
         return candidates
 
     matched: list[tuple[dict[str, str], str]] = []
@@ -3436,6 +3436,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--tablet-template-it", type=Path)
     parser.add_argument("--tablet-template-csd", type=Path)
+    parser.add_argument("--tablet-mods", type=Path)
+    parser.add_argument("--tablet-stats", type=Path)
+    parser.add_argument("--tablet-tags", type=Path)
     parser.add_argument("--tablet-map-csd", type=Path)
     parser.add_argument("--tablet-global-csd", type=Path)
     parser.add_argument("--tablet-report", type=Path)
@@ -4170,6 +4173,9 @@ def main(argv: list[str]) -> int:
                         english_baseitems=args.en_baseitems,
                         template_map_csd=args.tablet_map_csd,
                         template_global_csd=args.tablet_global_csd,
+                        tablet_mods=args.tablet_mods,
+                        tablet_stats=args.tablet_stats,
+                        tablet_tags=args.tablet_tags,
                     )
                     tablet_result = summary["tablet_affixes"]
                     if tablet_result["status"] == "partial":

@@ -15,7 +15,7 @@ $RepoRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
 else {
     (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
-$script:PatchVersion = "v0.6.8"
+$script:PatchVersion = "v0.9.2"
 $script:GameDirectoryMutex = $null
 $script:LocalizationAssetName = "PoeChinese3_win-x64.exe"
 $script:LatestReleaseApiUrl = "https://api.github.com/repos/aianlinb/LibGGPK3/releases/latest"
@@ -130,11 +130,8 @@ function Get-Poe1LatestLocalizationRelease {
     }
     catch {
     }
+    # Mirrors may transport the executable, but cannot choose its trusted digest.
     $MetadataSources = @(
-        [pscustomobject]@{
-            Name = "GitHub API 加速源 gh-proxy.com"
-            Url = "https://gh-proxy.com/$($script:LatestReleaseApiUrl)"
-        },
         [pscustomobject]@{
             Name = "GitHub 官方 API"
             Url = $script:LatestReleaseApiUrl
@@ -191,15 +188,9 @@ function Get-Poe1LatestLocalizationRelease {
         }
     }
 
-    # API 可能受区域网络或匿名限额影响；再通过多个已实测支持 Release
-    # 页面的镜像读取同一官方标签和官方公布的 SHA256。下载后仍会校验
-    # PE 身份和 SHA256，页面显示的近似大小不作为精确长度依据。
+    # Official HTML remains an independent authenticated fallback when the API
+    # is rate-limited. Never obtain the expected digest from a download mirror.
     $PageMetadataPrefixes = @(
-        [pscustomobject]@{ Name = "Release 页面加速源 ghfast.top"; Prefix = "https://ghfast.top/" },
-        [pscustomobject]@{ Name = "Release 页面加速源 ghproxy.net"; Prefix = "https://ghproxy.net/" },
-        [pscustomobject]@{ Name = "Release 页面加速源 gh.ddlc.top"; Prefix = "https://gh.ddlc.top/" },
-        [pscustomobject]@{ Name = "Release 页面加速源 ghproxy.it"; Prefix = "https://ghproxy.it/" },
-        [pscustomobject]@{ Name = "Release 页面加速源 github.boki.moe"; Prefix = "https://github.boki.moe/" },
         [pscustomobject]@{ Name = "GitHub 官方 Release 页面"; Prefix = "" }
     )
     foreach ($Source in $PageMetadataPrefixes) {

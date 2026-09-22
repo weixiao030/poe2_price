@@ -73,6 +73,10 @@ jobs:
           Get-Item "desktop/dist/POE-Price-Patch-$version-x64-Setup.exe", "desktop/dist/POE-Price-Patch-$version-x64-NoInstall.zip" | ForEach-Object {
             '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
           } | Set-Content desktop/dist/SHA256SUMS.txt -Encoding utf8
+      - name: Check source and unpacked release privacy
+        run: |
+          $version = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
+          python desktop/scripts/verify-release-privacy.py --source --artifact desktop/dist/win-unpacked --artifact "desktop/dist/POE-Price-Patch-$version-x64-NoInstall.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: poe-price-patch-desktop

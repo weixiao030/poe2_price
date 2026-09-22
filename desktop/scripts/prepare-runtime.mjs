@@ -8,12 +8,14 @@ import { spawnSync } from 'node:child_process'
 const require = createRequire(import.meta.url)
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repo = path.dirname(root)
-const target = path.join(root, '.runtime')
+const runtime = path.resolve(root, '.runtime')
+// Build from declared inputs in a fresh directory; stale local files must never ship.
+const target = await fs.mkdtemp(path.join(root, '.runtime-stage-'))
 await fs.mkdir(target, { recursive: true })
 await fs.copyFile(path.join(repo, '使用许可.md'), path.join(target, '使用许可.md'))
 await fs.copyFile(path.join(repo, 'docs/第三方工具说明.md'), path.join(target, '第三方工具说明.md'))
 const filter = (p) =>
-  !/(?:^|[\\/])(?:__pycache__|downloads)(?:[\\/]|$)/.test(p) && !p.endsWith('.pyc') &&
+  !/(?:^|[\\/])(?:__pycache__|downloads)(?:[\\/]|$)/.test(p) && !/\.(?:pyc|pdb)$/i.test(p) &&
   !['price_patch_gui.ps1', 'auto_update_worker.ps1'].includes(path.basename(p))
 await fs.cp(path.join(repo, '物价补丁/tools'), path.join(target, 'tools'), {
   recursive: true,
@@ -26,10 +28,10 @@ await fs.cp(
 )
 for (const obsolete of ['price_patch_gui.ps1', 'auto_update_worker.ps1'])
   await fs.rm(path.join(target, 'tools', obsolete), { force: true })
-const runtime = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+const runtimeBuild = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
   path.join(repo, 'build/prepare_runtime.ps1'), '-Destination', path.join(target, 'tools')],
   { windowsHide: true, stdio: 'inherit' })
-if (runtime.status !== 0) throw new Error('Failed to prepare verified standalone runtimes')
+if (runtimeBuild.status !== 0) throw new Error('Failed to prepare verified standalone runtimes')
 for (const seed of ['国服还原包.zip', '国际服还原补丁.zip'])
   await fs.copyFile(path.join(repo, 'restore-seeds', seed), path.join(target, seed))
 // Windows PowerShell 5.1 needs BOM for Chinese source literals; JSON stays UTF-8.
@@ -72,4 +74,13 @@ await fs.copyFile(
   path.join(root, 'src/renderer/public/icon.png')
 )
 await fs.copyFile(path.join(root, 'resources/icon.png'), path.join(root, 'src/renderer/icon.png'))
-console.log(JSON.stringify({ runtime: target, fileCount: Object.keys(files).length, sha256: id }))
+if (path.dirname(runtime) !== root || path.basename(runtime) !== '.runtime')
+  throw new Error('Unexpected generated runtime path')
+const previous = await fs.lstat(runtime).catch((error) => {
+  if (error.code === 'ENOENT') return null
+  throw error
+})
+if (previous?.isSymbolicLink()) throw new Error('Runtime output cannot be a link')
+await fs.rm(runtime, { recursive: true, force: true })
+await fs.rename(target, runtime)
+console.log(JSON.stringify({ runtime, fileCount: Object.keys(files).length, sha256: id }))

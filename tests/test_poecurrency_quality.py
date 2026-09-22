@@ -317,6 +317,13 @@ class PoecurrencyQualityTests(unittest.TestCase):
             [row["metadata_path"] for row in rows],
             ["Metadata/Items/Gem/SupportGemDesperation"],
         )
+        for english in ('', 'Unrelated'):
+            prices['desperation'].english_name = english
+            for candidates in (pairs, list(reversed(pairs))):
+                with self.subTest(english=english, order=candidates[0].en_name):
+                    rows, missing = self.price_patch.match_cn_prices_to_base_items(prices, candidates)
+                    self.assertEqual(rows, [])
+                    self.assertEqual(len(missing), 1)
 
     def test_empty_category_is_reported_separately(self):
         prices, quality = self.price_patch.collect_poecurrency_observations_with_quality(

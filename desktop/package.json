@@ -1,6 +1,6 @@
 {
   "name": "poe-price-patch-desktop",
-  "version": "0.8.8",
+  "version": "0.9.2",
   "description": "POE1 / POE2 物价补丁桌面应用",
   "main": "out/main/index.js",
   "author": "POE Price Patch",
@@ -19,16 +19,22 @@
     "test:runtime": "node scripts/verify-runtime.mjs",
     "test:package": "node scripts/verify-package.mjs",
     "format": "prettier --write src tests scripts",
-    "test:migration": "node scripts/verify-migration.mjs"
+    "test:migration": "node scripts/verify-migration.mjs",
+    "updates:configure": "node scripts/configure-software-updates.mjs",
+    "updates:build": "tsx scripts/build-software-update.ts",
+    "test:software-updates": "tsx scripts/verify-software-updates.ts"
   },
   "dependencies": {
     "electron-log": "^5.2.0",
-    "electron-store": "^10.0.0"
+    "electron-store": "^10.0.0",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@iconify-json/ph": "^1.2.2",
     "@iconify/vue": "^4.1.2",
     "@types/node": "^22.0.0",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "electron": "^44.4.1",
     "electron-builder": "^26.0.12",
@@ -43,7 +49,8 @@
     "unocss": "^66.5.1",
     "vite": "^7.0.6",
     "vue": "^3.5.18",
-    "vue-tsc": "^3.0.0"
+    "vue-tsc": "^3.0.0",
+    "yazl": "^3.3.1"
   },
   "build": {
     "appId": "com.poepricepatch.desktop",
@@ -67,6 +74,18 @@
       {
         "from": "resources/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "resources/update-config.json",
+        "to": "update-config.json"
+      },
+      {
+        "from": "resources/current-release.json",
+        "to": "current-release.json"
+      },
+      {
+        "from": "resources/install-software-update.ps1",
+        "to": "install-software-update.ps1"
       }
     ],
     "win": {

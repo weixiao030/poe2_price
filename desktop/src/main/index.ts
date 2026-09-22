@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -40,6 +41,8 @@ import {
 } from './auto-update'
 import type { AutoUpdateSchedule, ConfirmedUpdate } from './auto-update'
 import { reconcileAutoStart, shouldShowSecondInstance } from './startup'
+import { SoftwareUpdater } from './software-update'
+import type { UpdateConfig } from '../shared/software-update'
 import type {
   AppSettings,
   AppSnapshot,
@@ -66,6 +69,7 @@ let autoStartStatus = ''
 let autoUpdatePausedReason = ''
 let pendingShowWindow = false
 let maintenanceRunning = false
+let softwareUpdater: SoftwareUpdater | undefined
 let store: Store<{
   settings: AppSettings
   history: OperationResult[]
@@ -93,6 +97,7 @@ function refresh() {
   updateTray()
 }
 function queryOnce<T>(payload: Record<string, unknown>): Promise<T> {
+  if (softwareUpdater?.installing) throw new Error('正在安装软件更新，请稍后重试')
   if (maintenanceRunning) throw new Error('正在清理旧文件，请稍后重试')
   const key = JSON.stringify(payload)
   if (!pendingQueries.has(key)) {
@@ -105,9 +110,11 @@ function queryOnce<T>(payload: Record<string, unknown>): Promise<T> {
   return pendingQueries.get(key) as Promise<T>
 }
 async function runOperation(input: unknown, automatic = false): Promise<OperationResult> {
+  if (softwareUpdater?.installing) throw new Error('正在安装软件更新，请稍后重试')
   if (active) throw new Error('已有任务正在执行，请等待完成')
   if (maintenanceRunning) throw new Error('请等待文件清理完成')
   const request = validateRequest(input)
+  if (automatic && request.operation !== 'update') throw new Error('自动任务只允许更新物价')
   const runId = crypto.randomUUID(),
     startedAt = new Date().toISOString(),
     start = Date.now()
@@ -263,7 +270,7 @@ function schedule() {
     quitting ||
     autoUpdatePausedReason ||
     !store.get('settings').autoUpdate ||
-    !store.get('confirmed') ||
+    store.get('confirmed')?.request.operation !== 'update' ||
     active
   ) {
     cancelSchedule()
@@ -288,7 +295,7 @@ function schedule() {
     timer = undefined
     nextUpdate = null
     const confirmed = store.get('confirmed')
-    if (!confirmed || !store.get('settings').autoUpdate) {
+    if (confirmed?.request.operation !== 'update' || !store.get('settings').autoUpdate) {
       schedule()
       refresh()
       return
@@ -297,7 +304,7 @@ function schedule() {
       schedule()
       return
     }
-    if (active || maintenanceRunning) {
+    if (active || maintenanceRunning || softwareUpdater?.installing) {
       saveAutoUpdateSchedule({
         ...plan,
         nextAttemptAt: new Date(Date.now() + BUSY_RETRY).toISOString(),
@@ -509,7 +516,7 @@ else {
         }
       } catch (error) {
         log.error('配置格式无效', error)
-        store.set('settings', defaults)
+        store.store = { settings: defaults, history: [], confirmed: null, autoUpdateSchedule: null }
       }
       const syncAutoStart = (enabled: boolean) => {
         if (!app.isPackaged) {
@@ -530,6 +537,34 @@ else {
         log.error(autoStartStatus)
       }
       Menu.setApplicationMenu(null)
+      const softwareResources = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'resources')
+      const updateConfig = JSON.parse(await fs.readFile(path.join(softwareResources, 'update-config.json'), 'utf8')) as UpdateConfig
+      const currentRelease = JSON.parse(await fs.readFile(path.join(softwareResources, 'current-release.json'), 'utf8'))
+      softwareUpdater = new SoftwareUpdater({
+        version: app.getVersion(), notes: currentRelease.notes, config: updateConfig,
+        appRoot: path.dirname(app.getPath('exe')),
+        transactionRoot: path.join(app.getPath('userData'), 'software-updates'),
+        helperSource: path.join(softwareResources, 'install-software-update.ps1'),
+        packaged: app.isPackaged,
+        canInstall: () => !active && !pendingQueries.size && !workers.size && !maintenanceRunning,
+        changed: state => send('software:state', state),
+        quit: () => { quitting = true; cancelSchedule(); app.quit() }
+      })
+      await softwareUpdater.previousResult()
+      handle('software:ui-ready', async () => {
+        const token = process.argv.find(arg => arg.startsWith('--software-update-token='))?.split('=')[1]
+        if (!token || !/^[a-f0-9-]{36}$/.test(token)) return
+        const dir = path.join(app.getPath('userData'), 'software-updates', token)
+        const plan = JSON.parse(await fs.readFile(path.join(dir, 'plan.json'), 'utf8'))
+        if (plan.version === app.getVersion() && plan.token === token)
+          await fs.writeFile(path.join(dir, 'health.json'), JSON.stringify({ token, version: app.getVersion() }))
+      })
+      handle('software:state', () => softwareUpdater!.snapshot)
+      handle('software:check', () => softwareUpdater!.check())
+      handle('software:download', () => softwareUpdater!.download())
+      handle('software:install', () => softwareUpdater!.install())
+      handle('software:cancel', () => softwareUpdater!.cancel())
+      handle('app:copy-feedback-group', () => clipboard.writeText('168887742'))
       handle('app:snapshot', snapshot)
       handle('background:get', getBackground)
       handle('background:choose', () => chooseBackground(window!))
@@ -544,7 +579,7 @@ else {
       handle('app:cleanup', async (input: unknown, apply: unknown) => {
         const kind = choice(input, ['cache', 'logs']),
           remove = boolean(apply)
-        if (active || pendingQueries.size || workers.size || maintenanceRunning)
+        if (active || pendingQueries.size || workers.size || maintenanceRunning || softwareUpdater?.installing)
           throw new Error('后台任务进行中，请等待查询或补丁任务完成')
         maintenanceRunning = true
         try {

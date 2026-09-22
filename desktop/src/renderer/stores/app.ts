@@ -250,14 +250,12 @@ export const useAppStore = defineStore('app', () => {
       if (token === leagueGeneration) leagueLoading.value = false
     }
   }
-  async function run(operation: PatchRequest['operation']): Promise<OperationResult> {
+  function prepareRequest(operation: PatchRequest['operation']): PatchRequest {
     if (running.value) throw new Error('已有任务正在执行')
+    if (querying.value) throw new Error('正在查询游戏目录，请稍候')
     if (!client.value) throw new Error('请先选择有效的游戏目录')
     if (leagueSaving.value) throw new Error('正在保存赛季选择，请稍候')
-    clearLog()
-    busy.value = true
-    error.value = ''
-    const request: PatchRequest = {
+    return {
       operation,
       gameVersion: settings.value.gameVersion,
       gameDirectory: client.value.path,
@@ -273,11 +271,18 @@ export const useAppStore = defineStore('app', () => {
       leagueIsCurrent: league.value?.IsCurrent ?? true,
       leagueMode: selectedLeague.value === '__auto__' ? 'auto' : 'fixed'
     }
+  }
+  async function run(confirmedRequest: PatchRequest): Promise<OperationResult> {
+    if (running.value) throw new Error('已有任务正在执行')
+    const request = { ...confirmedRequest }
+    clearLog()
+    busy.value = true
+    error.value = ''
     try {
       const result = await window.desktop.runOperation(request)
       if (
         result.exitCode === 0 &&
-        (operation === 'localize' || request.languageMode !== settings.value.languageMode)
+        (request.operation === 'localize' || request.languageMode !== settings.value.languageMode)
       )
         void inspect().catch((e) => {
           error.value = String(e.message || e)
@@ -288,6 +293,7 @@ export const useAppStore = defineStore('app', () => {
     }
   }
   return {
+    prepareRequest,
     state,
     settings,
     loading,

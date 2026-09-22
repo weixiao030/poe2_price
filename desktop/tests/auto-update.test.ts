@@ -4,6 +4,24 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { restoreAutoUpdateSchedule, restoreConfirmedUpdate } from '../src/main/auto-update'
 
+test('an invalid saved confirmation cannot schedule a destructive operation', async () => {
+  // @ts-expect-error JavaScript harness intentionally has no declaration file.
+  const { createHarness, request } = await import('../scripts/auto-update-harness.mjs')
+  const harness = createHarness(fileURLToPath(new URL('../', import.meta.url)))
+  await assert.rejects(harness.runOperation({ ...request, operation: 'restore' }, true), /只允许更新/)
+  await harness.runOperation(request)
+  const pending = harness.timer
+  harness.store.set('confirmed', {
+    ...harness.state.confirmed,
+    request: { ...request, operation: 'restore' }
+  })
+  await pending.callback()
+  harness.schedule()
+  await harness.advance(24 * 3_600_000)
+  assert.equal(harness.calls, 1)
+  assert.equal(harness.deadline(), null)
+})
+
 test('auto-update catches up after restart and retries without tight polling', () => {
   const root = fileURLToPath(new URL('../', import.meta.url))
   const probe = fileURLToPath(new URL('../scripts/check-auto-update-contract.mjs', import.meta.url))
@@ -35,6 +53,18 @@ test('disk failure pauses automatic writes instead of repeating an overdue opera
   await harness.advance(24 * 3_600_000)
   assert.equal(harness.calls, 2)
   assert.equal(harness.state.settings.autoUpdate, true)
+})
+
+test('software installation blocks manual and scheduled game patch operations', async () => {
+  // @ts-expect-error JavaScript harness intentionally has no declaration file.
+  const { createHarness, request } = await import('../scripts/auto-update-harness.mjs')
+  const harness = createHarness(fileURLToPath(new URL('../', import.meta.url)))
+  await harness.runOperation(request)
+  const before = harness.calls
+  harness.softwareInstalling = true
+  await assert.rejects(harness.runOperation(request), /软件更新/)
+  await harness.advance(3_600_000)
+  assert.equal(harness.calls, before)
 })
 
 test('turning off while an automatic task runs invalidates future and stale callbacks', async () => {

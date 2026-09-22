@@ -16,14 +16,15 @@ import {
   useMessage
 } from 'naive-ui'
 import { useAppStore } from './stores/app'
-import type { AppSettings, GameVersion, Operation, OperationResult } from '../shared/types'
+import type { AppSettings, GameVersion, Operation, OperationResult, PatchRequest } from '../shared/types'
 const HistoryPage = defineAsyncComponent(() => import('./components/HistoryPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'))
+const UpdatesPage = defineAsyncComponent(() => import('./components/UpdatesPage.vue'))
 const desktop = window.desktop
 const app = useAppStore(),
   message = useMessage(),
   dialog = useDialog()
-const page = ref<'workspace' | 'history' | 'settings'>('workspace')
+const page = ref<'workspace' | 'history' | 'settings' | 'updates'>('workspace')
 const pathsOpen = ref(false),
   manualPath = ref(''),
   searching = ref(false),
@@ -36,7 +37,8 @@ const title = computed(
     ({
       workspace: '物价补丁',
       history: '运行记录',
-      settings: '引用设置'
+      settings: '引用设置',
+      updates: '检查更新'
     })[page.value]
 )
 const names = { update: '更新物价', restore: '还原补丁', localize: 'POE1 汉化' }
@@ -118,16 +120,23 @@ async function discover() {
   })
   searching.value = false
 }
-async function execute(operation: Operation) {
+async function execute(request: PatchRequest) {
   page.value = 'workspace'
   await attempt(async () => {
-    const result = await app.run(operation)
+    const result = await app.run(request)
     if (result.cancelled) message.warning('任务已停止，请确认游戏文件完整性')
-    else if (result.exitCode === 0) message.success(`${names[operation]}完成`)
+    else if (result.exitCode === 0) message.success(`${names[request.operation]}完成`)
     else message.error('操作未完成，请查看运行日志', { duration: 6000 })
   })
 }
 function confirmOperation(operation: Operation) {
+  let request: PatchRequest
+  try {
+    request = app.prepareRequest(operation)
+  } catch (error) {
+    message.warning(error instanceof Error ? error.message : String(error))
+    return
+  }
   dialog.warning({
     title:
       operation === 'update'
@@ -135,11 +144,11 @@ function confirmOperation(operation: Operation) {
         : operation === 'restore'
           ? '确认还原补丁'
           : '确认汉化 POE1',
-    content: `${app.client?.displayName || ''}\n${app.client?.path || ''}\n\n${operation === 'restore' ? `将用此客户端的专属基线还原补丁。${app.settings.autoUpdate ? '每小时自动更新仍保持开启，下一轮会按最近成功的配置重新应用补丁。' : ''}` : operation === 'localize' ? '将下载并校验 POE1 国际服汉化工具。完成后在游戏内选择法文国旗。' : '将获取所选赛季价格并写入当前游戏客户端。'}请确认游戏已关闭。`,
+    content: `${app.client?.displayName || ''}\n${request.gameDirectory}\n\n${operation === 'restore' ? `将用此客户端的专属基线还原补丁。${app.settings.autoUpdate ? '每小时自动更新仍保持开启，下一轮会按最近成功的配置重新应用补丁。' : ''}` : operation === 'localize' ? '将下载并校验 POE1 国际服汉化工具。完成后在游戏内选择法文国旗。' : '将获取所选赛季价格并写入当前游戏客户端。'}请确认游戏已关闭。`,
     positiveText: '确认执行',
     negativeText: '返回',
     onPositiveClick: () => {
-      void execute(operation)
+      void execute(request)
     }
   })
 }
@@ -172,7 +181,11 @@ watch(
     }
   }
 )
-onMounted(() => app.init())
+onMounted(async () => {
+  await app.init()
+  await nextTick()
+  if (app.state.version) await desktop.softwareUiReady()
+})
 onUnmounted(() => app.dispose())
 </script>
 
@@ -198,11 +211,14 @@ onUnmounted(() => app.dispose())
         <button :class="['nav-item', { active: page === 'settings' }]" @click="page = 'settings'">
           <Icon icon="ph:sliders-horizontal" />引用设置
         </button>
+        <button :class="['nav-item', { active: page === 'updates' }]" @click="page = 'updates'">
+          <Icon icon="ph:download-simple" />检查更新
+        </button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="engine-label">
-          <Icon icon="ph:shield-check" /><span>本地执行 · 自动备份</span>
-        </div>
+        <button class="sidebar-feedback" title="复制群号" @click="attempt(async () => { await desktop.copyFeedbackGroup(); message.success('已复制群号 168887742') })">
+          <Icon icon="ph:chat-circle-dots" /><span>聊天/bug反馈群:<strong>168887742</strong></span>
+        </button>
         <div class="version-line">
           <span>桌面版 v{{ app.state.version }}</span
           ><span>Windows</span>
@@ -222,7 +238,7 @@ onUnmounted(() => app.dispose())
         <n-spin size="large" />
         <p>正在加载工作台…</p>
       </div>
-      <div v-else class="page-body">
+      <div v-else class="page-body" :class="{ 'updates-body': page === 'updates' }">
         <div class="page-heading">
           <div>
             <h1>{{ title }}</h1>
@@ -232,7 +248,9 @@ onUnmounted(() => app.dispose())
                   ? '让价值一目了然，把时间留给探索。'
                   : page === 'history'
                     ? '每次更新与还原，都有迹可循。'
-                    : '按你的习惯，安排这间工作台。'
+                    : page === 'updates'
+                      ? '查看版本变化，一键获取新的改进。'
+                      : '按你的习惯，安排这间工作台。'
               }}
             </p>
           </div>
@@ -492,10 +510,11 @@ onUnmounted(() => app.dispose())
           </div>
         </template>
         <HistoryPage v-else-if="page === 'history'" @select="historyDetail = $event" />
+        <UpdatesPage v-else-if="page === 'updates'" :busy="app.running || app.querying" />
         <template v-else>
           <SettingsPage />
         </template>
-        <footer class="page-footer">
+        <footer v-if="page !== 'updates'" class="page-footer">
           <span>POE {{ app.settings.gameVersion === 'poe2' ? '2' : '1' }} 物价补丁</span
           ><span>价格标注 · 客户端独立备份 · 随时还原</span>
         </footer>
@@ -520,7 +539,7 @@ onUnmounted(() => app.dispose())
           >
           <n-button
             secondary
-            :disabled="app.running || !app.client"
+            :disabled="app.running || app.querying || !app.client"
             @click="confirmOperation('restore')"
             ><template #icon><Icon icon="ph:arrow-counter-clockwise" /></template>还原补丁</n-button
           >
