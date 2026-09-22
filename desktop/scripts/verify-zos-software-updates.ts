@@ -8,7 +8,9 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
-import { hashFile, verifyInventory, verifyRelease } from '../src/main/software-update-protocol'
+import { hashFile, selectAsset, verifyInventory, verifyRelease } from '../src/main/software-update-protocol'
+import { inventory } from './build-software-update'
+import { manifestSources, packageSources } from '../src/main/software-update-sources'
 
 const desktop = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const root = path.dirname(desktop)
@@ -17,10 +19,15 @@ const option = (name: string, fallback: string) => {
   return index < 0 ? fallback : path.resolve(process.argv[index + 1])
 }
 const baseline = option('--baseline', path.join(root, 'release-desktop/baselines/0.9.2/win-unpacked'))
-const target = option('--target', path.join(root, 'release-desktop/zos-0.9.3-light-test/win-unpacked'))
-const reportDir = option('--report-dir', path.join(desktop, 'test-results/zos-093-upgrade'))
+const target = option('--target', path.join(desktop, 'dist/win-unpacked'))
+const asar = createRequire(import.meta.url)('@electron/asar')
+const packagedVersion = (dir: string): string => JSON.parse(asar.extractFile(path.join(dir, 'resources/app.asar'), 'package.json').toString()).version
+const fromVersion = packagedVersion(baseline)
+const toVersion = packagedVersion(target)
+const savedBaseline = await inventory(baseline)
+const reportDir = option('--report-dir', path.join(desktop, `test-results/upgrade-${fromVersion}-to-${toVersion}`))
 await fs.mkdir(reportDir, { recursive: true })
-const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-zos-092-to-093-'))
+const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), `poe-upgrade-${fromVersion}-to-${toVersion}-`))
 const current = path.join(sandbox, 'current')
 const userdata = path.join(sandbox, 'userdata')
 const exe = path.join(current, '物价补丁.exe')
@@ -31,7 +38,7 @@ let localBase = ''
 let localCertificate = ''
 const transportRequests: string[] = []
 const readJson = async (file: string) => JSON.parse(await fs.readFile(file, 'utf8'))
-const evidence: Record<string, any> = { sandbox, from: '0.9.2', to: '0.9.3', checks: [] }
+const evidence: Record<string, any> = { sandbox, from: fromVersion, to: toVersion, checks: [] }
 let running: Awaited<ReturnType<typeof electron.launch>> | undefined
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 try {
@@ -63,8 +70,8 @@ try {
     envelope = await response.json()
   }
   const release = verifyRelease(envelope, config.publicKey)
-  assert.equal(release.version, '0.9.3')
-  const asset = release.packages.find((item) => item.kind === 'delta' && item.fromVersion === '0.9.2')
+  assert.equal(release.version, toVersion)
+  const asset = selectAsset(release, fromVersion)
   assert.ok(asset)
   evidence.package = asset
   evidence.manifestUrl = manifestUrl
@@ -74,7 +81,7 @@ try {
   delete env.ELECTRON_RUN_AS_NODE
   running = await electron.launch({ executablePath: exe, cwd: current, env, timeout: 30_000 })
   if (localRelease) {
-    // Route only these two public URLs to the local HTTPS staging server in this
+    // Route the configured manifest/package URLs to local HTTPS only in this
     // disposable process. Release files, signatures and the baseline stay intact.
     await running.evaluate((_, staging) => {
       const tls = process.getBuiltinModule('node:tls')
@@ -84,12 +91,12 @@ try {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
         return original(staging.urls.includes(url) ? staging.base + new URL(url).pathname.split('/').pop() : input, options)
       }
-    }, { certificate: localCertificate, base: localBase, urls: [manifestUrl, asset.url] })
+    }, { certificate: localCertificate, base: localBase, urls: [...manifestSources(config).map(source => source.url), ...packageSources(config, release, asset).map(source => source.url)] })
   }
   const page = await running.firstWindow()
   await page.getByRole('heading', { name: '物价补丁', exact: true }).waitFor()
   await running.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setPosition(-20000, -20000))
-  assert.equal(await running.evaluate(({ app }) => app.getVersion()), '0.9.2')
+  assert.equal(await running.evaluate(({ app }) => app.getVersion()), fromVersion)
   await page.getByRole('navigation', { name: '主导航' }).getByRole('button').nth(3).click()
   let available = await page.evaluate(() => window.desktop.getSoftwareUpdate())
   const checkDeadline = Date.now() + 35_000
@@ -98,12 +105,12 @@ try {
     available = await page.evaluate(() => window.desktop.getSoftwareUpdate())
   }
   assert.equal(available.status, 'available', available.message)
-  assert.equal(available.packageKind, 'delta')
+  assert.equal(available.packageKind, asset.kind)
   assert.equal(available.totalBytes, asset.size)
-  assert.equal(available.release?.version, '0.9.3')
-  await page.screenshot({ path: path.join(reportDir, '092-found-093-delta.png'), fullPage: true })
+  assert.equal(available.release?.version, toVersion)
+  await page.screenshot({ path: path.join(reportDir, 'found-update.png'), fullPage: true })
   evidence.available = available
-  evidence.checks.push(`原样 0.9.2 基线通过${localRelease ? '本地 HTTPS 暂存' : '生产 HTTPS'}和正式签名验证发现 0.9.3 增量包`)
+  evidence.checks.push(`原样 ${fromVersion} 基线通过${localRelease ? '本地 HTTPS 暂存' : '生产 HTTPS'}和正式签名验证发现 ${toVersion} 更新包`)
   console.log(JSON.stringify({ phase: 'available', kind: available.packageKind, bytes: asset.size }))
   const downloaded = await page.evaluate(() => window.desktop.downloadSoftwareUpdate())
   assert.equal(downloaded.status, 'ready', downloaded.message)
@@ -113,9 +120,9 @@ try {
   assert.equal(transactions.length, 1)
   const transaction = path.join(transactionRoot, transactions[0].name)
   assert.equal(await hashFile(path.join(transaction, 'update.zip')), asset.sha256)
-  await page.screenshot({ path: path.join(reportDir, '092-delta-ready.png'), fullPage: true })
+  await page.screenshot({ path: path.join(reportDir, 'update-ready.png'), fullPage: true })
   evidence.downloadedBytes = downloaded.downloadedBytes
-  evidence.checks.push('真实下载增量包，大小、SHA-256、所有变化文件和 0.9.2 基线校验通过')
+  evidence.checks.push(`真实下载更新包，大小、SHA-256、所有变化文件和 ${fromVersion} 基线校验通过`)
   console.log(JSON.stringify({ phase: 'downloaded', bytes: downloaded.downloadedBytes }))
   const oldProcess = running.process()
   const exited = new Promise<void>((resolve) => oldProcess.once('exit', () => resolve()))
@@ -137,20 +144,19 @@ try {
   }
   assert.equal(result.status, 'completed', JSON.stringify(result))
   const health = await readJson(path.join(transaction, 'health.json'))
-  assert.equal(health.version, '0.9.3')
+  assert.equal(health.version, toVersion)
   const plan = await readJson(path.join(transaction, 'plan.json'))
   await verifyInventory(current, plan.targetFiles)
   await verifyInventory(target, plan.targetFiles)
-  await verifyInventory(baseline, plan.baseFiles)
+  await verifyInventory(baseline, savedBaseline)
   assert.equal(await fs.readFile(path.join(current, '玩家自存文件.txt'), 'utf8'), 'ZOS 升级测试：保留此文件。')
-  const asar = createRequire(import.meta.url)('@electron/asar')
-  assert.equal(JSON.parse(asar.extractFile(path.join(current, 'resources/app.asar'), 'package.json').toString()).version, '0.9.3')
+  assert.equal(packagedVersion(current), toVersion)
   evidence.result = result
   evidence.health = health
   evidence.changedFiles = plan.files.map((file: { path: string }) => file.path)
   evidence.targetFilesVerified = plan.targetFiles.length
-  evidence.checks.push('旧版自动退出，外部安装器完成替换，新版自动启动并返回 0.9.3 界面健康回执')
-  evidence.checks.push('完整目标文件回读一致，0.9.2 保存基线及玩家自存文件保持完整')
+  evidence.checks.push(`旧版自动退出，外部安装器完成替换，新版自动启动并返回 ${toVersion} 界面健康回执`)
+  evidence.checks.push(`完整目标文件回读一致，${fromVersion} 保存基线及玩家自存文件保持完整`)
   evidence.completed = true
   if (localRelease) {
     assert.ok(transportRequests.includes('latest.json'))
@@ -173,8 +179,11 @@ try {
   localServer?.close()
   const cleanup = path.join(sandbox, 'close-isolated-app.ps1')
   await fs.writeFile(cleanup, '\ufeffparam([string]$TestExe)\n$ErrorActionPreference="Stop"\nGet-Process | Where-Object { $_.Path -eq $TestExe } | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue; $_.WaitForExit(10000) | Out-Null }\nif (Get-Process | Where-Object { $_.Path -eq $TestExe }) { throw "Test application still running" }\n')
-  const cleaned = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', cleanup, '-TestExe', await fs.realpath(exe)], { windowsHide: true })
-  assert.equal(cleaned.status, 0, cleaned.stderr?.toString())
+  const testExe = await fs.realpath(exe).catch(() => undefined)
+  if (testExe) {
+    const cleaned = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', cleanup, '-TestExe', testExe], { windowsHide: true })
+    assert.equal(cleaned.status, 0, cleaned.stderr?.toString())
+  }
   evidence.testProcessesCleaned = true
   await fs.writeFile(path.join(reportDir, 'evidence.json'), JSON.stringify(evidence, null, 2) + '\n')
 }

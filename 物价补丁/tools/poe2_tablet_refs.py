@@ -16,6 +16,7 @@ if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 ORIGINAL = "Metadata/Items/TowerAugments/TowerAugment"
+ENGLISH_BASEITEMS = "data/balance/baseitemtypes.datc64"
 TYPES = {"Breach": "Breach", "Expedition": "Expedition", "Delirium": "Delirium",
          "Ritual": "Ritual", "Generic": "Irradiated", "MapBoss": "Overseer",
          "Abyss": "Abyss", "Incursion": "Temple"}
@@ -65,11 +66,15 @@ def clean_references(data: bytes) -> bytes:
 
 def clean_tablet_layer(data: bytes) -> bytes:
     """Remove only the eight tablet name labels and our template redirects."""
+    return clean_tablet_names(clean_references(data))
+
+
+def clean_tablet_names(data: bytes) -> bytes:
+    """Restore filter-facing names without changing affix template references."""
     from poe2_name_price_patch import (
         apply_replacements_append, build_replacements, scan_base_item_names,
     )
     from poe2_price_labels import strip_existing_price
-    data = clean_references(data)
     if 'Metadata/Items/TowerAugment/'.encode('utf-16-le') not in data:
         return data
     entries = scan_base_item_names(data)
@@ -138,7 +143,8 @@ def clean_zip(path: Path, english: Path | None = None) -> None:
 
 
 def validate_resources(entries: dict[str, bytes]) -> None:
-    from poe2_name_price_patch import detect_base_item_layout, read_string_offset
+    from poe2_name_price_patch import DISPLAY_NAME_FIELD_INDEX, detect_base_item_layout, read_string_offset
+    from poe2_price_labels import strip_existing_price
     from poe2_tablet_prices import decode_resource, validate_csd
     files = {name.lower(): content for name, content in entries.items()}
     for name, data in files.items():
@@ -148,6 +154,11 @@ def validate_resources(entries: dict[str, bytes]) -> None:
         for row in range(layout.row_count):
             at = 4 + row * layout.row_size
             metadata = read_string_offset(data, layout, struct.unpack_from('<I', data, at)[0])[0]
+            if name == ENGLISH_BASEITEMS:
+                pointer = struct.unpack_from('<I', data, at + DISPLAY_NAME_FIELD_INDEX * 4)[0]
+                base_name = read_string_offset(data, layout, pointer)[0]
+                if strip_existing_price(base_name) != base_name:
+                    raise ValueError('English BaseType must remain unchanged for item filters: ' + base_name)
             if metadata not in {f'Metadata/Items/TowerAugment/{base}Augment' for base in TYPES}:
                 continue
             reference = read_string_offset(data, layout, struct.unpack_from('<Q', data, at + 40)[0])[0]

@@ -24,7 +24,10 @@ from poe2_name_price_patch import (
     read_string_offset, scan_base_item_names,
 )
 from poe2_price_labels import format_unique_price_name, strip_existing_price
-from poe2_tablet_refs import ORIGINAL, TYPES, canonical_reference, clean_references, validate_resources
+from poe2_tablet_refs import (
+    ENGLISH_BASEITEMS, ORIGINAL, TYPES, canonical_reference, clean_references,
+    clean_tablet_layer, validate_resources,
+)
 from poe2_tablet_display import format_pair, market_anchors
 
 TABLET_SLUGS = tuple(kind + "_Tablet" for kind in TYPES.values())
@@ -777,17 +780,21 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
         supported.add(short)
         resource_rows.append({'tablet':slug,'modifiers':len(modifiers),'matched':len(used),
                               'changed':edits,'unmatched':unmatched})
-    named, named_rows = price_tablet_names(clean_references(patched_baseitems.read_bytes()), ninja.get('base_prices', {}))
+    # Item filters resolve BaseType against the English table, including exact
+    # matches. Price markup belongs only in the localized display-name table.
+    if game_path.replace('\\', '/').lower() == ENGLISH_BASEITEMS:
+        named, named_rows = clean_tablet_layer(patched_baseitems.read_bytes()), []
+    else:
+        named, named_rows = price_tablet_names(clean_references(patched_baseitems.read_bytes()), ninja.get('base_prices', {}))
     if not supported and not named_rows: raise ValueError('no tablet descriptions matched and no base prices; layer skipped')
     redirected, count = _redirect_tablet_base_items(named, supported)
     if count != len(supported): raise ValueError('tablet base rows incomplete')
     entries[game_path] = redirected
     if english_baseitems and english_baseitems.exists() and english_baseitems.resolve() != source_baseitems.resolve():
-        english_named, english_names = price_tablet_names(clean_references(english_baseitems.read_bytes()), ninja.get('base_prices', {}))
-        if len(english_names) != len(named_rows): raise ValueError('English tablet name rows incomplete')
-        english, en_count = _redirect_tablet_base_items(english_named, supported)
+        # Clean labels left by older versions before reapplying affix redirects.
+        english, en_count = _redirect_tablet_base_items(clean_tablet_layer(english_baseitems.read_bytes()), supported)
         if en_count != count: raise ValueError('English tablet base rows incomplete')
-        entries['data/balance/baseitemtypes.datc64'] = english
+        entries[ENGLISH_BASEITEMS] = english
     with zipfile.ZipFile(output_zip) as archive:
         previous = {info.filename:archive.read(info) for info in archive.infolist()
                     if not info.is_dir() and '/poe2price/' not in info.filename.lower()}

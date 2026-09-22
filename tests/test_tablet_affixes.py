@@ -25,7 +25,7 @@ def selected(price, variant='Normal'):
     return {'price':price, 'variant':variant, 'selection':'normal' if variant=='Normal' else 'lowest_available'}
 
 
-def synthetic_baseitems():
+def synthetic_baseitems(english=False):
     metadata = ["Metadata/Items/TowerAugment/RitualAugment", "Metadata/Items/TowerAugment/BreachAugment", "Metadata/Items/Currency/CurrencyAddModToRare"]
     rows = bytearray(4 + len(metadata) * 360)
     struct.pack_into("<I", rows, 0, len(metadata))
@@ -39,7 +39,8 @@ def synthetic_baseitems():
     for i, text in enumerate(metadata):
         at = 4 + i * 360
         struct.pack_into("<Q", rows, at, add(text))
-        struct.pack_into("<Q", rows, at + 32, add(["祭祀碑牌", "裂痕碑牌", "崇高石"][i]))
+        display_names = ["Ritual Tablet", "Breach Tablet", "Exalted Orb"] if english else ["祭祀碑牌", "裂痕碑牌", "崇高石"]
+        struct.pack_into("<Q", rows, at + 32, add(display_names[i]))
         struct.pack_into("<Q", rows, at + 40, add(refs.ORIGINAL))
     return bytes(rows + strings)
 
@@ -451,7 +452,8 @@ def test_disabled_core_build_clears_old_test_inheritance_and_detects_it(tmp_path
 
 
 @pytest.mark.parametrize('templates_available', [False, True])
-def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, templates_available):
+@pytest.mark.parametrize('legacy_english', [False, True])
+def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, templates_available, legacy_english):
     source = tmp_path/'base.dat'; source.write_bytes(synthetic_baseitems())
     patched = tmp_path/'patched.dat'; patched.write_bytes(source.read_bytes())
     template = tmp_path/'template.it'
@@ -459,7 +461,11 @@ def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, template
     descriptions = tmp_path/'tablet.csd'; descriptions.write_bytes(csd().encode())
     if not templates_available:
         template.unlink(); descriptions.unlink()
-    english = tmp_path/'english.dat'; english.write_bytes(source.read_bytes())
+    english = tmp_path/'english.dat'
+    english_data = synthetic_baseitems(english=True)
+    if legacy_english:
+        english_data, _ = m.price_tablet_names(english_data, {'Ritual_Tablet':selected('0.24D')})
+    english.write_bytes(english_data)
     supplement = tmp_path/'stats.csd'
     supplement.write_text('description\n\t1 tower_ritual_use_count\n\t1\n\t\t# "{0} uses remaining"\n\tlang "Traditional Chinese"\n\t1\n\t\t# "剩餘 {0} 次使用次數"\n', encoding='utf-8')
     archive = tmp_path/'core.zip'
@@ -483,8 +489,9 @@ def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, template
     assert len(entries) == 3 and not any('/poe2price/' in path for path in entries)
     assert report['redirected_items'] == 0
     assert report['base_names'] == [{'tablet':'Ritual_Tablet', **selected('1.00D')}]
-    for path in [core_path, 'data/balance/baseitemtypes.datc64']:
-        assert names.scan_base_item_names(entries[path])[0].name == format_unique_price_name('祭祀碑牌','1.00D','markup')
+    assert names.scan_base_item_names(entries[core_path])[0].name == format_unique_price_name('祭祀碑牌','1.00D','markup')
+    assert [e.name for e in names.scan_base_item_names(entries[refs.ENGLISH_BASEITEMS])] == [
+        'Ritual Tablet', 'Breach Tablet', 'Exalted Orb']
     class Offline:
         def get_json(self, url): raise TimeoutError('offline')
     args['client'] = Offline()
@@ -512,12 +519,49 @@ def test_names_use_unique_markup_exact_base_paths_update_and_clean():
     assert names.build_structure_signature(priced) == names.build_structure_signature(original)
 
 
+@pytest.mark.parametrize('legacy_name', ['[0.37D|Breach Tablet]', 'Breach Tablet=0.37D'])
+def test_filter_validator_rejects_legacy_english_labels_and_repair_keeps_affixes(legacy_name):
+    original = synthetic_baseitems(english=True)
+    replacements, _ = names.build_replacements(names.scan_base_item_names(original), [
+        {'metadata_path':'Metadata/Items/TowerAugment/BreachAugment', 'new_name':legacy_name}
+    ], '=', False, 'append', False)
+    labelled = names.apply_replacements_append(original, replacements)
+    redirected, _ = m._redirect_tablet_base_items(labelled, {'Breach'})
+    entries = {
+        refs.ENGLISH_BASEITEMS: redirected,
+        'metadata/items/toweraugments/poe2price/breach.it':
+            b'Mods\n{\nstat_description_list = "test.csd"\n}\n',
+        'test.csd': csd().encode(),
+    }
+    with pytest.raises(ValueError, match='English BaseType.*item filters'):
+        refs.validate_resources(entries)
+    cleaned = refs.clean_tablet_names(redirected)
+    entries[refs.ENGLISH_BASEITEMS] = cleaned
+    refs.validate_resources(entries)
+    assert [e.name for e in names.scan_base_item_names(cleaned)] == [
+        'Ritual Tablet', 'Breach Tablet', 'Exalted Orb']
+    layout = names.detect_base_item_layout(cleaned)
+    for row in range(layout.row_count):
+        at = 4 + row * layout.row_size + 40
+        assert cleaned[at:at+8] == redirected[at:at+8]
+    assert refs.clean_tablet_names(cleaned) == cleaned
+
+
+def test_filter_validator_also_rejects_prices_on_non_tablet_english_bases():
+    original = synthetic_baseitems(english=True)
+    replacements, _ = names.build_replacements(names.scan_base_item_names(original), [
+        {'metadata_path':'Metadata/Items/Currency/CurrencyAddModToRare', 'new_name':'Exalted Orb=2D'}
+    ], '=', False, 'append', False)
+    with pytest.raises(ValueError, match='English BaseType.*Exalted Orb'):
+        refs.validate_resources({refs.ENGLISH_BASEITEMS:names.apply_replacements_append(original, replacements)})
+
+
 def test_api_available_without_templates_still_updates_ninja_names(tmp_path):
     source = tmp_path/'source.dat'; source.write_bytes(synthetic_baseitems())
     patched = tmp_path/'patched.dat'; patched.write_bytes(source.read_bytes())
     archive = tmp_path/'patch.zip'
     with zipfile.ZipFile(archive,'w') as z:
-        z.writestr('data/balance/baseitemtypes.datc64', source.read_bytes())
+        z.writestr('data/balance/traditional chinese/baseitemtypes.datc64', source.read_bytes())
         z.writestr('metadata/items/toweraugments/poe2price/ritual.it', b'old')
     class Both:
         def get_json(self, url):
@@ -527,11 +571,11 @@ def test_api_available_without_templates_still_updates_ninja_names(tmp_path):
                 {'baseType':'Ritual Tablet','variant':'Normal','primaryValue':1,'listingCount':10,'corrupted':False}]}
     report = m.build_tablet_affix_resources(client=Both(),api_base='http://unused',league=LEAGUE,
         template_it=None,template_csd=None,source_baseitems=source,patched_baseitems=patched,
-        output_zip=archive,game_path='data/balance/baseitemtypes.datc64',resource_report=tmp_path/'report.json')
+        output_zip=archive,game_path='data/balance/traditional chinese/baseitemtypes.datc64',resource_report=tmp_path/'report.json')
     assert report['status'] == 'partial' and report['affix_templates']['status'] == 'unavailable'
     assert report['api']['status'] == report['poe_ninja_precursor_tablets']['status'] == 'ok'
     with zipfile.ZipFile(archive) as z:
-        assert z.namelist() == ['data/balance/baseitemtypes.datc64']
+        assert z.namelist() == ['data/balance/traditional chinese/baseitemtypes.datc64']
         assert names.scan_base_item_names(z.read(z.namelist()[0]))[0].name == '[1.00D|祭祀碑牌]'
 
 
@@ -655,7 +699,8 @@ def test_all_affix_lines_are_priced_in_shared_magic_and_rare_descriptions(tmp_pa
 
 @pytest.mark.parametrize('old_magic', [False, True])
 @pytest.mark.parametrize('statistic', ['low_sample_median', 'min'])
-def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_path, old_magic, statistic):
+@pytest.mark.parametrize('english_target', [False, True])
+def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_path, old_magic, statistic, english_target):
     class SplitClient:
         def __init__(self):
             self.urls = []
@@ -676,7 +721,11 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
             payload['snapshot']['stale'] = old_magic and rarity == 'magic'
             return payload
 
-    source = tmp_path / 'base.dat'; source.write_bytes(synthetic_baseitems())
+    english = tmp_path / 'english.dat'
+    legacy, _ = m.price_tablet_names(synthetic_baseitems(english=True), {'Ritual_Tablet':selected('0.24D')})
+    english.write_bytes(legacy)
+    source = tmp_path / 'base.dat'; source.write_bytes(legacy if english_target else synthetic_baseitems())
+    game_path = refs.ENGLISH_BASEITEMS if english_target else 'data/balance/traditional chinese/baseitemtypes.datc64'
     patched = tmp_path / 'patched.dat'; patched.write_bytes(source.read_bytes())
     template = tmp_path / 'template.it'
     template.write_text('Mods\n{\nstat_description_list = "Data/StatDescriptions/tablet_stat_descriptions.csd"\n'
@@ -685,7 +734,7 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
     descriptions = tmp_path / 'tablet.csd'; descriptions.write_bytes(csd().encode())
     archive = tmp_path / 'patch.zip'
     with zipfile.ZipFile(archive, 'w') as z:
-        z.writestr('data/balance/traditional chinese/baseitemtypes.datc64', source.read_bytes())
+        z.writestr(game_path, source.read_bytes())
 
     client = SplitClient()
     report = m.build_tablet_affix_resources(
@@ -693,7 +742,8 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
             template_it=template, template_csd=descriptions,
             source_baseitems=source, patched_baseitems=patched,
             output_zip=archive,
-            game_path='data/balance/traditional chinese/baseitemtypes.datc64',
+            game_path=game_path,
+            english_baseitems=source if english_target else english,
             resource_report=tmp_path / 'report.json',
             **game_tables(tmp_path),
         )
@@ -709,6 +759,15 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
     assert report['resources'][0]['matched'] == 1 and report['redirected_items'] == 1
     assert report['game_mapping'][0]['stat'] == 'test_stat'
     with zipfile.ZipFile(archive) as z:
+        refs.validate_resources({p:z.read(p) for p in z.namelist()})
+        english_data = z.read(refs.ENGLISH_BASEITEMS)
+        assert [e.name for e in names.scan_base_item_names(english_data)] == [
+            'Ritual Tablet', 'Breach Tablet', 'Exalted Orb']
+        layout = names.detect_base_item_layout(english_data)
+        pointer = struct.unpack_from('<Q', english_data, 4 + 40)[0]
+        assert names.read_string_offset(english_data, layout, pointer)[0] == 'Metadata/Items/TowerAugments/Poe2Price/Ritual'
+        if not english_target:
+            assert names.scan_base_item_names(z.read(game_path))[0].name == '[1.00D|祭祀碑牌]'
         text = z.read('data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd').decode()
         it = z.read('metadata/items/toweraugments/poe2price/ritual.it').decode()
         assert text.count('=1~2D') == 2

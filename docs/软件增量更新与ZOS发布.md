@@ -1,6 +1,8 @@
 # 软件增量更新与 ZOS 发布
 
-正式主应用版本为 0.9.3。软件更新和每小时物价更新是两个独立功能。
+正式主应用版本为 0.9.4。软件更新和每小时物价更新是两个独立功能。
+
+v0.9.4 提供 v0.9.2 增量包和完整更新包。旧 v0.9.3 的 GitHub 与在线更新发行有 7 个文件哈希差异，因此 v0.9.3 使用完整更新包兼容两种发行；保留严格的增量基线校验，不放宽哈希检查。GitHub 与 ZOS 发布字节相同的增量 ZIP、完整更新 ZIP 和签名清单。
 
 v0.9.3 优先通过 GitHub 国内主源、备用源读取签名清单和专用增量包，全部失败后使用 ZOS。已发布的 v0.9.2 仍按其原配置从 ZOS 升级，升级后采用新的来源顺序。GitHub 提供完整安装包、免安装包和增量包；ZOS 只存放本次增量包及签名更新清单，不上传完整发行包或完整更新包。
 
@@ -50,13 +52,13 @@ $UpdateDownloadBase = Read-Host '公开 HTTPS 下载目录'
 npm run updates:build -- --from $UpdateOldBuild --to $UpdateNewBuild --out $UpdateOutput --base-url $UpdateDownloadBase --key '.\.release-keys\update-private.pem' --notes '.\resources\current-release.json' --delta-only
 ```
 
-正式 v0.9.3 使用 `--delta-only`，必须提供保存的正式 v0.9.2 基线。输出为 `*-delta.zip`、签名 `latest.json` 和维护者使用的 `release-info.json`。不生成或上传 `*-full.zip`。没有匹配基线的旧客户端通过 GitHub 完整安装包或免安装包手动升级。
+正式 v0.9.4 使用保存的正式 v0.9.2 基线，运行上面的命令时去掉 `--delta-only`，同时生成增量包和完整更新包。基线必须先与公开发行资源或已签名更新包的目标文件逐项核对。输出为 `*-delta.zip`、`*-full.zip`、签名 `latest.json` 和维护者使用的 `release-info.json`。没有匹配版本增量的客户端自动选择完整更新包；同版本发行被自行改动导致增量校验失败时，使用 Setup 或免安装版手动升级。
 
 ## 上传与公布
 
-同一个正式版本应在 GitHub `v版本号` Release 和 ZOS 放置**字节完全相同**的签名 `latest.json` 与 `*-delta.zip`。ZOS 不上传 Setup、NoInstall 或 full 更新包。免安装 ZIP 和 Setup EXE 不能代替专用更新包。沿用现有构建命令的 ZOS `--base-url` 即可，无需为镜像重新签名或改写清单。
+同一个正式版本应在 GitHub `v版本号` Release 和 ZOS 放置**字节完全相同**的签名 `latest.json` 及清单引用的全部更新 ZIP。ZOS 不上传 Setup 或 NoInstall；v0.9.4 上传完整更新包以兼容旧版基线差异。免安装 ZIP 和 Setup EXE 不能代替专用更新包。沿用现有构建命令的 ZOS `--base-url` 即可，无需为镜像重新签名或改写清单。
 
-先用最终签名包完成隔离的真实升级测试，再准备 GitHub 草稿 Release 并上传文件，按下述流程上传和校验 ZOS，最后发布 GitHub 正式 Release。不要覆盖已经发布的版本，也不要复用旧的轻量测试发行目录。新客户端下载时会优先尝试国内镜像；镜像尚未同步时自动使用已经可用的 ZOS。
+先用最终签名包完成隔离的真实升级测试，再准备 GitHub 草稿 Release 并上传文件，按下述流程上传和校验 ZOS，最后发布 GitHub 正式 Release。标签 CI 遇到已有 Release 时保留其文件与草稿状态，避免重新打包覆盖已经签名绑定的发行基线。不要覆盖已经发布的版本，也不要复用旧的轻量测试发行目录。新客户端下载时会优先尝试国内镜像；镜像尚未同步时自动使用已经可用的 ZOS。
 
 先上传版本 ZIP，核对大小和 SHA-256，并确认匿名 HTTPS 可以下载；**最后上传 `latest.json`**。清单包含 `schema`、`payload`、`signature`，不能手动改内容。发布工具默认拒绝用不同内容覆盖同名版本包。
 
@@ -83,7 +85,7 @@ Setup 安装包和免安装 ZIP 可单独提供，供首次安装和手动修复
 
 ## 安装与失败恢复
 
-客户端验证清单签名、下载大小、SHA-256、ZIP 路径和文件清单；增量包还要核验全部旧发行文件。基线不符会停止安装。v0.9.3 清单只提供 v0.9.2 增量包；无匹配增量时需要手动安装 GitHub 完整发行版。
+客户端验证清单签名、下载大小、SHA-256、ZIP 路径和文件清单；增量包还要核验全部旧发行文件。基线不符会停止安装。v0.9.4 清单提供 v0.9.2 增量包；v0.9.3 及其他无匹配增量的版本选择完整更新包。
 
 物价任务或查询未结束时禁止安装软件更新。安装器等待旧程序退出，备份涉及文件、替换并校验完整目标。新版界面初始化成功后回传健康回执；失败会尝试恢复旧文件。游戏文件、用户设置和发行清单外的玩家文件不属于软件替换范围。
 
@@ -110,7 +112,7 @@ node --import tsx scripts/verify-software-updates.ts
 发布前可用正式签名包在本地 HTTPS 暂存服务完成真实升级，而不改写基线或公布版本：
 
 ```powershell
-node --import tsx scripts/verify-zos-software-updates.ts --baseline ../release-desktop/baselines/0.9.2/win-unpacked --target ../release-desktop/v0.9.3-release/win-unpacked --release-dir ../release-desktop/v0.9.3-release/poe-updates --report-dir test-results/release-093-local-upgrade
+node --import tsx scripts/verify-zos-software-updates.ts --baseline ../release-desktop/baselines/0.9.2/win-unpacked --target ../release-desktop/v0.9.4/win-unpacked --release-dir ../release-desktop/v0.9.4/poe-updates --report-dir test-results/release-094-local-upgrade
 ```
 
 该参数只在隔离测试进程中将两个确切的下载地址转向本地 HTTPS，正式包、签名及基线字节保持原样。发布后去掉 `--release-dir` 并使用单独的报告目录，即可检查生产 ZOS 下载、安装、重启及完整目标文件哈希。
