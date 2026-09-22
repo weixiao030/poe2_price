@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const packaged = process.argv.includes('--packaged')
+const appIndex = process.argv.indexOf('--app-dir')
+const appDirectory = appIndex >= 0 ? path.resolve(process.argv[appIndex + 1]) : path.join(root, 'dist/win-unpacked')
 const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-update-recovery-'))
 const profile = path.join(sandbox, 'profile')
 const config = path.join(profile, 'desktop-settings.json')
@@ -14,7 +16,7 @@ const game = path.join(sandbox, 'Path of Exile 2')
 const engine = path.join(profile, 'engine')
 await fs.mkdir(path.join(game, 'Bundles2'), { recursive: true })
 await fs.writeFile(path.join(game, 'Bundles2/_.index.bin'), 'inert fixture, never patched')
-await fs.cp(path.join(root, '.runtime'), engine, { recursive: true })
+await fs.cp(packaged ? path.join(appDirectory, 'resources/engine') : path.join(root, '.runtime'), engine, { recursive: true })
 const manifest = JSON.parse(await fs.readFile(path.join(engine, 'manifest.json'), 'utf8'))
 await fs.writeFile(path.join(engine, '.ready'), manifest.id)
 // Only the disposable profile contains this sentinel. The production worker still
@@ -62,7 +64,7 @@ let application
 const evidence = { packaged, sandbox, checks: [] }
 async function launch() {
   application = await electron.launch({
-    ...(packaged ? { executablePath: path.join(root, 'dist/win-unpacked/物价补丁.exe') } : {}),
+    ...(packaged ? { executablePath: path.join(appDirectory, '物价补丁.exe') } : {}),
     args: [...(packaged ? [] : [root]), '--hidden'],
     env,
     timeout: 30000
