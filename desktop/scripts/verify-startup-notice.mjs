@@ -10,6 +10,9 @@ import { dump } from 'js-yaml'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { version } = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
+const [major, minor, patch] = version.split('.').map(Number)
+const nextVersion = `${major}.${minor}.${patch + 1}`
+const laterVersion = `${major}.${minor}.${patch + 2}`
 const sandbox = await fs.mkdtemp(path.join(os.tmpdir(), 'poe-startup-notice-'))
 const profile = path.join(sandbox, 'profile')
 const evidence = path.resolve(root, '../verification/desktop-v' + version + '/startup-notice')
@@ -101,7 +104,7 @@ async function close() {
   app = undefined
 }
 try {
-  await feed('1.0.2')
+  await feed(nextVersion)
   await launch()
   const notice = page.getByRole('complementary', { name: '发现软件更新' })
   await notice.waitFor()
@@ -126,7 +129,7 @@ try {
   assert.equal(
     JSON.parse(await fs.readFile(path.join(profile, 'software-updates/notice.json'), 'utf8'))
       .ignoredVersion,
-    '1.0.2'
+    nextVersion
   )
   checks.push('Hover keeps actions available; light/dark/compact layouts; ignored version saved')
   await close()
@@ -134,11 +137,11 @@ try {
   await launch()
   assert.equal(await page.getByRole('complementary', { name: '发现软件更新' }).count(), 0)
   await page.getByRole('button', { name: '检查更新', exact: true }).click()
-  await page.getByRole('heading', { name: '新版本 v1.0.2', exact: true }).waitFor()
+  await page.getByRole('heading', { name: `新版本 v${nextVersion}`, exact: true }).waitFor()
   checks.push('Ignored release stays quiet after restart, remains visible in manual updates')
   await close()
 
-  await feed('1.0.3')
+  await feed(laterVersion)
   await launch(true)
   await app.evaluate(async () => {
     for (let n = 0; n < 100 && globalThis.noticeRequests.length < 2; n++)
@@ -158,7 +161,7 @@ try {
   await launch()
   assert.equal(await page.getByRole('complementary', { name: '发现软件更新' }).count(), 0)
   await close()
-  await feed('1.0.3', true)
+  await feed(laterVersion, true)
   await launch()
   assert.equal(await page.getByRole('complementary', { name: '发现软件更新' }).count(), 0)
   assert.equal(await page.getByRole('heading', { name: '物价补丁', exact: true }).count(), 1)
