@@ -137,6 +137,7 @@ try {
     'onSnapshot',
     'getSoftwareUpdate',
     'checkSoftwareUpdate',
+    'dismissSoftwareUpdateNotice',
     'downloadSoftwareUpdate',
     'installSoftwareUpdate',
     'cancelSoftwareUpdate',

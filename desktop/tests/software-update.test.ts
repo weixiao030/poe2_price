@@ -220,6 +220,43 @@ async function fixture(t: TestContext, current = '1.0.0') {
   }
 }
 
+test('startup checks once, never downloads, and persists only the ignored release across restarts', async (t) => {
+  const f = await fixture(t)
+  await f.updater.checkAtStartup()
+  assert.equal(f.updater.snapshot.startupNotificationVersion, '2.4.0')
+  const requests = f.requests.length
+  await f.updater.checkAtStartup()
+  assert.equal(f.requests.length, requests)
+  assert.ok(f.requests.every(r => !r.endsWith(':installer')))
+  assert.equal(f.installs(), 0)
+  await f.updater.dismissNotice('2.4.0', true)
+  assert.equal(f.updater.snapshot.startupNotificationVersion, undefined)
+  const restarted = new SoftwareUpdater(f.options)
+  await restarted.checkAtStartup()
+  assert.equal(restarted.snapshot.status, 'available')
+  assert.equal(restarted.snapshot.startupNotificationVersion, undefined)
+  assert.equal((await restarted.check()).release?.version, '2.4.0')
+  await fs.writeFile(path.join(f.options.stateRoot, 'notice.json'), JSON.stringify({ ignoredVersion: '2.3.9' }))
+  const next = new SoftwareUpdater(f.options)
+  await next.checkAtStartup()
+  assert.equal(next.snapshot.startupNotificationVersion, '2.4.0')
+  await next.dismissNotice('2.4.0', false)
+  const nextRestart = new SoftwareUpdater(f.options)
+  await nextRestart.checkAtStartup()
+  assert.equal(nextRestart.snapshot.startupNotificationVersion, '2.4.0')
+})
+
+test('startup check failure and current releases do not create a notice', async (t) => {
+  const f = await fixture(t, '2.4.0')
+  await f.updater.checkAtStartup()
+  assert.equal(f.updater.snapshot.startupNotificationVersion, undefined)
+  for (const source of ['primary', 'backup', 'zos']) f.modes[source] = 'offline'
+  const offline = new SoftwareUpdater(f.options)
+  await offline.checkAtStartup()
+  assert.equal(offline.snapshot.status, 'error')
+  assert.equal(offline.snapshot.startupNotificationVersion, undefined)
+})
+
 for (const current of ['1.0.0', '1.0.7', '1.9.0', '2.0.0']) {
   test(`${current} downloads the same complete 2.4.0 without intermediate releases or inventories`, async (t) => {
     const f = await fixture(t, current)

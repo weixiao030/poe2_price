@@ -39,6 +39,7 @@ export class SoftwareUpdater {
   private state: SoftwareUpdateState
   private abort?: AbortController
   private downloaded?: string
+  private startupCheckStarted = false
   private readonly receiptPath: string
   constructor(private options: UpdateOptions) {
     const configured =
@@ -66,6 +67,31 @@ export class SoftwareUpdater {
   }
   private fail(error: unknown) {
     this.set({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+  }
+  async checkAtStartup() {
+    if (this.startupCheckStarted) return
+    this.startupCheckStarted = true
+    let ignoredVersion: unknown
+    try {
+      ignoredVersion = JSON.parse(
+        await fs.readFile(path.join(this.options.stateRoot, 'notice.json'), 'utf8')
+      ).ignoredVersion
+    } catch {
+      /* Missing or damaged preferences must not prevent checking. */
+    }
+    const result = await this.check()
+    if (result.status === 'available' && result.release?.version !== ignoredVersion)
+      this.set({ startupNotificationVersion: result.release!.version })
+  }
+  async dismissNotice(version: string, ignore: boolean) {
+    if (version !== this.state.startupNotificationVersion) return
+    if (ignore) {
+      await fs.mkdir(this.options.stateRoot, { recursive: true })
+      const destination = path.join(this.options.stateRoot, 'notice.json')
+      await fs.writeFile(destination + '.new', JSON.stringify({ ignoredVersion: version }), 'utf8')
+      await fs.rename(destination + '.new', destination)
+    }
+    this.set({ startupNotificationVersion: undefined })
   }
   private async fetchBytes(url: string, limit: number, signal: AbortSignal): Promise<Buffer> {
     for (let redirect = 0; redirect <= 4; redirect++) {

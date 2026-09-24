@@ -16,6 +16,7 @@ import {
   useMessage
 } from 'naive-ui'
 import { useAppStore } from './stores/app'
+import UpdateNotice from './components/UpdateNotice.vue'
 import type { AppSettings, GameVersion, Operation, OperationResult, PatchRequest } from '../shared/types'
 const HistoryPage = defineAsyncComponent(() => import('./components/HistoryPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'))
@@ -200,6 +201,7 @@ onUnmounted(() => {
 
 <template>
   <div class="shell">
+    <UpdateNotice @open="page = 'updates'" />
     <aside class="sidebar">
       <div class="brand">
         <img src="./icon.png" alt="" />

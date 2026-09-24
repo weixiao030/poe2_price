@@ -30,6 +30,7 @@ export interface SoftwareUpdateState {
   currentNotes: string[]
   release?: SoftwareRelease
   checkedAt?: string
+  startupNotificationVersion?: string
   downloadedBytes: number
   totalBytes: number
   message: string

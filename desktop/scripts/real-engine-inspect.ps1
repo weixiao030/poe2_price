@@ -13,7 +13,11 @@ if($Info.UniqueNameIndexPath){$Paths+=@($Info.UniqueNameIndexPath)}
 $Paths=@($Paths | Where-Object {$_} | Select-Object -Unique)
 $List=Join-Path $OutputDirectory 'paths.txt'
 [IO.File]::WriteAllLines($List,$Paths,(New-Object Text.UTF8Encoding($false)))
-& (Join-Path $Engine 'tools/BundleExtractor/BundleExtractor.exe') --extract-ggpk-list (Join-Path $GameDirectory 'Content.ggpk') $List $OutputDirectory
+if ($Info.Mode -eq 'GGPK') {
+ & (Join-Path $Engine 'tools/BundleExtractor/BundleExtractor.exe') --extract-ggpk-list (Join-Path $GameDirectory 'Content.ggpk') $List $OutputDirectory
+} else {
+ & (Join-Path $Engine 'tools/BundleExtractor/BundleExtractor.exe') --extract-list (Join-Path $GameDirectory 'Bundles2/_.index.bin') $List $OutputDirectory
+}
 if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
 $Results=for($i=0;$i -lt $Paths.Count;$i++){
  $File=Join-Path $OutputDirectory ($i.ToString('D6')+'.bin')

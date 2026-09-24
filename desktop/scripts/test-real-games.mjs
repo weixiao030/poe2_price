@@ -13,6 +13,8 @@ const args = process.argv.slice(2)
 const appIndex = args.indexOf('--app-dir')
 const appDirectory =
   appIndex < 0 ? path.join(root, 'dist/win-unpacked') : path.resolve(args.splice(appIndex, 2)[1])
+const gameIndex = args.indexOf('--game-dir')
+const explicitGameDirectory = gameIndex < 0 ? undefined : path.resolve(args.splice(gameIndex, 2)[1])
 const cases = args
 if (!cases.length)
   throw new Error('Specify real test cases: poe1-all poe2-currency poe1-restore ...')
@@ -46,7 +48,7 @@ try {
   for (const name of cases) {
     const [gameVersion, mode, ...languageParts] = name.split('-')
     const language = languageParts.join('-') || 'auto'
-    const gameDirectory = gameVersion === 'poe1' ? 'D:\\poe1' : 'D:\\poe2'
+    const gameDirectory = explicitGameDirectory || (gameVersion === 'poe1' ? 'D:\\poe1' : 'D:\\poe2')
     const operation = ['restore', 'localize'].includes(mode) ? mode : 'update'
     const patchScope = operation === 'update' ? mode : 'all'
     current = path.join(

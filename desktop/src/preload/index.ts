@@ -8,6 +8,7 @@ function subscribe<T>(channel: string, callback: (event: T) => void) {
 const api: DesktopApi = {
   getSoftwareUpdate: () => ipcRenderer.invoke('software:state'),
   checkSoftwareUpdate: () => ipcRenderer.invoke('software:check'),
+  dismissSoftwareUpdateNotice: (version, ignore) => ipcRenderer.invoke('software:dismiss-notice', version, ignore),
   downloadSoftwareUpdate: () => ipcRenderer.invoke('software:download'),
   installSoftwareUpdate: () => ipcRenderer.invoke('software:install'),
   cancelSoftwareUpdate: () => ipcRenderer.invoke('software:cancel'),

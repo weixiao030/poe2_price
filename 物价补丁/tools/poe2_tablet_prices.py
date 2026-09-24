@@ -90,11 +90,14 @@ class Quote:
     price_statistic: str = "median"
 
 
-def trade_query_scope(url, rarity):
+def trade_query_scope(url, rarity, server="international", league=None):
     """Compare the actual search, removing only the requested item rarity."""
     try:
         parsed = urllib.parse.urlparse(str(url))
-        if parsed.hostname != 'www.pathofexile.com' or not parsed.path.startswith('/trade2/search/poe2/'):
+        host = {'international': 'www.pathofexile.com', 'cn': 'poe.game.qq.com'}.get(server)
+        if parsed.hostname != host or not parsed.path.startswith('/trade2/search/poe2/'):
+            return ''
+        if league and urllib.parse.unquote(parsed.path.split('/')[-2]) != league:
             return ''
         token = parsed.path.rsplit('/', 1)[-1]
         if len(token) > 65536:
@@ -108,7 +111,10 @@ def trade_query_scope(url, rarity):
         if query['filters']['type_filters']['filters']['rarity'].pop('option') != rarity:
             return ''
         # League and game context remain part of the comparison.
-        return json.dumps([parsed.path.rsplit('/', 1)[0], query], sort_keys=True, separators=(',', ':'))
+        context = parsed.path.rsplit('/', 1)[0]
+        if server == 'cn':
+            context = parsed.hostname + context
+        return json.dumps([context, query], sort_keys=True, separators=(',', ':'))
     except (ValueError, KeyError, TypeError, OSError, EOFError):
         return ''
 
@@ -263,10 +269,33 @@ class TabletSnapshotError(ValueError):
     """A successful response contains an unavailable or inconsistent snapshot."""
 
 
+def resolve_cn_tablet_league(client, api_base, season="", current=True):
+    """Resolve the CN trade name; never substitute an international season."""
+    query = urllib.parse.urlencode(dict(server='cn', category='tablet', rarity='rare'))
+    payload = client.get_json(api_base.rstrip('/') + '/api/v1/leagues?' + query)
+    if payload.get('server') != 'cn' or payload.get('stale') is not False:
+        raise ValueError('国服碑牌赛季目录不可用')
+    # Historical provider IDs have stable published trade-name equivalents.
+    aliases = {'RunesofAldur': '奥杜尔秘符', 'standard': '永久'}
+    rows = [r for r in payload.get('data', []) if r.get('hardcore') is False]
+    matches = [r for r in rows if season and season in (r.get('source_season'), r.get('name'), r.get('slug'))]
+    if not matches and season in aliases:
+        matches = [r for r in rows if r.get('name') == aliases[season]]
+    if not matches and current and (not season or season == payload.get('source_season')):
+        matches = [r for r in rows if r.get('name') == payload.get('default') and r.get('current') is True]
+    if len(matches) != 1 or not matches[0].get('name'):
+        raise ValueError(f'国服碑牌目录没有唯一匹配的赛季：{season or "当前赛季"}')
+    return matches[0]['name']
+
+
 def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_stale=False,
                              allow_stale_snapshot=False, snapshot_retries=0, on_retry=None,
-                             cache_dir=None):
+                             cache_dir=None, server="international"):
+    if server not in {'international', 'cn'}:
+        raise ValueError('unsupported tablet server')
     identity = {'api_base':api_base.rstrip('/'), 'league':league, 'rarity':rarity}
+    if server == 'cn':
+        identity.update(server=server, view='live')
     cache_key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     cache_path = Path(cache_dir) / (cache_key + '.json') if cache_dir else None
     pages = {}
@@ -277,7 +306,7 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
             return result
     try:
         prices, report = _fetch_tablet_with_retry(RecordingClient(), api_base, league, rarity,
-            allow_stale, allow_stale_snapshot, snapshot_retries, on_retry)
+            allow_stale, allow_stale_snapshot, snapshot_retries, on_retry, server)
         if not prices and cache_path and cache_path.exists():
             raise TabletSnapshotError('tablet snapshot contains no usable prices')
     except Exception as live_error:
@@ -290,7 +319,7 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
             class CachedClient:
                 def get_json(self, url): return cached['pages'][url]
             prices, report = _fetch_tablet_affix_snapshot(CachedClient(), api_base, league, rarity,
-                allow_stale, allow_stale_snapshot)
+                allow_stale, allow_stale_snapshot, server)
             if not prices:
                 raise ValueError('cached tablet snapshot contains no usable prices')
         except Exception as cache_error:
@@ -322,7 +351,7 @@ def fetch_tablet_affix_prices(client, api_base, league, rarity="rare", allow_sta
 
 
 def _fetch_tablet_with_retry(client, api_base, league, rarity, allow_stale,
-                            allow_stale_snapshot, snapshot_retries, on_retry):
+                            allow_stale_snapshot, snapshot_retries, on_retry, server="international"):
     # HTTP failures already have a deadline and retries in the transport client.
     # Restart pagination only for transient snapshot failures, never mix pages.
     import time
@@ -330,7 +359,7 @@ def _fetch_tablet_with_retry(client, api_base, league, rarity, allow_stale,
     for attempt in range(max(0, min(2, snapshot_retries)) + 1):
         try:
             prices, report = _fetch_tablet_affix_snapshot(
-                client, api_base, league, rarity, allow_stale, allow_stale_snapshot)
+                client, api_base, league, rarity, allow_stale, allow_stale_snapshot, server)
             if not prices and snapshot_retries:
                 raise TabletSnapshotError('tablet snapshot contains no usable prices')
             report.update(snapshot_attempts=attempt + 1, snapshot_retry_reasons=reasons)
@@ -348,29 +377,55 @@ def _fetch_tablet_with_retry(client, api_base, league, rarity, allow_stale,
 
 
 def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
-                               allow_stale_snapshot):
+                               allow_stale_snapshot, server="international"):
     if not league:
         raise ValueError("tablet league is required")
     if rarity not in {"magic", "rare"}:
         raise ValueError("tablet rarity must be magic or rare")
     result = {}; offset = 0; snapshot = None; total = None; seen = set(); pages = 0; rates = {}
+    revision = None
     while True:
-        query = urllib.parse.urlencode(dict(
-            server="international", category="tablet", rarity=rarity,
+        params = dict(
+            server=server, category="tablet", rarity=rarity,
             league=league, display_currency="exalted", sort="name",
             limit=200, offset=offset,
-        ))
+        )
+        if server == 'cn':
+            params['view'] = 'live'
+        query = urllib.parse.urlencode(params)
         payload = client.get_json(api_base.rstrip('/') + '/api/v1/prices?' + query)
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
             raise TabletSnapshotError("invalid tablet prices response")
         state = payload.get("snapshot") or {}
         exchange = payload.get("exchange_rates") or {}
+        partial = payload.get('partial_snapshot') or {}
+        if server == 'cn':
+            expected = dict(server=server, category='tablet', rarity=rarity, league=league)
+            for section in (payload, payload.get('scope') or {}, state, partial, state.get('config') or {}):
+                if section and any(k in section and section[k] != v for k, v in expected.items()):
+                    raise ValueError('tablet API market does not match selection')
+            if (payload.get('server') != server or exchange.get('server') != server
+                    or any(s and s.get('server', (s.get('config') or {}).get('server')) != server
+                           for s in (state, partial))):
+                raise ValueError('tablet API response does not identify the CN market')
+            live_revision = (state.get('id'), partial.get('id'), partial.get('revision'), exchange.get('id'))
+            if revision is not None and revision != live_revision:
+                raise TabletSnapshotError('tablet live revision changed during pagination')
+            revision = live_revision
+            if not state and partial:
+                # The API exposes only validated rows in the live view. A full
+                # collection can be incomplete because unrelated modifiers failed.
+                stamp = datetime.fromisoformat(partial.get('last_batch_at') or partial.get('updated_at') or '')
+                age = (datetime.now(timezone.utc) - stamp).total_seconds()
+                state = {**partial, 'stale': not 0 <= age <= 14400,
+                         'config': {'rarity': rarity, 'server': server},
+                         'published_at': partial.get('updated_at')}
         if (state.get("league") != league or exchange.get("league") != league):
             raise ValueError("tablet API league does not match selection")
         config = state.get("config") or {}
         if payload.get("rarity") is None and config.get("rarity") is None:
             raise ValueError("tablet API response does not identify its rarity")
-        if (payload.get("server") is not None and payload.get("server") != "international"
+        if (payload.get("server") is not None and payload.get("server") != server
                 or payload.get("category") is not None and payload.get("category") != "tablet"
                 or payload.get("rarity") is not None and payload.get("rarity") != rarity
                 or config.get("rarity") is not None and config.get("rarity") != rarity):
@@ -387,14 +442,23 @@ def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
         if total <= 0 or total > 12000 or int(payload.get("offset", -1)) != offset:
             raise TabletSnapshotError("invalid tablet pagination")
         current_rates = {k: decimal(v) for k, v in exchange.get("values", {}).items()}
+        if exchange.get('primary', 'divine') != 'divine':
+            divine = current_rates.get('divine', Decimal(0))
+            if divine <= 0:
+                raise ValueError('tablet Divine exchange rate is missing')
+            current_rates = {k: v / divine for k, v in current_rates.items()}
         current_rates["divine"] = Decimal(1)
         if rates and rates != current_rates:
             raise TabletSnapshotError("tablet exchange rates changed during pagination")
         rates = current_rates
         for row in payload["data"]:
             if any(row.get(k) is not None and row[k] != v for k, v in
-                   (('server','international'), ('category','tablet'), ('rarity',rarity))):
+                   (('server',server), ('category','tablet'), ('rarity',rarity), ('league',league))):
                 raise ValueError('tablet row market does not match the requested rarity')
+            if server == 'cn' and row.get('server') != server:
+                raise ValueError('tablet row does not identify the CN market')
+            if (row.get('converted') or {}).get('rate_id') not in (None, exchange.get('id')):
+                raise TabletSnapshotError('tablet row uses a different exchange rate revision')
             identifier = row.get("id")
             if not identifier or identifier in seen:
                 raise TabletSnapshotError("tablet pagination contains missing or duplicate IDs")
@@ -416,7 +480,7 @@ def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
                 identifier=identifier, name=str(row.get('name_en') or ''),
                 generation=str(row.get('generation') or ''),
                 price_statistic=statistic,
-                query_scope=trade_query_scope(row.get('trade_url'), rarity),
+                query_scope=trade_query_scope(row.get('trade_url'), rarity, server, league),
                 sample_currencies=tuple((unit, int(sample.get('count', 0)))
                     for unit, sample in (row.get('prices') or {}).items()
                     if isinstance(sample, dict) and isinstance(sample.get('count', 0), int) and sample.get('count', 0) > 0)))
@@ -425,7 +489,8 @@ def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
             break
         if not size or offset > total or pages >= 60:
             raise TabletSnapshotError("incomplete tablet snapshot")
-    return result, {"league": league, "rarity": rarity, "snapshot": snapshot, "pages": pages, "total": total,
+    return result, {"server": server, "view": 'live' if server == 'cn' else 'complete',
+                    "partial_snapshot": partial, "league": league, "rarity": rarity, "snapshot": snapshot, "pages": pages, "total": total,
                     "rows": sum(map(len, result.values())), "rates": {k: str(v) for k, v in rates.items()},
                     "query_config": state.get("config", {}),
                     "published_at": state.get("published_at"),
@@ -686,15 +751,18 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
                                 source_baseitems, patched_baseitems, output_zip, game_path, resource_report,
                                 english_baseitems=None, template_map_csd=None, template_global_csd=None,
                                 allow_stale=False, tablet_mods=None, tablet_stats=None, tablet_tags=None,
-                                on_retry=None, cache_dir=None):
+                                on_retry=None, cache_dir=None, server="international",
+                                cn_season="", league_is_current=True):
     reports = {}; quotes_by_rarity = {}; ninja = {}
+    if server == 'cn':
+        league = resolve_cn_tablet_league(client, api_base, cn_season, league_is_current)
     api_reports = {}
     for rarity in ("magic", "rare"):
         try:
             quotes_by_rarity[rarity], api_reports[rarity] = fetch_tablet_affix_prices(
                 client, api_base, league, rarity=rarity, allow_stale=allow_stale,
                 allow_stale_snapshot=rarity == "magic", snapshot_retries=2, on_retry=on_retry,
-                cache_dir=cache_dir)
+                cache_dir=cache_dir, server=server)
             api_reports[rarity]['status'] = 'ok'
         except Exception as exc:
             api_reports[rarity] = {'status':'unavailable', 'rarity':rarity,
@@ -711,11 +779,12 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
         **next((r for r in api_reports.values() if r.get('status') == 'ok'), {}),
         'status': 'ok' if all(api_ok) else ('partial' if any(api_ok) else 'unavailable'),
     }
-    try:
-        ninja = fetch_poe_ninja_precursor_tablets(client, league)
-        reports['poe_ninja_precursor_tablets'] = ninja
-    except Exception as exc:
-        reports['poe_ninja_precursor_tablets'] = {'status':'unavailable', 'reason':f'{type(exc).__name__}: {exc}'}
+    if server == 'international':
+        try:
+            ninja = fetch_poe_ninja_precursor_tablets(client, league)
+            reports['poe_ninja_precursor_tablets'] = ninja
+        except Exception as exc:
+            reports['poe_ninja_precursor_tablets'] = {'status':'unavailable', 'reason':f'{type(exc).__name__}: {exc}'}
     rates = reports['api'].get('rates', {})
     ratio = 1 / decimal(rates['exalted']) if decimal(rates.get('exalted')) > 0 else decimal(ninja.get('divine_exalted'))
     if ratio <= 0 or not has_quotes and not ninja.get('prices'):
@@ -808,7 +877,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
     finally: Path(temporary).unlink(missing_ok=True)
     patched_baseitems.write_bytes(redirected)
     status = 'ok' if all(source.get('status') == 'ok' for source in reports.values()) else 'partial'
-    report = {'status':status, **reports, 'resources':resource_rows, 'redirected_items':count, 'base_names':named_rows,
+    report = {'status':status, 'server':server, 'league':league, **reports, 'resources':resource_rows, 'redirected_items':count, 'base_names':named_rows,
               'price_display':'ascending_magic_rare_prices', 'price_pairs':pair_audit, 'game_mapping':mapping,
               'merge_rule':{'relative_gap_max':'20% to 10%, log interpolation',
                             'anchors':'P75 and max(P95, 2*P75), from query-consistent pairs',

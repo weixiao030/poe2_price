@@ -3444,6 +3444,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--tablet-report", type=Path)
     parser.add_argument("--tablet-cache-dir", type=Path,
                         help="Persistent same-league tablet snapshots used only when the live source fails")
+    parser.add_argument("--tablet-cn-season", default="",
+                        help="Selected CN season ID, resolved independently of international reference prices")
     parser.add_argument(
         "--no-tablet-affixes",
         action="store_true",
@@ -4180,6 +4182,9 @@ def main(argv: list[str]) -> int:
                         tablet_tags=args.tablet_tags,
                         on_retry=progress,
                         cache_dir=args.tablet_cache_dir,
+                        server="cn" if args.price_source == "poecurrency-cn" else "international",
+                        cn_season=args.tablet_cn_season,
+                        league_is_current=args.league_is_current == "true",
                     )
                     tablet_result = summary["tablet_affixes"]
                     magic_source = tablet_result.get("api", {}).get("rarities", {}).get("magic", {})

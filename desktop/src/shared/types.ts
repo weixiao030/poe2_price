@@ -84,6 +84,7 @@ export interface AppSnapshot {
 export interface DesktopApi {
   getSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
   checkSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
+  dismissSoftwareUpdateNotice(version: string, ignore: boolean): Promise<void>
   downloadSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
   installSoftwareUpdate(): Promise<import('./software-update').SoftwareUpdateState>
   cancelSoftwareUpdate(): Promise<void>

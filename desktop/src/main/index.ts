@@ -553,6 +553,8 @@ else {
       handle('software:ui-ready', () => softwareUpdater!.uiReady())
       handle('software:state', () => softwareUpdater!.snapshot)
       handle('software:check', () => softwareUpdater!.check())
+      handle('software:dismiss-notice', (version: unknown, ignore: unknown) =>
+        softwareUpdater!.dismissNotice(text(version), boolean(ignore)))
       handle('software:download', () => softwareUpdater!.download())
       handle('software:install', () => softwareUpdater!.install())
       handle('software:cancel', () => softwareUpdater!.cancel())
@@ -687,6 +689,9 @@ else {
       createTray()
       if (pendingShowWindow || !process.argv.includes('--hidden')) createWindow()
       app.on('activate', showWindow)
+      // Checking is independent of renderer creation, game queries and hourly prices.
+      // A hidden tray startup checks too, but never creates a window or downloads.
+      void softwareUpdater.checkAtStartup().catch(error => log.warn('启动检查更新失败', error))
     })
     .catch((error) => {
       log.error(error)
