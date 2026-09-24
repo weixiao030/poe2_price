@@ -311,14 +311,17 @@ SPECIAL_HINTS_BY_RUMOUR = {
     "循环的尽头……": "蔓生丛林/梅德维德",
     "殒落群星……": "天陨荒原/八孔遗物",
     "陨落群星……": "天陨荒原/八孔遗物",
+    "坠落的星辰……": "天陨荒原/八孔遗物",
     "陨落的源头……": "无名之岛/奥尔罗斯",
     "堕落的起源……": "无名之岛/奥尔罗斯",
     "飲星者……": "隱密神廟/烏特雷",
     "最後倒下者……": "哀泣崖壁/沃拉娜",
     "圓環的終點……": "蔓延叢林/梅德偉",
     "殞落群星……": "殞空荒原/八孔遺物",
-    "墮落的起源……": "幽隱島嶼/奥尔罗斯",
+    "墮落的起源……": "幽隱島嶼/奧爾羅斯",
 }
+
+LEGACY_HINTS = {"幽隱島嶼/奥尔罗斯"}
 
 REWARD_HINT_LABELS = {
     "en": ("Gold", "Experience", "Unique Base Items", "Unique Items", "Boss Fight"),
@@ -341,12 +344,53 @@ SPECIAL_HINTS_BY_INDEX = {
     }
     for language_key, labels in REWARD_HINT_LABELS.items()
 }
+SPECIAL_HINTS_BY_INDEX["zh-cn"][13] = "天陨荒原/八孔遗物"
+SPECIAL_HINTS_BY_INDEX["zh-tw"][13] = "殞空荒原/八孔遺物"
+
+# Indices refer to RUMOUR_ROWS / ISLAND_HINTS, so translations share one rating.
+# Castaway, Untainted Paradise, The Fractured Lake and Moment of Zen are
+# intentionally ungraded. Boss maps keep the normal C grade.
+ISLAND_RATINGS = {
+    4: "C",   # Jade Isles / boss fight
+    5: "B",   # Barren Atoll
+    6: "C",   # Sprawling Jungle / Medved
+    7: "C",   # Mournful Cliffside / Vorana
+    8: "C",   # Secluded Temple / Uhtred
+    9: "C",   # Obscure Island / Olroth
+    10: "A",  # Stagnant Basin
+    11: "B",  # Exhumed Ruins
+    12: "B",  # Sloughed Gully
+    13: "S",  # Moor of Fallen Skies
+    14: "A",  # Craggy Peninsula
+    15: "B",  # Grazed Prairie
+    16: "B",  # Bleached Shoals
+    17: "A",  # Lush Isle
+    18: "A",  # Frigid Bluffs
+    19: "B",  # Scorched Cay
+}
+
+
+def add_island_rating(language_key: str, map_index: int, hint: str) -> str:
+    rating = ISLAND_RATINGS.get(map_index)
+    if rating is None:
+        return hint
+    suffix = {"zh-cn": "级", "zh-tw": "級"}.get(language_key, " ")
+    return f"{rating}{suffix}{hint}"
+
 
 TRAILING_HINT_RE = re.compile(r"^(?P<base>.+?)\((?P<hint>[^()\r\n]+)\)$")
 ALL_KNOWN_HINTS = {
     hint for hints in ISLAND_HINTS.values() for hint in hints
-} | set(SPECIAL_HINTS_BY_RUMOUR.values()) | {
+} | LEGACY_HINTS | set(SPECIAL_HINTS_BY_RUMOUR.values()) | {
     hint for hints in SPECIAL_HINTS_BY_INDEX.values() for hint in hints.values()
+}
+# Keep both old and rated spellings recognizable for upgrades and restoration.
+ALL_KNOWN_HINTS |= {
+    add_island_rating(language_key, map_index, hint)
+    for language_key, map_names in ISLAND_HINTS.items()
+    for map_index, map_name in enumerate(map_names)
+    for hint in ALL_KNOWN_HINTS
+    if hint.split("/", 1)[0] == map_name
 }
 
 
@@ -521,14 +565,13 @@ def strip_existing_hint(text: str) -> str:
 
 
 def expected_hint(language_key: str, map_index: int, base_text: str) -> str:
-    special = SPECIAL_HINTS_BY_RUMOUR.get(base_text)
-    if special:
-        return special
-    special_by_index = SPECIAL_HINTS_BY_INDEX.get(language_key, {})
-    if map_index in special_by_index:
-        return special_by_index[map_index]
-    hints = ISLAND_HINTS.get(language_key, ISLAND_HINTS["en"])
-    return hints[map_index]
+    hint = SPECIAL_HINTS_BY_RUMOUR.get(base_text)
+    if hint is None:
+        hint = SPECIAL_HINTS_BY_INDEX.get(language_key, {}).get(map_index)
+    if hint is None:
+        hints = ISLAND_HINTS.get(language_key, ISLAND_HINTS["en"])
+        hint = hints[map_index]
+    return add_island_rating(language_key, map_index, hint)
 
 
 def scan_rumours(data: bytes) -> tuple[DatLayout, list[RumourEntry]]:

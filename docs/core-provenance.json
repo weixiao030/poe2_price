@@ -35,10 +35,10 @@
     {
       "path": "物价补丁/tools/localize_poe1.ps1",
       "upstream_blob": "9b7dd21b04012d0d5f92cb43b22d22a9b90240820fb6ab0eb66c83a9d71b7606",
-      "local_sha256": "299347592833b74adf05a9cd6e409764aa9a0233cc8e45bf5486bffdd1b6f96c",
+      "local_sha256": "646550527aa577b34affdd094b8611e2144c16839fe64c2aa8ddda4063198711",
       "equivalent": false,
-      "normalized_sha256": "10029b7170a524d2a948ba0992aecd375cd2f24f66b3d4141afb61ccd45bf7b4",
-      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：汉化下载摘要仅信任官方元数据，镜像只传输经过独立摘要校验的载荷。 2026-09-22：与软件更新共用已实测的主备用源顺序，移除不稳定 boki/jasonzeng 及返回 429 的 monlor，加入 gh-proxy.org。 同日补齐移除的 3 个源：新增 gh-proxy.org、gh.llkk.cc、ghproxy.imciel.com，总数恢复 8 个。 全量复查另发现 ddlc 返回 429，以 ghfile.geekertao.top 等量替换；共移除 4 个、补回 4 个，最终 8 个国内源。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。"
+      "normalized_sha256": "b226238f533ebf6825b6b9d12b9b531e0a7b2db19d9258a9093e8f9011ba6402",
+      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：汉化下载摘要仅信任官方元数据，镜像只传输经过独立摘要校验的载荷。 2026-09-22：与软件更新共用已实测的主备用源顺序，移除不稳定 boki/jasonzeng 及返回 429 的 monlor，加入 gh-proxy.org。 同日补齐移除的 3 个源：新增 gh-proxy.org、gh.llkk.cc、ghproxy.imciel.com，总数恢复 8 个。 全量复查另发现 ddlc 返回 429，以 ghfile.geekertao.top 等量替换；共移除 4 个、补回 4 个，最终 8 个国内源。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。 v1.0.2：同步发行版本标识。"
     },
     {
       "path": "物价补丁/tools/poe1_patch_common.ps1",
@@ -51,9 +51,10 @@
     {
       "path": "物价补丁/tools/poe2_island_rumour_patch.py",
       "upstream_blob": "4d660a0544d0219ad1492a07d7588f2828d7b808c9207b16de0ae0c68da5cefc",
-      "local_sha256": "4d660a0544d0219ad1492a07d7588f2828d7b808c9207b16de0ae0c68da5cefc",
-      "equivalent": true,
-      "normalized_sha256": "4d660a0544d0219ad1492a07d7588f2828d7b808c9207b16de0ae0c68da5cefc"
+      "local_sha256": "6bf3baffe21a976f1ddad5f77a3e0dfea06b423fe43dc22fe8bdf98729648fa9",
+      "equivalent": false,
+      "normalized_sha256": "6bf3baffe21a976f1ddad5f77a3e0dfea06b423fe43dc22fe8bdf98729648fa9",
+      "local_changes": "v1.0.2：修复国服坠落的星辰八孔遗物提示及繁体首领名；按地图身份追加 S/A/B/C 评级，四张指定传奇地图不评级；兼容旧提示升级、重复更新和清理还原。"
     },
     {
       "path": "物价补丁/tools/poe2_name_price_patch.py",
@@ -81,34 +82,34 @@
     {
       "path": "物价补丁/tools/restore_poe1_price_patch.ps1",
       "upstream_blob": "04e4fb232f20d25f744f2ef5d8623fede25a9996cac235f3eb27049be8825c68",
-      "local_sha256": "79a7b9dcdf2e3678b56b3b871a0a2eb023b5ac452c95488c73d52ad3adc19286",
+      "local_sha256": "91ce128b3c0ca76608e4a7a7d4abf3df708907cd35402d9fdcb66ba626c9a58d",
       "equivalent": false,
-      "normalized_sha256": "ef816769d34ea6727bf50df59dc76edde0a79c91a8ab0e42abe8880388efeb68",
-      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：物理还原前核对官方底板，拒绝过期索引并尝试逻辑还原。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。"
+      "normalized_sha256": "a0c7bcbd0593ec29e11ba567bf3bd04dbd2d248a8afc0daac13934b36f7020b9",
+      "local_changes": "同步当前版本标识为 v0.9.2。 v0.9.2：物理还原前核对官方底板，拒绝过期索引并尝试逻辑还原。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。 v1.0.2：同步发行版本标识。"
     },
     {
       "path": "物价补丁/tools/restore_price_patch.ps1",
       "upstream_blob": "c6058a0c8e057a0d620758cc965c537d119ebf327cae1c5c1d4a4cdb44f402e9",
-      "local_sha256": "ba779631b326643beefe76c33f48d24d33881192865ed56851273ce9338f59d9",
+      "local_sha256": "8abffa47b61d46820f93e84a4101365a87575b46250a4da10c4e56882dd3c4e3",
       "equivalent": false,
-      "normalized_sha256": "b0a623ab889639613be95c84eef87004e4b761c8b16da0c3c970bb90d3d2d7eb",
-      "local_changes": "v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 同步当前版本标识为 v0.9.2。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。"
+      "normalized_sha256": "008983dcbf00044daad2210c98287e7d3d850db0459bc50ef0c4c0d2d5cf824d",
+      "local_changes": "v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 同步当前版本标识为 v0.9.2。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。 v1.0.2：同步发行版本标识。"
     },
     {
       "path": "物价补丁/tools/update_poe1_price_patch.ps1",
       "upstream_blob": "ff1174efa7e2884d507f675e133a791ac0595e86d40de9c291e211363e85e2f5",
-      "local_sha256": "a93d464b56e956f07f021cbe4793af17fbcee9fd1fdb7ac02d6f46fd300b0255",
+      "local_sha256": "43efd9df3d89399c2602fbfc63571068358050d0c02c1773c1871b2d02237747",
       "equivalent": false,
-      "normalized_sha256": "60ed6699a22eab4d98e14a06768e7b136e5fb9920bdfb0f7bb7399e38eb9fb76",
-      "local_changes": "接入自动与固定模式、正确国服当前和历史接口、独立国服价格路径及缓存隔离。 同步当前版本标识为 v0.9.2。 v0.9.2：校验物理还原包官方底板；旧版或过期基线转离线逻辑迁移。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。"
+      "normalized_sha256": "7efaff83118b7f69200bac1883edc257b44809ba38f146dc4504305147cd0b99",
+      "local_changes": "接入自动与固定模式、正确国服当前和历史接口、独立国服价格路径及缓存隔离。 同步当前版本标识为 v0.9.2。 v0.9.2：校验物理还原包官方底板；旧版或过期基线转离线逻辑迁移。 v0.9.3：同步发行版本标识。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。 v1.0.2：同步发行版本标识。"
     },
     {
       "path": "物价补丁/tools/update_price_patch.ps1",
       "upstream_blob": "8ae3e1e5be5e36aa241a2e8174c47af944bf6b872d0c3fd86695f15f5c8c7f82",
-      "local_sha256": "5a96a030e73bfb63e998d4e0e1a14c1400def3d3a155290363498fd20c5f7a31",
+      "local_sha256": "2dab719d2815e527cbc705af8bacb6d7f9134e6d97491128e2547fef4b76a411",
       "equivalent": false,
-      "normalized_sha256": "ed17570661195ad8c6ece93c41cd3816710bb885fd330a4754a5b8164aab5944",
-      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.9.0：接入碑牌双中位数、动态币种及交易筛选范围核对。 保留碑牌 Mods/Stats/Tags 提取文件；透传资源校验失败原因，避免误报为结构不兼容或赛季价格不可用。 同步当前版本标识为 v0.9.2。 v0.9.2：POE2 写入失败后成功回退仍返回失败，防止更新误报成功。 v0.9.3：同步发行版本标识。 v0.9.3：中位价缺失采用有效最低价，在线失败回退同赛季成功快照；按单条行情保留可用侧，缓存汇率逐侧换算后统一显示。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。"
+      "normalized_sha256": "6520da4c6b14c6eecb0660c579ffcc5d94abcbd479a763c127a7d24dce445321",
+      "local_changes": "接入自动与固定模式、正确国服接口、缺失来源跳过及缓存隔离，失败保留已有补丁。；碑牌词缀可选价格层，使用自定义 API 与 poe.ninja PrecursorTablets 目录，失败重试后独立跳过。 v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v0.8.7：底材名称追加普通报价，删除参考行，清理裂痕多余括号；中英文旧名称价更新、跳过与还原。 v0.9.0：接入碑牌双中位数、动态币种及交易筛选范围核对。 保留碑牌 Mods/Stats/Tags 提取文件；透传资源校验失败原因，避免误报为结构不兼容或赛季价格不可用。 同步当前版本标识为 v0.9.2。 v0.9.2：POE2 写入失败后成功回退仍返回失败，防止更新误报成功。 v0.9.3：同步发行版本标识。 v0.9.3：中位价缺失采用有效最低价，在线失败回退同赛季成功快照；按单条行情保留可用侧，缓存汇率逐侧换算后统一显示。 v1.0.0：统一桌面与引擎显示版本，仅修改版本标签。 v1.0.1：接入独立国服碑牌市场、赛季与崇高汇率，校验实时分页修订；同步发行版本。 v1.0.2：同步发行版本标识。"
     },
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",

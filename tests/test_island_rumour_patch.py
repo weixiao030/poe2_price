@@ -143,7 +143,7 @@ class IslandRumourPatchTests(unittest.TestCase):
                 patched = zf.read("data/balance/endgamemaps.datc64")
             self.assertEqual(
                 read_rumour(self.module, patched, 5),
-                "Somethin' fishy...(Barren Atoll)",
+                "Somethin' fishy...(B Barren Atoll)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 0),
@@ -176,7 +176,7 @@ class IslandRumourPatchTests(unittest.TestCase):
 
             self.assertEqual(
                 read_rumour(self.module, patched_dat.read_bytes(), 5),
-                "Somethin' fishy...(Barren Atoll)",
+                "Somethin' fishy...(B Barren Atoll)",
             )
 
     def test_unknown_parenthetical_text_is_preserved(self):
@@ -232,7 +232,7 @@ class IslandRumourPatchTests(unittest.TestCase):
                 patched = zf.read("data/balance/traditional chinese/endgamemaps.datc64")
             self.assertEqual(
                 read_rumour(self.module, patched, 8),
-                "飲星者……(隱密神廟/烏特雷)",
+                "飲星者……(C級隱密神廟/烏特雷)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 0),
@@ -252,23 +252,23 @@ class IslandRumourPatchTests(unittest.TestCase):
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 4),
-                "瘋狂酋長……(翠玉群島/首領戰)",
+                "瘋狂酋長……(C級翠玉群島/首領戰)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 7),
-                "最後倒下者……(哀泣崖壁/沃拉娜)",
+                "最後倒下者……(C級哀泣崖壁/沃拉娜)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 6),
-                "圓環的終點……(蔓延叢林/梅德偉)",
+                "圓環的終點……(C級蔓延叢林/梅德偉)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 13),
-                "殞落群星……(殞空荒原/八孔遺物)",
+                "殞落群星……(S級殞空荒原/八孔遺物)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 9),
-                "墮落的起源……(幽隱島嶼/奥尔罗斯)",
+                "墮落的起源……(C級幽隱島嶼/奧爾羅斯)",
             )
 
     def test_simplified_chinese_special_hints_include_boss(self):
@@ -290,7 +290,7 @@ class IslandRumourPatchTests(unittest.TestCase):
                 patched = zf.read("data/balance/simplified chinese/endgamemaps.datc64")
             self.assertEqual(
                 read_rumour(self.module, patched, 6),
-                "循环的尽头……(蔓生丛林/梅德维德)",
+                "循环的尽头……(C级蔓生丛林/梅德维德)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 0),
@@ -310,15 +310,15 @@ class IslandRumourPatchTests(unittest.TestCase):
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 4),
-                "疯狂酋长……(青玉群岛/首领战)",
+                "疯狂酋长……(C级青玉群岛/首领战)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 8),
-                "饮星者……(静谧神庙/乌特雷)",
+                "饮星者……(C级静谧神庙/乌特雷)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 9),
-                "堕落的起源……(无名之岛/奥尔罗斯)",
+                "堕落的起源……(C级无名之岛/奥尔罗斯)",
             )
 
     def test_simplified_chinese_official_rumour_aliases_include_boss(self):
@@ -330,6 +330,7 @@ class IslandRumourPatchTests(unittest.TestCase):
             rumours[7] = "最后一个倒下……"
             rumours[8] = "吞星者……"
             rumours[9] = "陨落的源头……"
+            rumours[13] = "坠落的星辰……"
             source.write_bytes(make_endgame_maps_dat(self.module, rumours))
 
             self.module.build_patch(
@@ -344,15 +345,19 @@ class IslandRumourPatchTests(unittest.TestCase):
                 patched = zf.read("data/balance/simplified chinese/endgamemaps.datc64")
             self.assertEqual(
                 read_rumour(self.module, patched, 7),
-                "最后一个倒下……(恸哭悬崖/沃拉娜)",
+                "最后一个倒下……(C级恸哭悬崖/沃拉娜)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 8),
-                "吞星者……(静谧神庙/乌特雷)",
+                "吞星者……(C级静谧神庙/乌特雷)",
             )
             self.assertEqual(
                 read_rumour(self.module, patched, 9),
-                "陨落的源头……(无名之岛/奥尔罗斯)",
+                "陨落的源头……(C级无名之岛/奥尔罗斯)",
+            )
+            self.assertEqual(
+                read_rumour(self.module, patched, 13),
+                "坠落的星辰……(S级天陨荒原/八孔遗物)",
             )
 
     def test_clean_patch_removes_existing_island_hints(self):
@@ -378,6 +383,88 @@ class IslandRumourPatchTests(unittest.TestCase):
                 patched = zf.read("data/balance/simplified chinese/endgamemaps.datc64")
             self.assertEqual(read_rumour(self.module, patched, 0), "闪光的未必是金……")
             self.assertEqual(read_rumour(self.module, patched, 6), "循环的尽头……")
+
+    def test_chinese_ratings_upgrade_repeat_and_restore_all_twenty_rumours(self):
+        expected_hints = [
+            ("颠沛领域/金币图", "漂流者之所/金幣圖"),
+            ("纯净乐园/经验图", "純淨樂園/經驗圖"),
+            ("千裂泽/独特基底装备", "破裂迷湖/獨特基底裝備"),
+            ("顿悟时刻/传奇装备", "禪意時刻/傳奇裝備"),
+            ("C级青玉群岛/首领战", "C級翠玉群島/首領戰"),
+            ("B级贫瘠环礁", "B級貧瘠環礁"),
+            ("C级蔓生丛林/梅德维德", "C級蔓延叢林/梅德偉"),
+            ("C级恸哭悬崖/沃拉娜", "C級哀泣崖壁/沃拉娜"),
+            ("C级静谧神庙/乌特雷", "C級隱密神廟/烏特雷"),
+            ("C级无名之岛/奥尔罗斯", "C級幽隱島嶼/奧爾羅斯"),
+            ("A级死水盆地", "A級靜滯盆地"),
+            ("B级掘尸遗迹", "B級廢棄挖掘場"),
+            ("B级脱落沟壑", "B級滑塌溪谷"),
+            ("S级天陨荒原/八孔遗物", "S級殞空荒原/八孔遺物"),
+            ("A级乱石半岛", "A級崎嶇半島"),
+            ("B级牧野荒原", "B級闊牧遼原"),
+            ("B级褪色浅滩", "B級白化淺灘"),
+            ("A级笼葱海岛", "A級蓊鬱群島"),
+            ("A级凛风悬崖", "A級寒風峭壁"),
+            ("B级焦灼小岛", "B級焦灼孤島"),
+        ]
+        for column, (locale, originals) in enumerate([
+            ("simplified chinese", SC_RUMOURS),
+            ("traditional chinese", TC_RUMOURS),
+        ]):
+            with self.subTest(locale=locale), TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "endgamemaps.datc64"
+                output_zip = root / "patch.zip"
+                game_path = f"data/balance/{locale}/endgamemaps.datc64"
+                rumours = list(originals)
+                if column == 0:
+                    rumours[13] = "坠落的星辰……"
+                hints = [pair[column] for pair in expected_hints]
+                legacy_hints = [
+                    hint[2:] if hint[0] in "SABC" else hint for hint in hints
+                ]
+                if column == 0:
+                    legacy_hints[13] = "天陨荒原"  # Old official-CN alias bug.
+                else:
+                    legacy_hints[9] = "幽隱島嶼/奥尔罗斯"
+                source.write_bytes(make_endgame_maps_dat(self.module, [
+                    f"{text}({hint})" for text, hint in zip(rumours, legacy_hints)
+                ]))
+                with zipfile.ZipFile(output_zip, "w") as archive:
+                    archive.writestr("other-layer.txt", b"preserve this layer")
+
+                self.module.build_patch(source, output_zip, source, game_path, None)
+                first_patch = source.read_bytes()
+                _, entries = self.module.scan_rumours(first_patch)
+                self.assertEqual([entry.text for entry in entries], [
+                    f"{text}({hint})" for text, hint in zip(rumours, hints)
+                ])
+                status = self.module.get_patch_status(source, game_path)
+                self.assertEqual(status["patched_count"], 20)
+                self.assertEqual(status["expected_count"], 20)
+                self.module.build_patch(source, output_zip, source, game_path, None)
+                self.assertEqual(source.read_bytes(), first_patch)
+
+                self.module.clean_patch(source, output_zip, source, game_path, None)
+                _, entries = self.module.scan_rumours(source.read_bytes())
+                self.assertEqual([entry.text for entry in entries], rumours)
+                self.assertEqual(
+                    self.module.get_patch_status(source, game_path)["patched_count"], 0
+                )
+                with zipfile.ZipFile(output_zip) as archive:
+                    self.assertEqual(archive.read(game_path), source.read_bytes())
+                    self.assertEqual(archive.read("other-layer.txt"), b"preserve this layer")
+
+    def test_fallen_stars_reward_survives_unrecognized_chinese_translation(self):
+        for language, expected in [
+            ("zh-cn", "S级天陨荒原/八孔遗物"),
+            ("zh-tw", "S級殞空荒原/八孔遺物"),
+        ]:
+            with self.subTest(language=language):
+                self.assertEqual(
+                    self.module.expected_hint(language, 13, "A revised translation..."),
+                    expected,
+                )
 
 
 if __name__ == "__main__":
