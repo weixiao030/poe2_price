@@ -339,6 +339,60 @@ def test_constant_before_variable_is_not_used_as_price_range():
     assert m.quote_for_record(q,'After {0} seconds, grants {1}% Effectiveness') is None
 
 
+@pytest.mark.parametrize('style', ['AT1', 'AT2', 'AT3', 'DF1', 'DF2', 'DF3'])
+def test_localization_styles_preserve_numeric_identity(style):
+    q = m.Quote('After 10 seconds, grants (8-12)% Effectiveness', Decimal(500))
+    styled = f'<{style}>{{{{After 10 seconds, grants {{0}}% <other>{{{{Effectiveness}}}}}}}}'
+    resolved = m.quote_for_record(q, styled)
+    assert resolved is not None and (resolved.low, resolved.high) == (8, 12)
+    assert m.quote_for_record(q, styled.replace('10 seconds', '20 seconds')) is None
+    assert m.quote_for_record(q, styled[:-1]) is None
+    assert m._tablet_display_text(f'<{style}>{{{{Value {{0}}}}}}') == 'Value {0}'
+
+
+def test_shss_split_tiers_keep_styles_and_first_matching_price():
+    # SHSS uses a singular branch, coloured tiers, and a final catch-all.
+    english = ['an additional [Rarity|Rare] Monster', '{0} additional [Rarity|Rare] Monsters']
+    records = []
+    for language in [None, 'Traditional Chinese']:
+        section = '' if language is None else f'\tlang "{language}"\r\n'
+        section += '\t4\r\n'
+        for index, (condition, style) in enumerate([('1','AT3'), ('2','AT2'), ('3','AT1'), ('#','AT1')]):
+            body = ('Unstable [ContainsBreach|Breaches] in Map spawn ' + english[min(index,1)] + ' when Stabilised'
+                    if language is None else '地圖內的不穩定[ContainsBreach|裂痕]會在穩定後生成{0}名額外[Rarity|稀有]怪物')
+            section += f'\t\t{condition} "<{style}>{{{{{body}}}}}"\r\n'
+        records.append(section)
+    block = 'description\r\n\t1 map_unstable_breach_enrage_x_additional_rare_monsters\r\n' + ''.join(records)
+    q = m.Quote('Unstable Breaches in Map spawn (1-2) additional Rare Monsters when Stabilised',
+                Decimal(500), 1, 2, identifier='shss-breach', stat='map_unstable_breach_enrage_x_additional_rare_monsters')
+    result, used, changed = m.price_block(block, [q], Decimal(500))
+    assert used == {'shss-breach'} and changed > 0
+    assert result.split('lang "')[0] == block.split('lang "')[0]
+    for language in ['Traditional Chinese', 'Simplified Chinese']:
+        section = result.split(f'lang "{language}"')[1].split('lang "')[0]
+        parsed = [m.LINE.match(line) for line in section.splitlines(keepends=True) if m.LINE.match(line)]
+        for value in [0, 1, 2, 3, 4]:
+            first = next(r for r in parsed if
+                (m.condition_bounds(r[2])[0] is None or value >= m.condition_bounds(r[2])[0]) and
+                (m.condition_bounds(r[2])[1] is None or value <= m.condition_bounds(r[2])[1]))
+            assert first[3].endswith('=1.00D') == (value in [1,2])
+            assert first[3].startswith('<' + {1:'AT3',2:'AT2'}.get(value,'AT1') + '>{{')
+    m.validate_csd(result)
+
+
+def test_shss_styled_reduced_branch_preserves_negation_and_original_text():
+    block = csd().replace('"Map has {0}% reduced Monster Rarity"',
+                          '"<AT1>{{Map has {0}% reduced Monster Rarity}}"')
+    block = block.replace('"地圖減少{0}%[MonsterRarity|怪物稀有度]"',
+                          '"<AT1>{{地圖減少{0}%[MonsterRarity|怪物稀有度]}}"')
+    result, used, _ = m.price_block(block,
+        [m.Quote('Map has (20-30)% reduced Monster Rarity', Decimal(500),20,30,identifier='reduced')], Decimal(500))
+    assert used == {'reduced'}
+    assert '-30|-20 "<AT1>{{地圖減少{0}%[MonsterRarity|怪物稀有度]}}=1.00D" negate 1' in result
+    assert '1|# "地圖增加{0}%[MonsterRarity|怪物稀有度]"' in result
+    m.validate_csd(result)
+
+
 def test_overlapping_conflicting_quotes_never_silently_choose_the_minimum():
     first=m.Quote('Map has (15-20)% increased Monster Rarity',Decimal(500),15,20)
     second=m.Quote('Map has 15% increased Monster Rarity',Decimal(1000),15,15)

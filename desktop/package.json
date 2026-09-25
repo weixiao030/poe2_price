@@ -1,6 +1,6 @@
 {
   "name": "poe-price-patch-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "POE1 / POE2 物价补丁桌面应用",
   "main": "out/main/index.js",
   "author": "POE Price Patch",

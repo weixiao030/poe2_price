@@ -32,7 +32,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.2"
+$script:PatchVersion = "v1.0.3"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -2448,7 +2448,14 @@ function Ensure-RestoreZip {
     }
     $SourceLooksPatched = $SourceBaseItemsLooksPatched -or $SourceWordsLooksPatched -or $SourceEndgameMapsLooksPatched
 
-    foreach ($Candidate in (Get-RestoreZipCandidates)) {
+    # A freshly applied localization patch can keep the same DAT structure as
+    # an older backup while changing names and hints. Clean current resources
+    # are the new baseline; reuse a backup only while our own layer is present.
+    $RestoreCandidates = @()
+    if ($SourceLooksPatched) {
+        $RestoreCandidates = @(Get-RestoreZipCandidates)
+    }
+    foreach ($Candidate in $RestoreCandidates) {
         if (Test-Path -LiteralPath $Candidate -PathType Leaf) {
             if (-not (Test-RestoreZipUsable -Path $Candidate -ReferenceDat $SourceDat)) {
                 Write-Warning "忽略不可用或已过期的还原包：$Candidate"

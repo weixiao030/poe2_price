@@ -55,9 +55,34 @@ def format_price(value: Decimal, ratio: Decimal) -> str:
     return f"{value:.1f}E" if value >= 10 else f"{value:.2f}E"
 
 
-def _tablet_text_key(value) -> str:
+def _tablet_display_text(value) -> str:
+    """Ignore balanced display styles for matching, never change emitted text.
+
+    SHSS and other localization patches wrap coloured tiers in <AT1>{{...}}.
+    Count braces so a trailing {0} placeholder or nested style is preserved.
+    Malformed wrappers remain literal and cannot accidentally match a quote.
+    """
     text = html.unescape(str(value or ""))
-    text = re.sub(r'\[([^\]|]+)(?:\|([^\]]+))?\]', lambda m: m[2] or m[1], text)
+    marker = re.compile(r'<[A-Za-z][A-Za-z0-9_]*>\{\{')
+    output = []; position = 0
+    while match := marker.search(text, position):
+        output.append(text[position:match.start()])
+        end = match.end(); depth = 2
+        while end < len(text) and depth:
+            if text[end] == '{': depth += 1
+            elif text[end] == '}': depth -= 1
+            end += 1
+        if depth:
+            output.append(text[match.start():]); position = len(text)
+            break
+        output.append(_tablet_display_text(text[match.end():end-2]))
+        position = end
+    output.append(text[position:])
+    return re.sub(r'\[([^\]|]+)(?:\|([^\]]+))?\]', lambda m: m[2] or m[1], ''.join(output))
+
+
+def _tablet_text_key(value) -> str:
+    text = _tablet_display_text(value)
     text = re.sub(r'\{\d+(?::[^}]+)?\}', '__NUMBER__', text)
     text = re.sub(r'\(\d+(?:\.\d+)?-\d+(?:\.\d+)?\)|\b\d+(?:\.\d+)?\b', '__NUMBER__', text)
     # Singular game branches use "an additional" for the numeric value one.
@@ -203,10 +228,10 @@ def quote_for_record(quote, text):
     """Resolve the variable against the game's placeholder; keep constants exact."""
     if _tablet_text_key(quote.text) != _tablet_text_key(text):
         return None
-    quoted = NUMBERS.findall(quote.text)
+    quoted = NUMBERS.findall(_tablet_display_text(quote.text))
     if len(quoted) <= 1:
         return quote  # Includes the game's singular, written-out number branches.
-    plain = re.sub(r'\[([^\]|]+)(?:\|([^\]]+))?\]', lambda m: m[2] or m[1], text)
+    plain = _tablet_display_text(text)
     template = NUMBERS.findall(plain)
     if len(template) != len(quoted) or template.count('{0}') != 1:
         return None

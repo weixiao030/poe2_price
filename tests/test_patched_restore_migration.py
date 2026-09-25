@@ -52,6 +52,50 @@ def powershell_function(script: str, name: str) -> str:
     return script[match.start() : match.end() + next_match.start()]
 
 
+def test_clean_localization_replaces_stale_baseline_but_repeat_updates_keep_it(tmp_path):
+    source = tmp_path / 'current.dat'
+    source.write_text('SHSS localized names', encoding='utf-8')
+    candidate = tmp_path / 'old.zip'
+    candidate.write_text('old official names', encoding='utf-8')
+    script = powershell_function(read(UPDATE), 'Ensure-RestoreZip') + rf'''
+$ErrorActionPreference = 'Stop'
+$RestoreOutDir = '{ps_path(tmp_path / 'output')}'
+$Source = '{ps_path(source)}'
+$Old = '{ps_path(candidate)}'
+$TcWords = $Source; $TcEndgameMaps = $Source
+$SupportsUniqueWords = $true
+$InstallInfo = [pscustomobject]@{{TcEndgameMapsPath='maps'}}
+$script:Layer = ''
+function Test-BaseItemsLookPatched {{ return $script:Layer -eq 'base' }}
+function Test-WordsLookPatched {{ return $script:Layer -eq 'words' }}
+function Test-EndgameMapsLookPatched {{ return $script:Layer -eq 'maps' }}
+function Get-RestoreZipCandidates {{ return $Old }}
+function Test-RestoreZipUsable {{ return $true }}
+function Test-RestoreZipWordsUsable {{ return $true }}
+function Test-ZipEntryExists {{ return $true }}
+function Assert-Poe2LogicalRestoreManifest {{}}
+function Add-Poe2LogicalRestoreManifest {{}}
+function New-BaseItemZip {{ param($SourceDat,$SourceWords,$SourceEndgameMaps,$OutputZip)
+    Copy-Item -LiteralPath $SourceDat -Destination $OutputZip
+}}
+function Copy-Poe2FileAtomically {{ param($Source,$Destination)
+    Copy-Item -LiteralPath $Source -Destination $Destination
+}}
+function Publish-Poe2LogicalRestoreZip {{ param($Source)
+    return [IO.File]::ReadAllText($Source)
+}}
+$Result = Ensure-RestoreZip -SourceDat $Source
+if ($Result -ne 'SHSS localized names') {{ throw "Stale restore overwrote localization: $Result" }}
+foreach ($Layer in @('base','words','maps')) {{
+    $script:Layer = $Layer
+    $Result = Ensure-RestoreZip -SourceDat $Source
+    if ($Result -ne 'old official names') {{ throw "Repeat $Layer update overwrote original backup: $Result" }}
+}}
+'LOCALIZATION_BASELINE_PRESERVED'
+'''
+    assert 'LOCALIZATION_BASELINE_PRESERVED' in run_windows_powershell(script)
+
+
 def test_poe2_restore_names_and_output_roots_are_fully_scoped(tmp_path: Path):
     script = rf"""
 $ErrorActionPreference = 'Stop'
