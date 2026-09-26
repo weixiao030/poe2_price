@@ -30,6 +30,11 @@ import {
   validateRequest
 } from './policy'
 import { query, stopTree, worker, workers } from './engine'
+import {
+  operationWarning,
+  tabletStatusForRequest,
+  type TabletLayerStatus
+} from '../shared/operation-outcome'
 import { dataRoot } from './runtime'
 import { getBackground, chooseBackground, clearBackground } from './background'
 import { cleanupOldFiles } from './maintenance'
@@ -139,6 +144,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     stderr = '',
     exitCode = 1,
     kind = ''
+  let tabletAffixes: TabletLayerStatus | undefined
   try {
     const confirmed = store.get('confirmed')
     const client = automatic
@@ -188,6 +194,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     stdout = result.stdout
     stderr = result.stderr
     exitCode = result.exitCode
+    tabletAffixes = tabletStatusForRequest(request, result.tabletAffixes)
     if (exitCode === 0 && /^__POE_LANGUAGE_MODE__localization\r?$/m.test(stdout))
       request.languageMode = 'localization'
   } catch (error) {
@@ -204,6 +211,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     exitCode,
     cancelled: cancellationRequested,
     skipped: automatic && exitCode === 2,
+    tabletAffixes,
     stdout,
     stderr,
     startedAt,
@@ -244,7 +252,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
   refresh()
   report(
     'system',
-    `${result.cancelled ? '已取消，请确认游戏文件完整性' : result.skipped ? '本轮已跳过' : exitCode === 0 ? '操作完成' : `操作失败，退出码 ${exitCode}`}\n`
+    `${result.cancelled ? '已取消，请确认游戏文件完整性' : result.skipped ? '本轮已跳过' : exitCode === 0 ? operationWarning(result) || '操作完成' : `操作失败，退出码 ${exitCode}`}\n`
   )
   return result
 }
@@ -538,23 +546,32 @@ else {
         log.error(autoStartStatus)
       }
       Menu.setApplicationMenu(null)
-      const softwareResources = app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'resources')
-      const updateConfig = JSON.parse(await fs.readFile(path.join(softwareResources, 'update-config.json'), 'utf8')) as UpdateConfig
-      const currentRelease = JSON.parse(await fs.readFile(path.join(softwareResources, 'current-release.json'), 'utf8'))
+      const softwareResources = app.isPackaged
+        ? process.resourcesPath
+        : path.join(app.getAppPath(), 'resources')
+      const updateConfig = JSON.parse(
+        await fs.readFile(path.join(softwareResources, 'update-config.json'), 'utf8')
+      ) as UpdateConfig
+      const currentRelease = JSON.parse(
+        await fs.readFile(path.join(softwareResources, 'current-release.json'), 'utf8')
+      )
       softwareUpdater = new SoftwareUpdater({
-        version: app.getVersion(), notes: currentRelease.notes, config: updateConfig,
+        version: app.getVersion(),
+        notes: currentRelease.notes,
+        config: updateConfig,
         stateRoot: path.join(app.getPath('userData'), 'software-updates'),
         driver: new NsisUpdateDriver(log),
         packaged: app.isPackaged,
         canInstall: () => !active && !pendingQueries.size && !workers.size && !maintenanceRunning,
-        changed: state => send('software:state', state)
+        changed: (state) => send('software:state', state)
       })
       await softwareUpdater.previousResult()
       handle('software:ui-ready', () => softwareUpdater!.uiReady())
       handle('software:state', () => softwareUpdater!.snapshot)
       handle('software:check', () => softwareUpdater!.check())
       handle('software:dismiss-notice', (version: unknown, ignore: unknown) =>
-        softwareUpdater!.dismissNotice(text(version), boolean(ignore)))
+        softwareUpdater!.dismissNotice(text(version), boolean(ignore))
+      )
       handle('software:download', () => softwareUpdater!.download())
       handle('software:install', () => softwareUpdater!.install())
       handle('software:cancel', () => softwareUpdater!.cancel())
@@ -573,7 +590,13 @@ else {
       handle('app:cleanup', async (input: unknown, apply: unknown) => {
         const kind = choice(input, ['cache', 'logs']),
           remove = boolean(apply)
-        if (active || pendingQueries.size || workers.size || maintenanceRunning || softwareUpdater?.installing)
+        if (
+          active ||
+          pendingQueries.size ||
+          workers.size ||
+          maintenanceRunning ||
+          softwareUpdater?.installing
+        )
           throw new Error('后台任务进行中，请等待查询或补丁任务完成')
         maintenanceRunning = true
         try {
@@ -691,7 +714,7 @@ else {
       app.on('activate', showWindow)
       // Checking is independent of renderer creation, game queries and hourly prices.
       // A hidden tray startup checks too, but never creates a window or downloads.
-      void softwareUpdater.checkAtStartup().catch(error => log.warn('启动检查更新失败', error))
+      void softwareUpdater.checkAtStartup().catch((error) => log.warn('启动检查更新失败', error))
     })
     .catch((error) => {
       log.error(error)

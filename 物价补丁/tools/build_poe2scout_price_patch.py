@@ -4187,10 +4187,16 @@ def main(argv: list[str]) -> int:
                         league_is_current=args.league_is_current == "true",
                     )
                     tablet_result = summary["tablet_affixes"]
-                    magic_source = tablet_result.get("api", {}).get("rarities", {}).get("magic", {})
-                    if magic_source.get("status") == "ok" and magic_source.get("snapshot_stale"):
-                        sampled_at = magic_source.get("oldest_sample_at") or magic_source.get("published_at") or "未提供"
-                        progress(f"魔法行情快照已过期，继续使用同赛季旧报价（最早采样：{sampled_at}）")
+                    for rarity, rarity_name in (("magic", "魔法"), ("rare", "稀有")):
+                        source = tablet_result.get("api", {}).get("rarities", {}).get(rarity, {})
+                        if source.get("status") != "ok":
+                            continue
+                        if source.get("snapshot_stale"):
+                            sampled_at = source.get("oldest_sample_at") or source.get("published_at") or "未提供"
+                            progress(f"{rarity_name}行情快照已过期，继续使用同赛季旧报价（最早采样：{sampled_at}）")
+                        if source.get("exchange_rates_stale"):
+                            updated_at = source.get("exchange_rates_updated_at") or "未提供"
+                            progress(f"{rarity_name}行情汇率已过期，继续使用同赛季有效汇率（更新时间：{updated_at}）")
                     if tablet_result["status"] == "partial":
                         unavailable = [name for name in ("api", "poe_ninja_precursor_tablets", "affix_templates")
                                        if name in tablet_result and tablet_result[name].get("status") != "ok"]

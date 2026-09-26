@@ -17,7 +17,14 @@ import {
 } from 'naive-ui'
 import { useAppStore } from './stores/app'
 import UpdateNotice from './components/UpdateNotice.vue'
-import type { AppSettings, GameVersion, Operation, OperationResult, PatchRequest } from '../shared/types'
+import { operationWarning } from '../shared/operation-outcome'
+import type {
+  AppSettings,
+  GameVersion,
+  Operation,
+  OperationResult,
+  PatchRequest
+} from '../shared/types'
 const HistoryPage = defineAsyncComponent(() => import('./components/HistoryPage.vue'))
 const SettingsPage = defineAsyncComponent(() => import('./components/SettingsPage.vue'))
 const UpdatesPage = defineAsyncComponent(() => import('./components/UpdatesPage.vue'))
@@ -61,6 +68,7 @@ const sourceLabel = computed(() =>
       : 'poe2scout + poe.ninja'
 )
 const latest = computed(() => app.state.history[0])
+const latestWarning = computed(() => operationWarning(latest.value))
 const phase = computed(() => {
   if (!app.running)
     return latest.value
@@ -69,7 +77,9 @@ const phase = computed(() => {
         : latest.value.skipped
           ? '本轮已跳过'
           : latest.value.exitCode === 0
-            ? '操作已完成'
+            ? latestWarning.value
+              ? '部分完成'
+              : '操作已完成'
             : '上次任务未完成'
       : '准备下一次冒险'
   return (
@@ -126,6 +136,8 @@ async function execute(request: PatchRequest) {
   await attempt(async () => {
     const result = await app.run(request)
     if (result.cancelled) message.warning('任务已停止，请确认游戏文件完整性')
+    else if (operationWarning(result))
+      message.warning(operationWarning(result)!, { duration: 8000 })
     else if (result.exitCode === 0) message.success(`${names[request.operation]}完成`)
     else message.error('操作未完成，请查看运行日志', { duration: 6000 })
   })
@@ -227,7 +239,16 @@ onUnmounted(() => {
         </button>
       </nav>
       <div class="sidebar-bottom">
-        <button class="sidebar-feedback" title="复制群号" @click="attempt(async () => { await desktop.copyFeedbackGroup(); message.success('已复制群号 168887742') })">
+        <button
+          class="sidebar-feedback"
+          title="复制群号"
+          @click="
+            attempt(async () => {
+              await desktop.copyFeedbackGroup()
+              message.success('已复制群号 168887742')
+            })
+          "
+        >
           <Icon icon="ph:chat-circle-dots" /><span>聊天/bug反馈群:<strong>168887742</strong></span>
         </button>
         <div class="version-line">
@@ -445,9 +466,17 @@ onUnmounted(() => {
                 <h2>执行动态</h2>
                 <n-tag
                   size="small"
-                  :type="app.running ? 'info' : latest?.exitCode === 0 ? 'success' : 'default'"
+                  :type="
+                    app.running
+                      ? 'info'
+                      : latestWarning
+                        ? 'warning'
+                        : latest?.exitCode === 0
+                          ? 'success'
+                          : 'default'
+                  "
                   :bordered="false"
-                  >{{ app.running ? '运行中' : '就绪' }}</n-tag
+                  >{{ app.running ? '运行中' : latestWarning ? '部分完成' : '就绪' }}</n-tag
                 >
               </div>
               <div :class="['activity-status', { working: app.running }]">
@@ -456,7 +485,7 @@ onUnmounted(() => {
                     v-else
                     :icon="
                       latest
-                        ? latest.exitCode === 0 && !latest.cancelled
+                        ? latest.exitCode === 0 && !latest.cancelled && !latestWarning
                           ? 'ph:check-circle'
                           : 'ph:warning-circle'
                         : 'ph:terminal-window'
@@ -470,7 +499,8 @@ onUnmounted(() => {
                       app.running
                         ? '后台执行中，可以切换页面查看其他信息。'
                         : latest
-                          ? `${names[latest.operation]} · ${localeDate(latest.startedAt)}`
+                          ? latestWarning ||
+                            `${names[latest.operation]} · ${localeDate(latest.startedAt)}`
                           : '任务开始后，进度和结果会在这里实时显示。'
                     }}
                   </p>

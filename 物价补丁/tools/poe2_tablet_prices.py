@@ -113,6 +113,7 @@ class Quote:
     query_context: str = ""
     query_reference: bool = False
     price_statistic: str = "median"
+    game_range: tuple[int, int] | None = None
 
 
 def trade_query_scope(url, rarity, server="international", league=None):
@@ -456,8 +457,10 @@ def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
                 or config.get("rarity") is not None and config.get("rarity") != rarity):
             raise ValueError("tablet API snapshot rarity does not match selection")
         snapshot_usable = (state.get("stale") is False
-                           or allow_stale_snapshot and state.get("stale") is True)
-        if (not snapshot_usable or exchange.get("stale") is not False) and not allow_stale:
+                           or (allow_stale_snapshot or allow_stale) and state.get("stale") is True)
+        exchange_usable = (exchange.get("stale") is False
+                           or allow_stale and exchange.get("stale") is True)
+        if not snapshot_usable or not exchange_usable:
             raise TabletSnapshotError("tablet API snapshot or exchange rates are stale")
         if not state.get("id") or snapshot and state["id"] != snapshot:
             raise TabletSnapshotError("tablet snapshot changed during pagination")
@@ -522,6 +525,7 @@ def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
                     "oldest_sample_at": state.get("oldest_sample_at"),
                     "snapshot_stale": state.get("stale"),
                     "exchange_rates_stale": exchange.get("stale"),
+                    "exchange_rates_updated_at": exchange.get("source_updated_at") or exchange.get("fetched_at"),
                     "allow_stale_snapshot": bool(allow_stale_snapshot),
                     "allow_stale": bool(allow_stale), "price_statistic":"median_then_minimum",
                     "minimum_price_fallback":True,
@@ -646,21 +650,28 @@ def price_block(block, quotes, ratio):
             newline = '\r\n' if '\r\n' in block else '\n'
             sections.append([f'\tlang "{language}"{newline}', *fallback])
     english = [LINE.match(line) for line in sections[0] if LINE.match(line)]
+    # CN V7.9 replaces the default section with Chinese and removes every lang
+    # section. There is no English text to compare. Only quotes bound through
+    # the current Mods/Stats/Tags tables may use raw stat ranges in this format.
+    chinese_default = len(sections) == 1 and bool(english) and all(
+        re.search(r'[\u3400-\u9fff]', _tablet_display_text(record[3])) for record in english)
     matches = {}
     for i, record in enumerate(english):
-        compatible = [matched for quote in quotes if (matched := quote_for_record(quote, record[3])) is not None]
+        compatible = ([quote for quote in quotes if quote.stat == stat and quote.game_range is not None]
+                      if chinese_default else
+                      [matched for quote in quotes if (matched := quote_for_record(quote, record[3])) is not None])
         # Some game translations use identical increased text for both signs.
         # Prefer the non-negated branch when the same text exists on both.
-        if 'negate' in record[4] and any('negate' not in r[4] and _tablet_text_key(r[3]) == _tablet_text_key(record[3]) for r in english):
+        if not chinese_default and 'negate' in record[4] and any('negate' not in r[4] and _tablet_text_key(r[3]) == _tablet_text_key(record[3]) for r in english):
             compatible = []
         if compatible:
             matches[i] = compatible
     if not matches:
         return block, set(), 0
     used = set(); changes = 0
-    for section_index, section in enumerate(sections[1:], 1):
-        language = LANG.match(section[0])[1]
-        if language not in CHINESE:
+    for section_index, section in enumerate(sections):
+        language = LANG.match(section[0])[1] if section_index else ''
+        if not (chinese_default and section_index == 0) and language not in CHINESE:
             continue
         record_positions = [i for i, line in enumerate(section) if LINE.match(line)]
         if len(record_positions) != len(english):
@@ -684,9 +695,12 @@ def price_block(block, quotes, ratio):
                 continue  # unknown numeric transformation must not be guessed
             candidates = []
             for quote in matches[branch]:
-                low = quote.low * factor if quote.low is not None else lower
-                high = quote.high * factor if quote.high is not None else upper
-                if factor < 0 and low is not None and high is not None: low, high = high, low
+                if chinese_default:
+                    low, high = sorted(quote.game_range)
+                else:
+                    low = quote.low * factor if quote.low is not None else lower
+                    high = quote.high * factor if quote.high is not None else upper
+                    if factor < 0 and low is not None and high is not None: low, high = high, low
                 if lower is not None: low = max(low, lower) if low is not None else lower
                 if upper is not None: high = min(high, upper) if high is not None else upper
                 if low is not None and high is not None and low > high:
@@ -719,7 +733,8 @@ def price_block(block, quotes, ratio):
                 changes += 1
             # Keep the untouched fallback for values not covered by market data.
             section[position:position] = additions
-        count_position = next((i for i, line in enumerate(section[1:], 1) if re.fullmatch(r'\s*\d+\s*', line)), None)
+        count_start = 2 if section_index == 0 else 1
+        count_position = next((i for i, line in enumerate(section[count_start:], count_start) if re.fullmatch(r'\s*\d+\s*', line)), None)
         if count_position is not None:
             newline = '\r\n' if section[count_position].endswith('\r\n') else '\n'
             section[count_position] = f'\t{sum(bool(LINE.match(line)) for line in section)}{newline}'
@@ -775,7 +790,7 @@ def _redirect_tablet_base_items(data, tablet_types):
 def build_tablet_affix_resources(*, client, api_base, league, template_it, template_csd,
                                 source_baseitems, patched_baseitems, output_zip, game_path, resource_report,
                                 english_baseitems=None, template_map_csd=None, template_global_csd=None,
-                                allow_stale=False, tablet_mods=None, tablet_stats=None, tablet_tags=None,
+                                allow_stale=True, tablet_mods=None, tablet_stats=None, tablet_tags=None,
                                 on_retry=None, cache_dir=None, server="international",
                                 cn_season="", league_is_current=True):
     reports = {}; quotes_by_rarity = {}; ninja = {}

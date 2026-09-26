@@ -90,7 +90,7 @@ export function createHarness(root, initial = {}) {
     worker: async () => {
       calls++
       if (engineWait) await engineWait
-      return { exitCode: engineExit, stdout: 'fixture', stderr: '' }
+      return { exitCode: engineExit, stdout: 'fixture', stderr: '', tabletAffixes: 'applied' }
     },
     stopTree: async () => true
   })
@@ -114,6 +114,7 @@ export function createHarness(root, initial = {}) {
   }
   const code = `let active = null, processChild = null, cancellationRequested = false, timer, nextUpdate = null, scheduleGeneration = 0, autoUpdatePausedReason = '';
     ${source('src/main/policy.ts')}
+    ${source('src/shared/operation-outcome.ts')}
     ${source('src/main/auto-update.ts')}
     ${source('src/main/index.ts', ['runOperation', 'schedule', 'cancelSchedule', 'autoUpdateStatus', 'saveAutoUpdateSchedule'])}
     globalThis.probe = { runOperation, schedule, deadline: () => nextUpdate,

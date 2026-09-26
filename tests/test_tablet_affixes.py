@@ -754,7 +754,8 @@ def test_all_affix_lines_are_priced_in_shared_magic_and_rare_descriptions(tmp_pa
 @pytest.mark.parametrize('old_magic', [False, True])
 @pytest.mark.parametrize('statistic', ['low_sample_median', 'min'])
 @pytest.mark.parametrize('english_target', [False, True])
-def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_path, old_magic, statistic, english_target):
+@pytest.mark.parametrize('old_all', [False, True])
+def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_path, old_magic, statistic, english_target, old_all):
     class SplitClient:
         def __init__(self):
             self.urls = []
@@ -772,7 +773,8 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
             payload = page([row], rarity=rarity)
             payload['server'] = 'international'; payload['category'] = 'tablet'; payload['rarity'] = rarity
             payload['snapshot']['config']['rarity'] = rarity
-            payload['snapshot']['stale'] = old_magic and rarity == 'magic'
+            payload['snapshot']['stale'] = old_all or old_magic and rarity == 'magic'
+            payload['exchange_rates']['stale'] = old_all
             return payload
 
     english = tmp_path / 'english.dat'
@@ -808,7 +810,8 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
     assert report['status'] == 'partial'
     assert report['game_coverage']['missing_quotes'][0]['tablet'] == 'Breach_Tablet'
     assert report['api']['rarities']['magic']['status'] == report['api']['rarities']['rare']['status'] == 'ok'
-    assert report['api']['rarities']['magic']['snapshot_stale'] is old_magic
+    assert report['api']['rarities']['magic']['snapshot_stale'] is (old_magic or old_all)
+    assert report['api']['rarities']['rare']['exchange_rates_stale'] is old_all
     assert report['quote_validation']['minimum_price'] == (['one'] if statistic == 'min' else [])
     assert report['resources'][0]['matched'] == 1 and report['redirected_items'] == 1
     assert report['game_mapping'][0]['stat'] == 'test_stat'
@@ -990,3 +993,91 @@ def test_wrong_game_modifier_identity_is_rejected(tmp_path):
     with pytest.raises(ValueError,match='identity is not unique'):
         bind_game_stats({'Ritual_Tablet':[q]},mods_path=files['tablet_mods'],
                         stats_path=files['tablet_stats'],tags_path=files['tablet_tags'],baseitems_path=source)
+
+
+@pytest.mark.parametrize('condition,tail,raw_range', [
+    ('1|#', '', (8, 12)), ('#|-1', ' negate 1', (-12, -8)),
+    ('1|#', ' divide_by_one_hundred 1', (800, 1200)),
+])
+def test_cn_v79_default_chinese_uses_bound_raw_stat_range(condition, tail, raw_range):
+    from poe2_tablet_catalog import bind_game_stats
+    # The market text's leading 10 and fixed cap 100 are not the raw stat range.
+    q = m.Quote('After 10 seconds grants (8-12)% Effectiveness, up to 100%', Decimal(500),
+                10, 10, identifier='cn-default', name='test_mod', generation='prefix')
+    bound, _ = bind_game_stats({'Ritual_Tablet':[q]}, game_catalog=[{
+        'tablet':'Ritual_Tablet', 'generation':'prefix', 'name':'测试', 'mod_id':'test_mod',
+        'stat':'test_stat', 'range':list(raw_range),
+    }])
+    block = ('description\n\t1 test_stat\n\t1\n'
+             f'\t\t{condition} "<AT1>{{{{十秒后效能增加{{0}}%，最多100%}}}}"{tail}\n')
+    output, used, _ = m.price_block(block, bound['Ritual_Tablet'], Decimal(500))
+    assert used == {'cn-default'} and 'lang "' not in output
+    m.validate_csd(output)
+    records = [r for line in output.splitlines(keepends=True) if (r := m.LINE.match(line))]
+    lo, hi = sorted(raw_range)
+    for value in range(lo-1, hi+2):
+        first = next(r for r in records if
+            (m.condition_bounds(r[2])[0] is None or m.condition_bounds(r[2])[0] <= value) and
+            (m.condition_bounds(r[2])[1] is None or value <= m.condition_bounds(r[2])[1]))
+        assert first[3].endswith('=1.00D') == (lo <= value <= hi)
+        assert first[3].startswith('<AT1>{{十秒后效能增加{0}%，最多100%}}')
+        assert first[4] == tail
+    # No translated-text guessing without current game identity and range.
+    assert m.price_block(block, [q], Decimal(500))[1] == set()
+    assert m.price_block(block, [m.replace(bound['Ritual_Tablet'][0], stat='other')], Decimal(500))[1] == set()
+    assert m.price_block(block.replace(tail+'\n', ' unknown_transform 1\n'), bound['Ritual_Tablet'], Decimal(500))[1] == set()
+
+
+def test_cn_v79_coloured_default_branches_keep_first_match_semantics():
+    block = 'description\n\t1 test_stat\n\t4\n'
+    for condition, style in [('1','AT3'),('2','AT2'),('3','AT1'),('#','AT1')]:
+        block += f'\t\t{condition} "<{style}>{{{{额外生成{{0}}只稀有怪物}}}}"\n'
+    q = m.Quote('irrelevant translation', Decimal(500), identifier='bound', stat='test_stat', game_range=(1,2))
+    output, used, _ = m.price_block(block, [q], Decimal(500))
+    assert used == {'bound'}
+    m.validate_csd(output)
+    records = [r for line in output.splitlines(keepends=True) if (r := m.LINE.match(line))]
+    for value in [0,1,2,3,4]:
+        r = next(r for r in records if m.condition_bounds(r[2]) == (None,None) or
+            m.condition_bounds(r[2])[0] <= value <= m.condition_bounds(r[2])[1])
+        assert r[3].endswith('=1.00D') == (value in [1,2])
+
+
+@pytest.mark.parametrize('rarity', ['magic', 'rare'])
+def test_stale_market_and_rates_remain_usable_and_live_data_replaces_cache(tmp_path, rarity):
+    old = page([quote(price=500)], rarity=rarity)
+    old['snapshot'].update(stale=True, published_at='2026-09-22T07:09:35+00:00')
+    old['exchange_rates'].update(stale=True, source_updated_at='2026-09-22T06:00:00+00:00')
+    prices, report = m.fetch_tablet_affix_prices(Client({0:old}), 'http://test.invalid', LEAGUE,
+        rarity=rarity, allow_stale=True, cache_dir=tmp_path)
+    assert prices['Ritual_Tablet'][0].price == 500
+    assert report['source'] == 'live' and report['snapshot_stale'] and report['exchange_rates_stale']
+    assert report['exchange_rates_updated_at'] == '2026-09-22T06:00:00+00:00'
+    new = page([quote(price=750)], rarity=rarity)
+    new['snapshot']['published_at'] = '2026-09-26T07:00:00+00:00'
+    prices, report = m.fetch_tablet_affix_prices(Client({0:new}), 'http://test.invalid', LEAGUE,
+        rarity=rarity, allow_stale=True, cache_dir=tmp_path)
+    assert prices['Ritual_Tablet'][0].price == 750 and report['source'] == 'live'
+    assert not report['snapshot_stale'] and not report['exchange_rates_stale']
+    class Offline:
+        def get_json(self, url): raise OSError('offline')
+    prices, report = m.fetch_tablet_affix_prices(Offline(), 'http://test.invalid', LEAGUE,
+        rarity=rarity, allow_stale=True, cache_dir=tmp_path)
+    assert prices['Ritual_Tablet'][0].price == 750 and report['source'] == 'cache'
+    with pytest.raises(OSError):
+        m.fetch_tablet_affix_prices(Offline(), 'http://test.invalid', 'Wrong season',
+            rarity=rarity, allow_stale=True, cache_dir=tmp_path)
+
+
+@pytest.mark.parametrize('section,field,value', [
+    ('snapshot','league','other'), ('exchange_rates','league','other'),
+    ('snapshot','stale',None), ('exchange_rates','stale',None),
+    ('snapshot','id','changed'),
+])
+def test_allow_stale_does_not_allow_unknown_health_wrong_league_or_mixed_pages(section, field, value):
+    first=page([quote()], total=2);second=page([quote('two')],offset=1,total=2)
+    first['snapshot']['stale']=second['snapshot']['stale']=True
+    first['exchange_rates']['stale']=second['exchange_rates']['stale']=True
+    second[section][field]=value
+    with pytest.raises(ValueError):
+        m.fetch_tablet_affix_prices(Client({0:first,1:second}), 'http://test.invalid',LEAGUE,allow_stale=True)

@@ -702,6 +702,9 @@ p {
 .success-icon {
   color: var(--accent);
 }
+.warning-icon {
+  color: #c48a22;
+}
 .failure-icon {
   color: #bf8440;
 }

@@ -128,16 +128,17 @@ def bind_game_stats(quotes, *, mods_path=None, stats_path=None, tags_path=None, 
         slug = row['tablet']
         available_stats.setdefault(slug, set()).add(row['stat'])
         for name in {row['name'], row['mod_id']} - {''}:
-            catalog.setdefault((slug, row['generation'], name), []).append((row['mod_id'], row['stat']))
+            catalog.setdefault((slug, row['generation'], name), []).append(row)
     bound = {}; audit = []
     for slug, rows in quotes.items():
         for quote in rows:
             matches = catalog.get((slug, quote.generation, quote.name), [])
             if len(matches) != 1:
                 raise ValueError(f'tablet modifier identity is not unique: {slug}/{quote.generation}/{quote.name}')
-            mod_id, stat = matches[0]
+            matched = matches[0]
+            mod_id, stat = matched['mod_id'], matched['stat']
             quote = bind_trade_query(quote, stat, available_stats[slug])
-            bound.setdefault(slug, []).append(replace(quote, stat=stat))
+            bound.setdefault(slug, []).append(replace(quote, stat=stat, game_range=tuple(matched['range'])))
             audit.append({'tablet':slug,'id':quote.identifier,'mod_id':mod_id,'stat':stat,'label':quote.label})
     return bound, audit
 

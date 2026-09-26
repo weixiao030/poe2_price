@@ -2,6 +2,7 @@
 import { useAppStore } from '../stores/app'
 import { useMessage } from 'naive-ui'
 import { Icon } from '@iconify/vue'
+import { operationWarning } from '../../shared/operation-outcome'
 const app = useAppStore(),
   message = useMessage(),
   desktop = window.desktop
@@ -39,19 +40,39 @@ const localeDate = (date: string) => new Date(date).toLocaleString('zh-CN', { ho
         @click="emit('select', item)"
       >
         <Icon
-          :class="item.exitCode === 0 && !item.cancelled ? 'success-icon' : 'failure-icon'"
-          :icon="item.exitCode === 0 && !item.cancelled ? 'ph:check-circle' : 'ph:warning-circle'"
+          :class="
+            operationWarning(item)
+              ? 'warning-icon'
+              : item.exitCode === 0 && !item.cancelled
+                ? 'success-icon'
+                : 'failure-icon'
+          "
+          :icon="
+            item.exitCode === 0 && !item.cancelled && !operationWarning(item)
+              ? 'ph:check-circle'
+              : 'ph:warning-circle'
+          "
         />
         <div>
           <b
             >{{ names[item.operation] }}
             <n-tag size="small" :bordered="false">{{ item.gameVersion.toUpperCase() }}</n-tag></b
-          ><span>{{ item.gameDirectory }}</span>
+          ><span>{{ operationWarning(item) || item.gameDirectory }}</span>
         </div>
         <div class="history-meta">
           <b
-            >{{ item.cancelled ? '已停止' : item.skipped ? '已跳过' : item.exitCode === 0 ? '成功' : '失败' }} ·
-            {{ (item.durationMs / 1000).toFixed(1) }} 秒</b
+            >{{
+              item.cancelled
+                ? '已停止'
+                : item.skipped
+                  ? '已跳过'
+                  : operationWarning(item)
+                    ? '部分完成'
+                    : item.exitCode === 0
+                      ? '成功'
+                      : '失败'
+            }}
+            · {{ (item.durationMs / 1000).toFixed(1) }} 秒</b
           ><span>{{ localeDate(item.startedAt) }} · {{ item.automatic ? '自动' : '手动' }}</span>
         </div>
         <Icon icon="ph:caret-right" />

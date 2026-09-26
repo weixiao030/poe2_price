@@ -32,7 +32,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.3"
+$script:PatchVersion = "v1.0.4"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -2860,6 +2860,20 @@ function Get-CoreOnlyPriceBuildArgs {
     return $Result.ToArray()
 }
 
+function Get-TabletLayerStatus {
+    param([bool]$Enabled, $Summary)
+    if (-not $Enabled) { return "disabled" }
+    if ($null -eq $Summary) { return "unknown" }
+    $Layer = $Summary.tablet_affixes
+    if ($null -eq $Layer) { return "unknown" }
+    if ($Layer.status -eq "skipped") { return "unavailable" }
+    if ($Layer.status -in @("ok", "partial")) {
+        if ($null -ne $Layer.resources -and @($Layer.resources).Count -gt 0) { return "applied" }
+        return "unavailable"
+    }
+    return "unknown"
+}
+
 function Publish-PriceBuildStage {
     param(
         [Parameter(Mandatory = $true)][string]$StageDir,
@@ -3434,6 +3448,7 @@ if ($UseChinaPriceSource) {
 }
 
 $UsingCachedPatch = $false
+$TabletLayerStatus = if ($PatchTabletAffixesEnabled) { "unknown" } else { "disabled" }
 $PatchFolderZip = Join-Path $RepoRoot $PricePatchZipName
 try {
     New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null
@@ -3453,6 +3468,14 @@ try {
 
     Assert-File $StagePatchZip $PricePatchZipName
     Test-PricePatchZipCompatible -Path $StagePatchZip -ReferenceDat $TcBaseItems -ThrowOnFailure | Out-Null
+    # Only use this invocation's staging summary, never a previous output report.
+    try {
+        $StageSummary = Get-Content -LiteralPath $StageSummaryJson -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $TabletLayerStatus = Get-TabletLayerStatus -Enabled $PatchTabletAffixesEnabled -Summary $StageSummary
+    }
+    catch {
+        Write-Warning "无法读取本次碑牌词缀生成结果：$($_.Exception.Message)"
+    }
 
     if ($PatchIslandRumourHintsEnabled) {
         Write-Step "生成岛屿传言提示补丁"
@@ -3522,6 +3545,8 @@ catch {
     }
     if (-not [string]::IsNullOrWhiteSpace($CompatibleFallbackPatch)) {
         $UsingCachedPatch = $true
+        # The safe core cache removes tablet redirects and does not install affix resources.
+        $TabletLayerStatus = if ($PatchTabletAffixesEnabled) { "unavailable" } else { "disabled" }
         $CacheTime = (Get-Item -LiteralPath $CachedPatchZip).LastWriteTime
         Write-Warning "实时构建失败，已自动使用当前范围和模式的兼容核心缓存（$CacheTime）；Words 与 EndgameMaps 保持游戏当前内容。原因：$BuildFailure"
         try {
@@ -3705,6 +3730,16 @@ else {
 }
 
 Write-Host ""
+if (-not $NoInstall) {
+    # Emit only after physical installation and readback have both succeeded.
+    Write-Output ("__POE_TABLET_LAYER__" + $TabletLayerStatus)
+    if ($TabletLayerStatus -eq "unavailable") {
+        Write-Warning "物价已更新，但碑牌词缀未生效，请重试；详情见日志。"
+    }
+    elseif ($TabletLayerStatus -eq "unknown") {
+        Write-Warning "物价已更新，但未能确认碑牌词缀结果，请查看日志后重试。"
+    }
+}
 Write-Host "完成。" -ForegroundColor Green
 }
 catch {

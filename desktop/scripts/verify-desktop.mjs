@@ -47,7 +47,7 @@ try {
     true
   )
   evidence.checks.push('未选择客户端时阻止更新')
-  await page.getByRole('button', { name: '运行记录', exact: true }).click()
+  await page.getByRole('button', { name: /^运行记录/ }).click()
   await page.getByText('还没有运行记录，完成一次更新后会显示在这里。').waitFor()
   await page.getByRole('button', { name: '引用设置', exact: true }).click()
   await page.getByText('外观与后台运行', { exact: true }).waitFor()
@@ -101,7 +101,11 @@ try {
   // Only replace a disposable user-data engine script; production sources remain intact.
   const fixtureScript =
     '\ufeffparam([string]$Poe2Dir,[string]$PatchScope,[string]$League,[string]$PoeNinjaLeague,[string]$PoeCurrencySeason,[string]$LeagueMode,[bool]$LeagueIsCurrent,[switch]$IslandRumourHints,[switch]$SkipGameDirectoryMutex)\n[Console]::OutputEncoding=[Text.Encoding]::UTF8\nWrite-Output "中文开始：$League|$LeagueIsCurrent|$IslandRumourHints"\nStart-Sleep -Seconds 2\nWrite-Output "中文完成"\nexit 0\n'
-  await fs.writeFile(path.join(userData, 'engine/tools/update_price_patch.ps1'), fixtureScript)
+  const successfulFixture = fixtureScript.replace(
+    'exit 0',
+    'Write-Output "__POE_TABLET_LAYER__applied"\nexit 0'
+  )
+  await fs.writeFile(path.join(userData, 'engine/tools/update_price_patch.ps1'), successfulFixture)
   // The fixture never opens game files. Isolate its process names from real clients
   // whose executable paths may be inaccessible to a non-elevated test process.
   const fixtureWorker = path.join(userData, 'engine/worker.ps1')
@@ -140,6 +144,37 @@ try {
   evidence.checks.push(
     '隔离脚本成功执行、历史赛季 false 保留、中文日志完整、连续任务与互斥验证通过'
   )
+  await fs.writeFile(
+    path.join(userData, 'engine/tools/update_price_patch.ps1'),
+    successfulFixture.replace('__POE_TABLET_LAYER__applied', '__POE_TABLET_LAYER__unavailable')
+  )
+  result = await page.evaluate((r) => window.desktop.runOperation(r), request)
+  assert.equal(result.exitCode, 0)
+  assert.equal(result.tabletAffixes, 'unavailable')
+  await page.getByRole('heading', { name: '部分完成', exact: true }).waitFor()
+  await page
+    .getByText('物价已更新，但碑牌词缀未生效，请重试；详情见日志。', { exact: true })
+    .waitFor()
+  await page.screenshot({
+    path: path.join(reportDir, 'tablet-partial-workspace.png'),
+    fullPage: true
+  })
+  await page.getByRole('button', { name: /^运行记录/ }).click()
+  await page
+    .locator('.history-row')
+    .first()
+    .getByText(/部分完成/)
+    .waitFor()
+  await page.screenshot({
+    path: path.join(reportDir, 'tablet-partial-history.png'),
+    fullPage: true
+  })
+  await page.getByRole('button', { name: '物价补丁', exact: true }).click()
+  await fs.writeFile(path.join(userData, 'engine/tools/update_price_patch.ps1'), successfulFixture)
+  result = await page.evaluate((r) => window.desktop.runOperation(r), request)
+  assert.equal(result.tabletAffixes, 'applied')
+  await page.getByRole('heading', { name: '操作已完成', exact: true }).waitFor()
+  evidence.checks.push('碑牌层未生效显示部分完成并保存到历史；重试成功后清除提示')
   await app.evaluate(() => {
     const original = globalThis.setTimeout
     globalThis.setTimeout = (callback, delay, ...args) => {

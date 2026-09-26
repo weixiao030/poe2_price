@@ -53,6 +53,7 @@ export interface OperationResult {
   exitCode: number
   cancelled: boolean
   skipped?: boolean
+  tabletAffixes?: import('./operation-outcome').TabletLayerStatus
   stdout: string
   stderr: string
   startedAt: string

@@ -6,11 +6,14 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import { appendTail } from './policy'
 import { prepareRuntime } from './runtime'
+import { OperationOutput } from './operation-output'
+import type { TabletLayerStatus } from '../shared/operation-outcome'
 
 export interface WorkerResult {
   stdout: string
   stderr: string
   exitCode: number
+  tabletAffixes?: TabletLayerStatus
 }
 export const workers = new Set<ChildProcessWithoutNullStreams>()
 export async function stopTree(child: ChildProcessWithoutNullStreams): Promise<boolean> {
@@ -64,7 +67,9 @@ export async function worker(
         stderr = '',
         timedOut = false
       const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') }
+      const operationOutput = new OperationOutput()
       const send = (stream: 'stdout' | 'stderr', data: string) => {
+        if (stream === 'stdout') operationOutput.write(data)
         if (stream === 'stdout') stdout = appendTail(stdout, data)
         else stderr = appendTail(stderr, data)
         onData(stream, data)
@@ -86,7 +91,13 @@ export async function worker(
         send('stdout', decoders.stdout.end())
         send('stderr', decoders.stderr.end())
         if (timedOut) stderr = appendTail(stderr, '\n后台任务超时，已请求终止子进程树。')
-        resolve({ stdout, stderr, exitCode: timedOut ? 124 : (code ?? 1) })
+        operationOutput.end()
+        resolve({
+          stdout,
+          stderr,
+          exitCode: timedOut ? 124 : (code ?? 1),
+          tabletAffixes: operationOutput.tabletAffixes
+        })
       })
     })
   } finally {

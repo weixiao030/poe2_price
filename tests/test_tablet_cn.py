@@ -75,3 +75,17 @@ def test_cn_league_resolution_preserves_historical_selection():
     assert m.resolve_cn_tablet_league(Directory(), 'http://test.invalid', 'standard', False) == '永久'
     with pytest.raises(ValueError):
         m.resolve_cn_tablet_league(Directory(), 'http://test.invalid', 'unknown', False)
+
+
+@pytest.mark.parametrize('rarity', ['magic','rare'])
+def test_cn_stale_partial_and_rates_are_usable_without_losing_market_identity(rarity):
+    payload=cn_page(rarity)
+    payload['partial_snapshot']['last_batch_at']='2026-01-01T00:00:00+00:00'
+    payload['exchange_rates']['stale']=True
+    prices,report=m.fetch_tablet_affix_prices(Client({0:payload}),'http://test.invalid',LEAGUE,
+        rarity=rarity,server='cn',allow_stale=True)
+    assert prices and report['snapshot_stale'] and report['exchange_rates_stale']
+    payload['exchange_rates']['server']='international'
+    with pytest.raises(ValueError):
+        m.fetch_tablet_affix_prices(Client({0:payload}),'http://test.invalid',LEAGUE,
+            rarity=rarity,server='cn',allow_stale=True)
