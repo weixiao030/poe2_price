@@ -2932,7 +2932,8 @@ def price_display_rates(prices, divine_exalted):
                 or obs.en_name in {'Chaos Orb', '混沌石', '混沌宝珠', '混沌寶珠'}
                 or obs.english_name == 'Chaos Orb') and obs.price_exalted > 0:
             source_divine = Decimal(obs.source_metadata.get('display_source_divine_exalted', str(divine_exalted)))
-            rates['chaos'] = obs.price_exalted * divine_exalted / source_divine
+            rates['chaos'] = (obs.price_exalted if source_divine == divine_exalted else
+                              Fraction(obs.price_exalted) * Fraction(divine_exalted) / Fraction(source_divine))
             break
     return rates
 

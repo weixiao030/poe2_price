@@ -124,3 +124,20 @@ def test_chaos_from_secondary_source_uses_shared_divine_basis():
     assert builder.price_display_rates(merged, Decimal(600))['chaos'] == 60
     builder.apply_display_prices(merged, Decimal(600))
     assert merged['chaos'].display_price == '1C'
+
+
+def test_chaos_exact_boundary_with_long_market_decimal():
+    raw = Decimal('93.49866309204640173051169688')
+    prices = {'divine': observation('divine', 'Divine Orb', '540'),
+              'chaos': observation('chaos', 'Chaos Orb', str(raw))}
+    builder.apply_display_prices(prices, Decimal(540))
+    assert builder.price_display_rates(prices, Decimal(540))['chaos'] == raw
+    assert prices['chaos'].display_price == '1C'
+
+
+def test_secondary_chaos_with_recurring_rate_keeps_exact_threshold():
+    prices = {'divine': observation('divine', 'Divine Orb', '7'),
+              'chaos': observation('chaos', 'Chaos Orb', '1')}
+    prices['chaos'].source_metadata['display_source_divine_exalted'] = '3'
+    builder.apply_display_prices(prices, Decimal(7))
+    assert prices['chaos'].display_price == '1C'
