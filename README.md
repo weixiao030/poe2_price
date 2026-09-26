@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v1.0.4</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v1.0.5</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -40,7 +40,7 @@
 当前**没有**使用官方 Trade 接口。
 
 - POE2 国际服：通货和可交易分类继续使用 poe2scout（全量 SnapshotPairs）并保留 poe.ninja / poe2db 补缺；碑牌词缀使用 [碑牌报价 API](http://125.122.32.215:2083/api-docs)，先行者碑牌目录使用 [poe.ninja PrecursorTablets](https://poe.ninja/poe2/economy/forbiddenrites/precursor-tablets)；传奇护甲单独优先使用 [poe.ninja UniqueArmours](https://poe.ninja/poe2/economy/forbiddenrites/unique-armours) 对应的 JSON 接口。
-- POE2 国服：碑牌词缀使用碑牌报价 API 的独立国服市场（`server=cn`），核对国服赛季、汇率、交易条件和实时分页修订；其余价格当前赛季主源 `poecurrency.top/api/summary?version=2`，历史赛季追加 `&season=<所选赛季>`，没有国服价的条目再用可用的国际参考源补。
+- POE2 国服：整件与暗金碑牌使用[国服整件碑牌 API](http://125.122.32.215:2083/api-docs#whole-tablets)，底材按普/魔/稀分别标价，暗金按独立名称标价；原始币种样本不混算。碑牌词缀使用碑牌报价 API 的独立国服市场（`server=cn`），核对国服赛季、汇率、交易条件和实时分页修订；其余价格当前赛季主源 `poecurrency.top/api/summary?version=2`，历史赛季追加 `&season=<所选赛季>`，没有国服价的条目再用可用的国际参考源补。
 - POE1 国际服：主源 poe.ninja，备用 poe2scout / poedb。
 - POE1 国服：当前赛季主源 `poecurrency.top/api/summary?version=1`，历史赛季追加 `&season=<所选赛季>`，再用可用的国际参考源补缺。
 - 国服 OCR 校验在本地完成：按同一物品分侧检查历史报价，校验 D/E、D/C 汇率与小数点修正依据；不依赖 Token 或额外历史接口。汇总中的当前价与全部历史价同时错误时仍可能漏判，真实行情突变也可能暂时采用历史估值。
@@ -60,6 +60,14 @@
 ---
 
 ## 更新日志
+
+### 26/9/26 更新（v1.0.5）
+
+- 接入碑牌市集国服整件行情，覆盖8种碑牌的普通、魔法、稀有目录和9种暗金碑牌目录；无有效挂牌的条目保持无价。
+- 国服底材名称用普/魔/稀分别标示整件参考价，暗金碑牌按独立英文身份匹配中文名称，保留字体补丁译文与现有词缀价格。
+- 按样本最多的原始币种显示低价挂牌样本中位价，缺中位价使用有效最低价；不会混用国服/国际服或不同赛季、币种。
+- 优先在线最新数据，在线不可用再使用同赛季缓存，过期报价仍可用；整件碑牌源失败独立提示部分完成。
+- 软件升级后关闭游戏并更新一次物价；使用功能或字体补丁时，先安装这些补丁，再更新物价。
 
 ### 26/9/26 更新（v1.0.4）
 

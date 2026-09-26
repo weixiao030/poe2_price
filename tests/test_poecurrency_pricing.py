@@ -51,6 +51,11 @@ class PoecurrencyPricingTests(unittest.TestCase):
         )
         league_patcher.start()
         self.addCleanup(league_patcher.stop)
+        whole_tablet_patcher = patch.object(
+            self.price_patch, 'resolve_cn_tablet_league', side_effect=OSError('offline test')
+        )
+        whole_tablet_patcher.start()
+        self.addCleanup(whole_tablet_patcher.stop)
 
     def minimal_price_map(self):
         return {

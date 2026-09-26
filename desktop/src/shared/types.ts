@@ -54,6 +54,7 @@ export interface OperationResult {
   cancelled: boolean
   skipped?: boolean
   tabletAffixes?: import('./operation-outcome').TabletLayerStatus
+  wholeTablets?: import('./operation-outcome').TabletLayerStatus
   stdout: string
   stderr: string
   startedAt: string

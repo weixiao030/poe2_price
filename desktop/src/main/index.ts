@@ -33,6 +33,7 @@ import { query, stopTree, worker, workers } from './engine'
 import {
   operationWarning,
   tabletStatusForRequest,
+  wholeTabletStatusForRequest,
   type TabletLayerStatus
 } from '../shared/operation-outcome'
 import { dataRoot } from './runtime'
@@ -145,6 +146,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     exitCode = 1,
     kind = ''
   let tabletAffixes: TabletLayerStatus | undefined
+  let wholeTablets: TabletLayerStatus | undefined
   try {
     const confirmed = store.get('confirmed')
     const client = automatic
@@ -195,6 +197,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     stderr = result.stderr
     exitCode = result.exitCode
     tabletAffixes = tabletStatusForRequest(request, result.tabletAffixes)
+    wholeTablets = wholeTabletStatusForRequest(request, result.wholeTablets)
     if (exitCode === 0 && /^__POE_LANGUAGE_MODE__localization\r?$/m.test(stdout))
       request.languageMode = 'localization'
   } catch (error) {
@@ -212,6 +215,7 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     cancelled: cancellationRequested,
     skipped: automatic && exitCode === 2,
     tabletAffixes,
+    wholeTablets,
     stdout,
     stderr,
     startedAt,

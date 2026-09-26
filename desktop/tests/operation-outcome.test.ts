@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { OperationOutput } from '../src/main/operation-output'
-import { operationWarning, tabletStatusForRequest } from '../src/shared/operation-outcome'
+import { operationWarning, tabletStatusForRequest, wholeTabletStatusForRequest } from '../src/shared/operation-outcome'
 import type { OperationResult, PatchRequest } from '../src/shared/types'
 
 const request = { operation: 'update', gameVersion: 'poe2', patchScope: 'all' } as PatchRequest
@@ -51,4 +51,25 @@ test('partial results remain visible after saving history, without overriding fa
   assert.equal(operationWarning(result), undefined) // Existing history has no layer field.
   for (const change of [{ cancelled: true }, { skipped: true }, { exitCode: 1 }])
     assert.equal(operationWarning({ ...partial, ...change }), undefined)
+})
+
+test('whole tablet result is independent of affix success and works for uniques-only', () => {
+  for (let split = 0; split < 40; split++) {
+    const marker = '__POE_WHOLE_TABLETS__unavailable\r\n'
+    const output = new OperationOutput()
+    output.write('__POE_TABLET_LAYER__applied\n' + marker.slice(0, split))
+    output.write(marker.slice(split) + '日志'.repeat(10000))
+    output.end()
+    assert.equal(output.wholeTablets, 'unavailable')
+    assert.equal(output.tabletAffixes, 'applied')
+    assert.match(operationWarning({ ...result, ...output })!, /整件\/暗金碑牌价格未完整生效/)
+  }
+  for (const patchScope of ['all', 'currency', 'uniques'] as const)
+    assert.equal(wholeTabletStatusForRequest({ ...request, patchScope }, 'unavailable'), 'unavailable')
+  assert.equal(wholeTabletStatusForRequest(request, 'disabled'), undefined)
+  assert.equal(wholeTabletStatusForRequest(request, undefined), undefined)
+  assert.equal(wholeTabletStatusForRequest({ ...request, patchScope: 'none' }, 'unavailable'), undefined)
+  assert.equal(wholeTabletStatusForRequest({ ...request, gameVersion: 'poe1' }, 'unavailable'), undefined)
+  assert.equal(operationWarning({ ...result, wholeTablets: 'applied' }), undefined)
+  assert.equal(operationWarning({ ...result, wholeTablets: 'unavailable', cancelled: true }), undefined)
 })

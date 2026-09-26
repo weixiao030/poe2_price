@@ -14,6 +14,7 @@ export interface WorkerResult {
   stderr: string
   exitCode: number
   tabletAffixes?: TabletLayerStatus
+  wholeTablets?: TabletLayerStatus
 }
 export const workers = new Set<ChildProcessWithoutNullStreams>()
 export async function stopTree(child: ChildProcessWithoutNullStreams): Promise<boolean> {
@@ -96,7 +97,8 @@ export async function worker(
           stdout,
           stderr,
           exitCode: timedOut ? 124 : (code ?? 1),
-          tabletAffixes: operationOutput.tabletAffixes
+          tabletAffixes: operationOutput.tabletAffixes,
+          wholeTablets: operationOutput.wholeTablets
         })
       })
     })

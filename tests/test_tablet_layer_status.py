@@ -28,9 +28,16 @@ $cases=@(
 )
 $results=@($cases | ForEach-Object { Get-TabletLayerStatus -Enabled $true -Summary @{tablet_affixes=$_} })
 $results+=Get-TabletLayerStatus -Enabled $false -Summary $null
+$node=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-WholeTabletLayerStatus'},$true)
+Invoke-Expression $node.Extent.Text
+$results+=Get-WholeTabletLayerStatus -Enabled $true -Summary @{whole_tablets=@{status='partial';installation_status='applied'}}
+$results+=Get-WholeTabletLayerStatus -Enabled $true -Summary @{whole_tablets=@{status='unavailable';installation_status='unavailable'}}
+$results+=Get-WholeTabletLayerStatus -Enabled $true -Summary $null
+$results+=Get-WholeTabletLayerStatus -Enabled $false -Summary $null
 $results | ConvertTo-Json -Compress
 '''.replace('__SOURCE__', str(source).replace("'", "''"))
     encoded = base64.b64encode(script.encode('utf-16-le')).decode()
     result = subprocess.run([shell, '-NoProfile', '-EncodedCommand', encoded], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == ['unavailable', 'unavailable', 'applied', 'applied', 'unavailable', 'unknown', 'disabled']
+    assert json.loads(result.stdout) == ['unavailable', 'unavailable', 'applied', 'applied', 'unavailable', 'unknown', 'disabled',
+                                        'applied', 'unavailable', 'unknown', 'disabled']

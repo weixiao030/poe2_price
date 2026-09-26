@@ -32,7 +32,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.4"
+$script:PatchVersion = "v1.0.5"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -2874,6 +2874,14 @@ function Get-TabletLayerStatus {
     return "unknown"
 }
 
+function Get-WholeTabletLayerStatus {
+    param([bool]$Enabled, $Summary)
+    if (-not $Enabled) { return "disabled" }
+    if ($null -eq $Summary -or $null -eq $Summary.whole_tablets) { return "unknown" }
+    if ($Summary.whole_tablets.installation_status -eq "applied") { return "applied" }
+    return "unavailable"
+}
+
 function Publish-PriceBuildStage {
     param(
         [Parameter(Mandatory = $true)][string]$StageDir,
@@ -3408,8 +3416,8 @@ if ($PatchPriceFetchEnabled) {
         "--fallback-price-sources", $(if ($PoeNinjaLeague) { "poe-ninja" } else { "none" })
     )
 }
+if ($PoeCurrencySeason) { $BuildArgs += @("--tablet-cn-season", $PoeCurrencySeason) }
 if ($PatchTabletAffixesEnabled) {
-    if ($PoeCurrencySeason) { $BuildArgs += @("--tablet-cn-season", $PoeCurrencySeason) }
     $BuildArgs += @(
         "--tablet-api-base", "http://125.122.32.215:2083",
         "--tablet-template-it", $TabletTemplateIt,
@@ -3449,6 +3457,8 @@ if ($UseChinaPriceSource) {
 
 $UsingCachedPatch = $false
 $TabletLayerStatus = if ($PatchTabletAffixesEnabled) { "unknown" } else { "disabled" }
+$WholeTabletEnabled = $UseChinaPriceSource -and ($PatchScope -ne "none")
+$WholeTabletLayerStatus = if ($WholeTabletEnabled) { "unknown" } else { "disabled" }
 $PatchFolderZip = Join-Path $RepoRoot $PricePatchZipName
 try {
     New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null
@@ -3472,6 +3482,7 @@ try {
     try {
         $StageSummary = Get-Content -LiteralPath $StageSummaryJson -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         $TabletLayerStatus = Get-TabletLayerStatus -Enabled $PatchTabletAffixesEnabled -Summary $StageSummary
+        $WholeTabletLayerStatus = Get-WholeTabletLayerStatus -Enabled $WholeTabletEnabled -Summary $StageSummary
     }
     catch {
         Write-Warning "无法读取本次碑牌词缀生成结果：$($_.Exception.Message)"
@@ -3547,6 +3558,7 @@ catch {
         $UsingCachedPatch = $true
         # The safe core cache removes tablet redirects and does not install affix resources.
         $TabletLayerStatus = if ($PatchTabletAffixesEnabled) { "unavailable" } else { "disabled" }
+        $WholeTabletLayerStatus = if ($WholeTabletEnabled) { "unavailable" } else { "disabled" }
         $CacheTime = (Get-Item -LiteralPath $CachedPatchZip).LastWriteTime
         Write-Warning "实时构建失败，已自动使用当前范围和模式的兼容核心缓存（$CacheTime）；Words 与 EndgameMaps 保持游戏当前内容。原因：$BuildFailure"
         try {
@@ -3733,6 +3745,10 @@ Write-Host ""
 if (-not $NoInstall) {
     # Emit only after physical installation and readback have both succeeded.
     Write-Output ("__POE_TABLET_LAYER__" + $TabletLayerStatus)
+    Write-Output ("__POE_WHOLE_TABLETS__" + $WholeTabletLayerStatus)
+    if ($WholeTabletLayerStatus -in @("unavailable", "unknown")) {
+        Write-Host "国服整件/暗金碑牌价格未完整生效，请查看日志后重试。" -ForegroundColor Yellow
+    }
     if ($TabletLayerStatus -eq "unavailable") {
         Write-Warning "物价已更新，但碑牌词缀未生效，请重试；详情见日志。"
     }

@@ -3,6 +3,7 @@ import type { TabletLayerStatus } from '../shared/operation-outcome'
 // Collect the short, final result separately from the truncated display log.
 export class OperationOutput {
   tabletAffixes?: TabletLayerStatus
+  wholeTablets?: TabletLayerStatus
   private pending = ''
 
   write(chunk: string) {
@@ -19,5 +20,7 @@ export class OperationOutput {
   private parse(line: string) {
     const match = /^__POE_TABLET_LAYER__(applied|unavailable|unknown|disabled)\r?$/.exec(line)
     if (match) this.tabletAffixes = match[1] as TabletLayerStatus
+    const whole = /^__POE_WHOLE_TABLETS__(applied|unavailable|unknown|disabled)\r?$/.exec(line)
+    if (whole) this.wholeTablets = whole[1] as TabletLayerStatus
   }
 }
