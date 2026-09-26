@@ -1,0 +1,60 @@
+name: Publish verified v1.0.6 assets
+on:
+  push:
+    branches: [codex/publish-verified-v106]
+permissions:
+  contents: write
+concurrency:
+  group: desktop-stable-publish
+  cancel-in-progress: false
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Download the five locally verified draft assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.0.6 --repo "$GITHUB_REPOSITORY" --dir release --pattern '*'
+          test "$(find release -maxdepth 1 -type f | wc -l)" -eq 5
+          echo 'e7c1608ed582ffde0f21e8e879bfe027c7d1cd737ae268ed33d6618e4917f5bf  release/POE-Price-Patch-1.0.6-x64-Setup.exe' | sha256sum --check
+      - name: Install publishing tools
+        run: |
+          npm ci --prefix desktop
+          python -m pip install boto3
+      - name: Verify signature, upload identical assets, and verify public downloads
+        env:
+          ZOS_ENDPOINT: ${{ secrets.ZOS_ENDPOINT }}
+          ZOS_BUCKET: ${{ secrets.ZOS_BUCKET }}
+          ZOS_CREDENTIALS: ${{ secrets.ZOS_CREDENTIALS }}
+        shell: python
+        run: |
+          import os, pathlib, runpy, sys
+          import botocore.config
+          credential = pathlib.Path(os.environ['RUNNER_TEMP']) / 'verified-v106-zos.json'
+          credential.write_text(os.environ['ZOS_CREDENTIALS'], encoding='utf-8')
+          credential.chmod(0o600)
+          OriginalConfig = botocore.config.Config
+          class UploadConfig(OriginalConfig):
+              def __init__(self, *args, **kwargs):
+                  kwargs['connect_timeout'] = 120
+                  super().__init__(*args, **kwargs)
+          botocore.config.Config = UploadConfig
+          sys.argv = ['desktop/scripts/upload-zos-update.py',
+              '--endpoint', os.environ['ZOS_ENDPOINT'], '--bucket', os.environ['ZOS_BUCKET'],
+              '--credentials', str(credential), '--directory', 'release',
+              '--part-size-mib', '5', '--upload-concurrency', '2', '--read-timeout', '600']
+          try:
+              runpy.run_path(sys.argv[0], run_name='__main__')
+          finally:
+              credential.unlink(missing_ok=True)
