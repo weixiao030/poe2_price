@@ -1,7 +1,6 @@
 name: Publish verified v1.0.6 assets
 on:
-  push:
-    branches: [codex/publish-verified-v106]
+  workflow_dispatch:
 permissions:
   contents: write
 concurrency:
