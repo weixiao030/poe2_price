@@ -64,12 +64,15 @@ def fetch(client, **kwargs):
     return m.fetch_cn_whole_tablets(client, BASE, LEAGUE, **kwargs)
 
 
-def test_prices_stay_in_original_units_and_label_all_available_rarities():
+def test_prices_stay_in_original_units_and_prefer_normal_name_reference():
     payload = page([row(r) for r in ('normal', 'magic', 'rare', 'unique')])
     payload['data'][2]['prices'] = {'chaos': dict(count=10, min=1, low_sample_median=2, max=3)}
     client = Client(payload)
     report = fetch(client)
-    assert report['base_prices']['Ritual_Tablet']['price'] == '普100E 魔100E 稀2C'
+    reference = report['base_prices']['Ritual_Tablet']
+    assert reference['price'] == '100E' and reference['variant'] == 'Normal'
+    assert reference['selection'] == 'normal'
+    assert reference['variants']['rare']['price'] == '2C'
     assert report['unique_prices']['freedom of faith']['price'] == '100E'
     assert report['unique_prices']['freedom of faith']['sample_count'] == 8
     assert len(client.urls) == 1 and '/whole-tablets/prices?' in client.urls[0]
@@ -78,10 +81,12 @@ def test_prices_stay_in_original_units_and_label_all_available_rarities():
     assert report['reference_note'].startswith('整件低价挂牌样本参考')
 
 
-def test_missing_quotes_are_not_zero_and_never_borrow_from_another_rarity():
+def test_missing_normal_uses_available_reference_without_fabricating_quotes():
     report = fetch(Client(page([row('magic'), row('normal', status='no_listings', prices={}),
                                row('unique', status='pending', prices={})])))
-    assert report['base_prices']['Ritual_Tablet']['price'] == '魔100E'
+    reference = report['base_prices']['Ritual_Tablet']
+    assert reference['price'] == '100E' and reference['variant'] == 'Magic'
+    assert set(reference['variants']) == {'magic'}
     assert report['unique_catalog'] == {'freedom of faith': 'Freedom_of_Faith'}
     assert not report['unique_prices'] and len(report['skipped']) == 2
 
@@ -90,6 +95,31 @@ def test_missing_quotes_are_not_zero_and_never_borrow_from_another_rarity():
     ('league', 'Forbidden Rites'), ('stale', None), ('offset', 99), ('total', 3000)])
 def test_rejects_wrong_market_or_invalid_pagination(key, value):
     with pytest.raises(ValueError): fetch(Client(page(**{key: value})))
+
+
+@pytest.mark.parametrize('reverse', [False, True])
+def test_missing_normal_chooses_lowest_comparable_reference(reverse):
+    rows = [row('magic'), row('rare', prices={
+        'exalted': dict(count=10, min=10, low_sample_median=20, max=30)})]
+    if reverse:
+        rows.reverse()
+    reference = fetch(Client(page(rows)))['base_prices']['Ritual_Tablet']
+    assert reference['price'] == '20E' and reference['variant'] == 'Rare'
+    assert reference['selection'] == 'lowest_available_native_currency'
+
+
+def test_missing_normal_never_compares_unconverted_currency_numbers():
+    rows = [row('magic'), row('rare', prices={
+        'divine': dict(count=2, min=1, low_sample_median=1, max=1)})]
+    reference = fetch(Client(page(rows)))['base_prices']['Ritual_Tablet']
+    assert reference['price'] == '100E' and reference['variant'] == 'Magic'
+    assert reference['variants']['rare']['price'] == '1D'
+
+
+def test_no_valid_rarity_leaves_base_unpriced():
+    report = fetch(Client(page([row(r, status='no_listings', prices={})
+                               for r in m.RARITIES] + [row('unique')])))
+    assert not report['base_prices'] and len(report['skipped']) == 3
 
 
 @pytest.mark.parametrize('changed', [dict(snapshot={'id': 'snapshot-2'}), dict(updated_at='new'),
@@ -117,12 +147,12 @@ def test_live_first_and_same_market_cache_fallback_even_when_stale(tmp_path):
     first = fetch(Client(page()), cache_dir=tmp_path)
     assert first['source'] == 'live'
     fresh = page([row(prices={'divine': dict(count=10, min=1, low_sample_median=2, max=3)})], stale=True)
-    assert fetch(Client(fresh), cache_dir=tmp_path)['base_prices']['Ritual_Tablet']['price'] == '普2D'
+    assert fetch(Client(fresh), cache_dir=tmp_path)['base_prices']['Ritual_Tablet']['price'] == '2D'
     class Offline:
         def get_json(self, url): raise OSError('offline')
     cached = fetch(Offline(), cache_dir=tmp_path)
     assert cached['source'] == 'cache' and cached['stale'] is True
-    assert cached['base_prices']['Ritual_Tablet']['price'] == '普2D'
+    assert cached['base_prices']['Ritual_Tablet']['price'] == '2D'
     with pytest.raises(OSError): m.fetch_cn_whole_tablets(Offline(), BASE, '永久', cache_dir=tmp_path)
     with pytest.raises(OSError): m.fetch_cn_whole_tablets(Offline(), BASE + '/other', LEAGUE, cache_dir=tmp_path)
 
@@ -163,16 +193,19 @@ def test_names_preserve_affix_inheritance_english_filters_and_other_resources(tm
     raw = synthetic_baseitems()
     import poe2_tablet_prices as affixes
     redirected, _ = affixes._redirect_tablet_base_items(raw, {'Ritual'})
-    dat = tmp_path / 'base.datc64'; dat.write_bytes(redirected)
+    # Migrate the v1.0.5 multi-rarity label without touching the font translation.
+    old_labeled, _ = affixes.price_tablet_names(redirected, {
+        'Ritual_Tablet': {'price': '普90E 魔80E 稀2C'}})
+    dat = tmp_path / 'base.datc64'; dat.write_bytes(old_labeled)
     z = tmp_path / 'patch.zip'
     target = 'data/balance/simplified chinese/baseitemtypes.datc64'
     with zipfile.ZipFile(z, 'w') as a:
-        a.writestr(target, redirected)
+        a.writestr(target, old_labeled)
         a.writestr(refs.ENGLISH_BASEITEMS, synthetic_baseitems(True))
         a.writestr('data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd', b'unchanged')
     for _ in range(2):
         assert len(builder.apply_cn_whole_tablet_names(dat, z, target, report)) == 1
-        assert names.scan_base_item_names(dat.read_bytes())[0].name == '[普100E 稀100E|祭祀碑牌]'
+        assert names.scan_base_item_names(dat.read_bytes())[0].name == '[100E|祭祀碑牌]'
         # Name changes leave inheritance pointers intact, including our CSD route.
         assert dat.read_bytes()[44:52] == redirected[44:52]
     with zipfile.ZipFile(z) as a:

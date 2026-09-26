@@ -1,5 +1,6 @@
-"""Currency-independent display policy for paired tablet sample medians."""
-from decimal import Decimal, ROUND_HALF_UP
+"""Shared POE2 E/C/D display policy and paired tablet sample medians."""
+from decimal import Decimal
+from fractions import Fraction
 import math
 
 UNITS = {'exalted': 'E', 'chaos': 'C', 'divine': 'D'}
@@ -31,29 +32,38 @@ def merge_threshold(high, anchors):
 
 
 def display_number(value):
-    for places in range(2, 13):
-        rounded = value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
-        if rounded > 0:
-            return format(rounded, 'f').rstrip('0').rstrip('.')
-    raise ValueError('tablet price is too small to display')
+    value = Fraction(value)
+    if value <= 0:
+        raise ValueError('positive price required')
+    places = 2
+    truncated = value.numerator * 100 // value.denominator
+    while not truncated:
+        places += 1
+        truncated = value.numerator * 10 ** places // value.denominator
+    digits = str(truncated).zfill(places + 1)
+    return (digits[:-places] + '.' + digits[-places:]).rstrip('0').rstrip('.')
 
 
-def choose_currency(high, rates, counts):
-    valid = [unit for unit in UNITS if rates.get(unit, 0) > 0]
+def choose_currency(value, rates, counts=None):
+    # Prices and rates use the same reference unit; Fraction avoids rounding
+    # during conversion and makes exact boundaries independent of precision.
+    valid = {unit: Fraction(rates[unit]) for unit in UNITS
+             if rates.get(unit, 0) > 0}
     if not valid:
         raise ValueError('valid display exchange rates are required')
-    # Tolerance applies only to floating-point conversion noise at the boundaries.
-    readable = [unit for unit in valid if 1 - NOISE <= high / rates[unit] <= 100 + NOISE]
-    majority = [unit for unit in readable if counts.get(unit, 0) > sum(counts.values()) / 2]
-    if majority:
-        return majority[0]
-    if readable:
-        return max(readable, key=lambda unit: (rates[unit], unit))
-    def penalty(unit):
-        amount = high / rates[unit]
-        distance = -math.log(float(amount)) if amount < 1 else math.log(float(amount / 100))
-        return distance, -rates[unit], unit
-    return min(valid, key=penalty)
+    if 'chaos' in valid and (
+        'exalted' in valid and valid['chaos'] <= valid['exalted']
+        or 'divine' in valid and valid['chaos'] >= valid['divine']
+    ):
+        del valid['chaos']
+    eligible = [unit for unit in valid if Fraction(value) >= valid[unit]]
+    return (max(eligible, key=lambda unit: (valid[unit], unit)) if eligible
+            else min(valid, key=lambda unit: (valid[unit], unit)))
+
+
+def format_value(value, rates):
+    unit = choose_currency(value, rates)
+    return display_number(Fraction(value) / Fraction(rates[unit])) + UNITS[unit]
 
 
 def format_pair(rare, magic, rates, anchors, counts=None):
@@ -62,9 +72,9 @@ def format_pair(rare, magic, rates, anchors, counts=None):
         raise ValueError('both tablet medians must be finite and positive')
     threshold = merge_threshold(high, anchors)
     merged = (high - low) / low <= threshold + NOISE
-    unit = choose_currency(high, rates, counts or {})
-    values = [(low + high) / 2] if merged else [low, high]
-    labels = [display_number(value / rates[unit]) for value in values]
+    values = [(Fraction(low) + Fraction(high)) / 2] if merged else [low, high]
+    unit = choose_currency(values[0], rates)
+    labels = [display_number(Fraction(value) / Fraction(rates[unit])) for value in values]
     if len(labels) == 2 and labels[0] == labels[1]:
         labels = labels[:1]
     return '~'.join(labels) + UNITS[unit], {

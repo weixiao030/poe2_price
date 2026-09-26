@@ -23,7 +23,7 @@ import tempfile
 import urllib.parse
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -2827,7 +2827,13 @@ def merge_price_source_results(
     # silently replace a valid poe.ninja quote for the same display name.
     ordered_entries: list[tuple[int, int, PriceObservation]] = []
     for result_index, result in enumerate(results):
+        reference = (result.prices or {}).get('divine')
         for observation in (result.prices or {}).values():
+            if reference and reference.price_exalted > 0:
+                observation = replace(observation, source_metadata={
+                    **observation.source_metadata,
+                    'display_source_divine_exalted': str(reference.price_exalted),
+                })
             is_primary_unique_armour = (
                 result.source == "poe-ninja"
                 and observation.category.lower() == "unique:uniquearmours"
@@ -2864,15 +2870,11 @@ def divine_exalted_ratio_summary(divine_exalted: Decimal) -> dict[str, str]:
     }
 
 
-def format_price(price_exalted: Decimal, divine_exalted: Decimal) -> str:
+def format_price(price_exalted: Decimal, divine_exalted: Decimal, chaos_exalted: Decimal = Decimal(0)) -> str:
     if price_exalted <= 0:
         return ""
-    price_divine = price_exalted / divine_exalted if divine_exalted else Decimal("0")
-    if price_divine >= Decimal("0.1"):
-        return f"{price_divine.quantize(Decimal('0.01'))}D"
-    if price_exalted >= Decimal("10"):
-        return f"{price_exalted.quantize(Decimal('0.1'))}E"
-    return f"{price_exalted.quantize(Decimal('0.01'))}E"
+    return format_value(price_exalted, {'exalted': Decimal(1),
+                        'chaos': chaos_exalted, 'divine': divine_exalted})
 
 
 from poe2_tablet_prices import (
@@ -2882,7 +2884,9 @@ from poe2_tablet_prices import (
     resolve_cn_tablet_league, price_tablet_names,
 )
 from poe2_tablet_refs import clean_tablet_layer, ENGLISH_BASEITEMS
-from poe2_whole_tablets import fetch_cn_whole_tablets
+from poe2_whole_tablets import fetch_cn_whole_tablets, apply_whole_tablet_display
+from poe2_tablet_display import format_value
+from fractions import Fraction
 
 
 def apply_cn_whole_tablet_names(patched_dat, output_zip, game_path, report):
@@ -2909,12 +2913,37 @@ def is_reference_currency(obs: PriceObservation) -> bool:
 
 
 def apply_display_prices(
-    prices: dict[str, PriceObservation], divine_exalted: Decimal
+    prices: dict[str, PriceObservation], divine_exalted: Decimal, display_rates=None
 ) -> None:
+    rates = display_rates or price_display_rates(prices, divine_exalted)
     for obs in prices.values():
-        obs.display_price = "" if is_reference_currency(obs) else format_price(
-            obs.price_exalted, divine_exalted
-        )
+        source_divine = obs.source_metadata.get('display_source_divine_exalted', str(divine_exalted))
+        scale = Fraction(rates['divine']) / Fraction(source_divine)
+        obs.source_metadata['display_source_divine_exalted'] = str(source_divine)
+        obs.display_price = ("" if is_reference_currency(obs) or obs.price_exalted <= 0
+                             else format_value(Fraction(obs.price_exalted) * scale, rates))
+
+
+def price_display_rates(prices, divine_exalted):
+    """Rates come only from this market's validated observation set."""
+    rates = {'exalted': Decimal(1), 'divine': divine_exalted}
+    for obs in prices.values():
+        if (obs.api_id in {'chaos', 'poe2db:chaos'}
+                or obs.en_name in {'Chaos Orb', '混沌石', '混沌宝珠', '混沌寶珠'}
+                or obs.english_name == 'Chaos Orb') and obs.price_exalted > 0:
+            source_divine = Decimal(obs.source_metadata.get('display_source_divine_exalted', str(divine_exalted)))
+            rates['chaos'] = obs.price_exalted * divine_exalted / source_divine
+            break
+    return rates
+
+
+def price_display_audit(prices, rates, source):
+    return {'source': source, 'rates_exalted': {key: str(value) for key, value in rates.items()},
+            'observations': [dict(api_id=obs.api_id, name=obs.en_name, category=obs.category,
+                price_exalted=str(obs.price_exalted), display_price=obs.display_price,
+                source_divine_exalted=obs.source_metadata.get('display_source_divine_exalted', str(rates['divine'])),
+                reference_hidden=is_reference_currency(obs), below_name_threshold=obs.price_exalted < 1,
+                source_pair=obs.source_pair) for obs in prices.values()]}
 
 
 def match_prices_to_base_items(
@@ -3925,7 +3954,9 @@ def main(argv: list[str]) -> int:
             try:
                 progress(f"备用结果 {price_source_label(result.source)}：开始匹配补缺")
                 fallback_divine = divine_price_exalted(result.prices)
-                apply_display_prices(result.prices, fallback_divine)
+                apply_display_prices(result.prices, fallback_divine,
+                    price_display_rates(best, divine_exalted)
+                    if best and args.price_source != 'poecurrency-cn' else None)
                 fallback_divine_by_source[result.source] = fallback_divine
                 if result.source == "poe2scout":
                     fallback_unique_by_name.update(
@@ -4022,6 +4053,17 @@ def main(argv: list[str]) -> int:
         fallback_rows_added = 0
         high_value_reference_rows = 0
 
+    display_rates = price_display_rates(best, divine_exalted) if fetch_prices else {}
+    if fetch_prices:
+        audit = [price_display_audit(best, display_rates, args.price_source)]
+        for result in fallback_results:
+            if result.prices and result.source not in merged_price_sources and result.source in fallback_divine_by_source:
+                source_divine = fallback_divine_by_source[result.source]
+                rates = (display_rates if args.price_source != 'poecurrency-cn'
+                         else price_display_rates(result.prices, source_divine))
+                audit.append(price_display_audit(result.prices, rates, result.source))
+        (args.out_dir / 'price_display.audit.json').write_text(
+            json.dumps(audit, ensure_ascii=False, indent=2), encoding='utf-8')
     whole_tablets: dict[str, Any] = {"status": "disabled"}
     if args.price_source == "poecurrency-cn" and (
         patch_base_items and not args.no_tablet_affixes
@@ -4037,8 +4079,9 @@ def main(argv: list[str]) -> int:
                 client, args.tablet_api_base, cn_tablet_league,
                 cache_dir=args.tablet_cache_dir, on_retry=progress,
             )
+            apply_whole_tablet_display(whole_tablets, display_rates)
             progress(f"国服整件碑牌：{len(whole_tablets['base_prices'])} 类底材、"
-                     f"{len(whole_tablets['unique_prices'])} 种暗金；价格采用原币种低价样本中位价")
+                     f"{len(whole_tablets['unique_prices'])} 种暗金；按本服汇率显示 E/C/D，截断小数")
             if whole_tablets.get('stale'):
                 progress(f"整件碑牌行情已过期，继续使用同赛季报价（{whole_tablets['updated_at']}）")
         except Exception as exc:
@@ -4132,6 +4175,8 @@ def main(argv: list[str]) -> int:
         ),
         "missing_items": len(missing),
         "divine_price_exalted": str(divine_exalted),
+        "display_rates_exalted": {key: str(value) for key, value in display_rates.items()},
+        "price_display_policy": "E/C/D ladder, range lower endpoint, truncate without rounding",
         "divine_exalted_ratio": divine_exalted_ratio_summary(divine_exalted),
         "primary_source_status": primary_source_status,
         "primary_source_warning": primary_source_warning,
@@ -4223,6 +4268,7 @@ def main(argv: list[str]) -> int:
                 try:
                     progress("获取碑牌词缀价格（失败将跳过碑牌层）")
                     summary["tablet_affixes"] = build_tablet_affix_resources(
+                        display_rates=display_rates,
                         client=client,
                         api_base=args.tablet_api_base,
                         league=args.poe_ninja_league,
@@ -4307,7 +4353,7 @@ def main(argv: list[str]) -> int:
                 whole_tablets['base_names'] = apply_cn_whole_tablet_names(
                     args.patched_dat, output_zip, args.game_path, whole_tablets,
                 )
-                progress(f"写入国服整件碑牌名称参考价（{len(whole_tablets['base_names'])} 类，普/魔/稀分别标示）")
+                progress(f"写入国服碑牌名称参考价（{len(whole_tablets['base_names'])} 类，与国际服统一单价格式）")
             except Exception as exc:
                 whole_tablets.update(status='partial', base_name_error=str(exc))
                 progress(f"国服整件碑牌名称标价失败：{exc}")

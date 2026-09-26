@@ -27,7 +27,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v1.0.5"
+$script:PatchVersion = "v1.0.6"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {

@@ -7,9 +7,11 @@ import assert from 'node:assert/strict'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const { version } = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
-const evidence = path.resolve(root, '../verification/desktop-v' + version)
-const profile = path.join(evidence, 'real-profile')
 const args = process.argv.slice(2)
+const reportIndex = args.indexOf('--report-dir')
+const evidence = reportIndex < 0 ? path.resolve(root, '../verification/desktop-v' + version)
+  : path.resolve(args.splice(reportIndex, 2)[1])
+const profile = path.join(evidence, 'real-profile')
 const appIndex = args.indexOf('--app-dir')
 const appDirectory =
   appIndex < 0 ? path.join(root, 'dist/win-unpacked') : path.resolve(args.splice(appIndex, 2)[1])

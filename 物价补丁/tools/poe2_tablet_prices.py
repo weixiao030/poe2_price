@@ -28,7 +28,8 @@ from poe2_tablet_refs import (
     ENGLISH_BASEITEMS, ORIGINAL, TYPES, canonical_reference, clean_references,
     clean_tablet_layer, validate_resources,
 )
-from poe2_tablet_display import format_pair, market_anchors
+from poe2_tablet_display import format_pair, market_anchors, format_value
+from fractions import Fraction
 
 TABLET_SLUGS = tuple(kind + "_Tablet" for kind in TYPES.values())
 NINJA_URL = "https://poe.ninja/poe2/api/economy/stash/current/item/overview"
@@ -50,9 +51,7 @@ def decimal(value) -> Decimal:
 def format_price(value: Decimal, ratio: Decimal) -> str:
     if value <= 0 or ratio <= 0:
         return ""
-    if value / ratio >= Decimal("0.1"):
-        return f"{value / ratio:.2f}D"
-    return f"{value:.1f}E" if value >= 10 else f"{value:.2f}E"
+    return format_value(value, {'exalted': Decimal(1), 'divine': ratio})
 
 
 def _tablet_display_text(value) -> str:
@@ -145,7 +144,7 @@ def trade_query_scope(url, rarity, server="international", league=None):
         return ''
 
 
-def pair_tablet_quotes(quotes_by_rarity, api_reports):
+def pair_tablet_quotes(quotes_by_rarity, api_reports, display_rates=None):
     available = [rarity for rarity in ('magic', 'rare') if rarity in quotes_by_rarity
                  and api_reports[rarity].get('status', 'ok') == 'ok']
     if len(available) == 1:
@@ -155,7 +154,7 @@ def pair_tablet_quotes(quotes_by_rarity, api_reports):
         # failed snapshot. The report records only the source actually read.
         result, audit = pair_tablet_quotes(
             {side: quotes_by_rarity[rarity] for side in ('magic', 'rare')},
-            {side: api_reports[rarity] for side in ('magic', 'rare')})
+            {side: api_reports[rarity] for side in ('magic', 'rare')}, display_rates)
         for row in audit:
             if row['status'] == 'priced':
                 row[missing + '_divine'] = None
@@ -174,6 +173,9 @@ def pair_tablet_quotes(quotes_by_rarity, api_reports):
     if api_reports['rare'].get('source') == 'cache' and api_reports['magic'].get('source') != 'cache':
         rates = {k: decimal(v) for k, v in api_reports['magic']['rates'].items()}
     rates['divine'] = Decimal(1)
+    if display_rates and display_rates.get('divine', 0) > 0:
+        rates = {key: Fraction(value) / Fraction(display_rates['divine'])
+                 for key, value in display_rates.items() if value > 0}
     for slug in TABLET_SLUGS:
         rare = {q.identifier:q for q in quotes_by_rarity['rare'].get(slug, [])}
         magic = {q.identifier:q for q in quotes_by_rarity['magic'].get(slug, [])}
@@ -532,7 +534,7 @@ def _fetch_tablet_affix_snapshot(client, api_base, league, rarity, allow_stale,
                     "minimum_price_ids":[q.identifier for quotes in result.values() for q in quotes if q.price_statistic == 'min']}
 
 
-def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL):
+def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL, display_rates=None):
     if not league:
         raise ValueError("poe.ninja league is required")
     url = api_url + '?' + urllib.parse.urlencode(dict(league=league, type="PrecursorTablets"))
@@ -542,6 +544,13 @@ def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL):
     core = payload.get("core") or {}; ratio = decimal((core.get("rates") or {}).get("exalted"))
     if core.get("primary") != "divine" or ratio <= 0:
         raise ValueError("invalid poe.ninja tablet currency unit")
+    # Source primaryValue is Divine. Share the operation's display rates while
+    # retaining the source's original value for selection and audit.
+    rates = {key: Fraction(value) / Fraction(display_rates['divine'])
+             for key, value in display_rates.items() if value > 0} if display_rates else {
+        'divine': Fraction(1), 'exalted': 1 / Fraction(ratio)}
+    if not display_rates and decimal((core.get('rates') or {}).get('chaos')) > 0:
+        rates['chaos'] = 1 / Fraction(decimal(core['rates']['chaos']))
     prices = {}; values = {}
     for row in payload["lines"]:
         slug = str(row.get("baseType") or row.get("name") or "").replace(' ', '_')
@@ -550,7 +559,7 @@ def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL):
             continue
         if decimal(row.get("listingCount")) <= 0 or decimal(row.get("primaryValue")) <= 0:
             continue
-        price = format_price(decimal(row["primaryValue"]) * ratio, ratio)
+        price = format_value(decimal(row['primaryValue']), rates)
         if variant in prices.setdefault(slug, {}) and prices[slug][variant] != price:
             raise ValueError("ambiguous poe.ninja tablet variant")
         prices[slug][variant] = price
@@ -564,6 +573,8 @@ def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL):
                              'selection':'normal' if variant == 'Normal' else 'lowest_available'}
     return {"status": "ok", "url": url, "lines": len(payload["lines"]),
             "usable_lines": sum(map(len, prices.values())), "divine_exalted": str(ratio), "prices": prices,
+            "values_divine": {slug: {variant: str(value) for variant, value in variants.items()}
+                              for slug, variants in values.items()},
             "base_prices":base_prices}
 
 
@@ -792,7 +803,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
                                 english_baseitems=None, template_map_csd=None, template_global_csd=None,
                                 allow_stale=True, tablet_mods=None, tablet_stats=None, tablet_tags=None,
                                 on_retry=None, cache_dir=None, server="international",
-                                cn_season="", league_is_current=True):
+                                cn_season="", league_is_current=True, display_rates=None):
     reports = {}; quotes_by_rarity = {}; ninja = {}
     if server == 'cn':
         league = resolve_cn_tablet_league(client, api_base, cn_season, league_is_current)
@@ -821,7 +832,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
     }
     if server == 'international':
         try:
-            ninja = fetch_poe_ninja_precursor_tablets(client, league)
+            ninja = fetch_poe_ninja_precursor_tablets(client, league, display_rates=display_rates)
             reports['poe_ninja_precursor_tablets'] = ninja
         except Exception as exc:
             reports['poe_ninja_precursor_tablets'] = {'status':'unavailable', 'reason':f'{type(exc).__name__}: {exc}'}
@@ -842,7 +853,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
             quotes_by_rarity[rarity], rarity_mapping = bind_game_stats(quotes_by_rarity[rarity], game_catalog=catalog)
             quoted_mapping.extend(rarity_mapping)
         reports['game_coverage'] = report_game_coverage(catalog, quoted_mapping)
-        quotes, pair_audit = pair_tablet_quotes(quotes_by_rarity, api_reports)
+        quotes, pair_audit = pair_tablet_quotes(quotes_by_rarity, api_reports, display_rates)
         excluded = [row for row in pair_audit if row['status'] == 'excluded']
         reports['quote_validation'] = {'status':'partial' if excluded else 'ok', 'excluded':excluded,
             'minimum_price': [row['id'] for row in pair_audit if 'min' in row.get('price_statistics', {}).values()],
@@ -918,6 +929,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
     patched_baseitems.write_bytes(redirected)
     status = 'ok' if all(source.get('status') == 'ok' for source in reports.values()) else 'partial'
     report = {'status':status, 'server':server, 'league':league, **reports, 'resources':resource_rows, 'redirected_items':count, 'base_names':named_rows,
+              'display_rates_exalted': {key: str(value) for key, value in (display_rates or {}).items()},
               'price_display':'ascending_magic_rare_prices', 'price_pairs':pair_audit, 'game_mapping':mapping,
               'merge_rule':{'relative_gap_max':'20% to 10%, log interpolation',
                             'anchors':'P75 and max(P95, 2*P75), from query-consistent pairs',

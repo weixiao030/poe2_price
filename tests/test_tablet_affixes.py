@@ -237,7 +237,7 @@ def test_singular_and_plural_branches_are_both_priced_with_missing_locale(tmp_pa
                 if not record:continue
                 lo,hi=m.condition_bounds(record[2])
                 if (lo is None or value>=lo) and (hi is None or value<=hi):
-                    assert record[3].endswith('=1.00D')
+                    assert record[3].endswith('=1D')
                     break
             else: pytest.fail('no matching price branch')
     m.validate_csd(text)
@@ -250,7 +250,7 @@ def test_csd_preserves_syntax_encoding_english_and_unpriced_branches(tmp_path, e
     assert result.startswith(bom)
     text = result[len(bom):].decode(encoding)
     assert '\x01' not in text
-    assert '15|20 "地圖增加{0}%[MonsterRarity|怪物稀有度]=1.00D"\r\n' in text
+    assert '15|20 "地圖增加{0}%[MonsterRarity|怪物稀有度]=1D"\r\n' in text
     assert '1|# "地圖增加{0}%[MonsterRarity|怪物稀有度]"\r\n' in text
     assert '#|-1 "地圖減少{0}%[MonsterRarity|怪物稀有度]" negate 1\r\n' in text
     assert text.split('lang "')[0] == csd().split('lang "')[0]
@@ -263,8 +263,8 @@ def test_reduced_branch_and_hundredth_units_are_respected(tmp_path):
     source.write_bytes(csd().replace(' negate 1', ' negate 1 divide_by_one_hundred 1').encode('utf-8'))
     result, _, changed = m._append_tablet_price_to_csd(source, [m.Quote("Map has (15-20)% reduced Monster Rarity", Decimal(500), 15, 20)], Decimal(500))
     text = result.decode('utf-8')
-    assert '-2000|-1500 "地圖減少{0}%[MonsterRarity|怪物稀有度]=1.00D" negate 1 divide_by_one_hundred 1' in text
-    assert '地圖增加{0}%[MonsterRarity|怪物稀有度]=1.00D' not in text
+    assert '-2000|-1500 "地圖減少{0}%[MonsterRarity|怪物稀有度]=1D" negate 1 divide_by_one_hundred 1' in text
+    assert '地圖增加{0}%[MonsterRarity|怪物稀有度]=1D' not in text
     assert changed == 2
 
 
@@ -293,8 +293,8 @@ def test_ninja_keeps_rarity_prices_separate():
                 for variant,price in [("Normal", 1), ("Magic", 2), ("Rare", 3)]
             ]}
     result = m.fetch_poe_ninja_precursor_tablets(Ninja(), LEAGUE)
-    assert result["prices"]["Ritual_Tablet"] == {"Normal":"1.00D", "Magic":"2.00D", "Rare":"3.00D"}
-    assert result['base_prices']['Ritual_Tablet'] == selected('1.00D')
+    assert result["prices"]["Ritual_Tablet"] == {"Normal":"1D", "Magic":"2D", "Rare":"3D"}
+    assert result['base_prices']['Ritual_Tablet'] == selected('1D')
 
 
 def test_tablets_and_uniques_share_the_same_formatter_and_cleaner():
@@ -310,7 +310,7 @@ def test_overseer_without_normal_uses_lowest_available_valid_variant():
                 {'baseType':'Overseer Tablet','variant':variant,'primaryValue':price,'listingCount':count,'corrupted':corrupted}
                 for variant,price,count,corrupted in [('Magic',0.3285,8150,False),('Rare',0.1189,10000,False),
                     ('Normal',0.01,0,False),('Normal',0.01,10,True)]]}
-    assert m.fetch_poe_ninja_precursor_tablets(Ninja(),LEAGUE)['base_prices']['Overseer_Tablet'] == selected('0.12D','Rare')
+    assert m.fetch_poe_ninja_precursor_tablets(Ninja(),LEAGUE)['base_prices']['Overseer_Tablet'] == selected('59.45E','Rare')
 
 
 def test_constant_cap_quote_is_retained_and_priced_against_game_variable(tmp_path):
@@ -325,7 +325,7 @@ def test_constant_cap_quote_is_retained_and_priced_against_game_variable(tmp_pat
         '\t\t1|# "每有一個已關閉的坑洞，增加{0}%[ContainsAbyss|深淵]怪物[MonsterEffectiveness|效用]，最多100%"\n',encoding='utf-8')
     output,matched,changed=m._append_tablet_price_to_csd(source,quotes['Ritual_Tablet'],Decimal(500))
     assert matched==1 and changed==2
-    assert '8|12 "每有一個已關閉的坑洞，增加{0}%[ContainsAbyss|深淵]怪物[MonsterEffectiveness|效用]，最多100%=1.00D"' in output.decode()
+    assert '8|12 "每有一個已關閉的坑洞，增加{0}%[ContainsAbyss|深淵]怪物[MonsterEffectiveness|效用]，最多100%=1D"' in output.decode()
     bad=[m.Quote(text.replace('100%','200%'),Decimal(500),8,12)]
     _,matched,changed=m._append_tablet_price_to_csd(source,bad,Decimal(500))
     assert matched==changed==0
@@ -375,7 +375,7 @@ def test_shss_split_tiers_keep_styles_and_first_matching_price():
             first = next(r for r in parsed if
                 (m.condition_bounds(r[2])[0] is None or value >= m.condition_bounds(r[2])[0]) and
                 (m.condition_bounds(r[2])[1] is None or value <= m.condition_bounds(r[2])[1]))
-            assert first[3].endswith('=1.00D') == (value in [1,2])
+            assert first[3].endswith('=1D') == (value in [1,2])
             assert first[3].startswith('<' + {1:'AT3',2:'AT2'}.get(value,'AT1') + '>{{')
     m.validate_csd(result)
 
@@ -388,7 +388,7 @@ def test_shss_styled_reduced_branch_preserves_negation_and_original_text():
     result, used, _ = m.price_block(block,
         [m.Quote('Map has (20-30)% reduced Monster Rarity', Decimal(500),20,30,identifier='reduced')], Decimal(500))
     assert used == {'reduced'}
-    assert '-30|-20 "<AT1>{{地圖減少{0}%[MonsterRarity|怪物稀有度]}}=1.00D" negate 1' in result
+    assert '-30|-20 "<AT1>{{地圖減少{0}%[MonsterRarity|怪物稀有度]}}=1D" negate 1' in result
     assert '1|# "地圖增加{0}%[MonsterRarity|怪物稀有度]"' in result
     m.validate_csd(result)
 
@@ -542,8 +542,8 @@ def test_ninja_only_and_both_sources_offline_leave_valid_core(tmp_path, template
     assert entries['data/balance/traditional chinese/words.datc64'] == b'unchanged other layer'
     assert len(entries) == 3 and not any('/poe2price/' in path for path in entries)
     assert report['redirected_items'] == 0
-    assert report['base_names'] == [{'tablet':'Ritual_Tablet', **selected('1.00D')}]
-    assert names.scan_base_item_names(entries[core_path])[0].name == format_unique_price_name('祭祀碑牌','1.00D','markup')
+    assert report['base_names'] == [{'tablet':'Ritual_Tablet', **selected('1D')}]
+    assert names.scan_base_item_names(entries[core_path])[0].name == format_unique_price_name('祭祀碑牌','1D','markup')
     assert [e.name for e in names.scan_base_item_names(entries[refs.ENGLISH_BASEITEMS])] == [
         'Ritual Tablet', 'Breach Tablet', 'Exalted Orb']
     class Offline:
@@ -630,7 +630,7 @@ def test_api_available_without_templates_still_updates_ninja_names(tmp_path):
     assert report['api']['status'] == report['poe_ninja_precursor_tablets']['status'] == 'ok'
     with zipfile.ZipFile(archive) as z:
         assert z.namelist() == ['data/balance/traditional chinese/baseitemtypes.datc64']
-        assert names.scan_base_item_names(z.read(z.namelist()[0]))[0].name == '[1.00D|祭祀碑牌]'
+        assert names.scan_base_item_names(z.read(z.namelist()[0]))[0].name == '[1D|祭祀碑牌]'
 
 
 def test_restore_and_disabled_build_remove_tablet_name_prices_in_both_languages(tmp_path):
@@ -725,7 +725,7 @@ def test_original_breach_typo_is_removed_from_priced_and_fallback_lines(tmp_path
     text = result.decode()
     assert matched == 1 and '怪物]' not in text
     assert '[ContainsBreach|裂痕]' in text and '[Rarity|稀有]' in text
-    assert text.count('=1.00D') == 4
+    assert text.count('=1D') == 4
     assert '怪物" canonical_line' in text
     assert m.clean_chinese_markup(text) == text
     m.validate_csd(text)
@@ -747,7 +747,7 @@ def test_all_affix_lines_are_priced_in_shared_magic_and_rare_descriptions(tmp_pa
     assert matched == 3
     output = result.decode()
     for i,(_,_,chinese) in enumerate(stats):
-        assert f'{chinese}]={i+1:.2f}D' in output
+        assert f'{chinese}]={i+1}D' in output
     m.validate_csd(output)
 
 
@@ -824,7 +824,7 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
         pointer = struct.unpack_from('<Q', english_data, 4 + 40)[0]
         assert names.read_string_offset(english_data, layout, pointer)[0] == 'Metadata/Items/TowerAugments/Poe2Price/Ritual'
         if not english_target:
-            assert names.scan_base_item_names(z.read(game_path))[0].name == '[1.00D|祭祀碑牌]'
+            assert names.scan_base_item_names(z.read(game_path))[0].name == '[1D|祭祀碑牌]'
         text = z.read('data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd').decode()
         it = z.read('metadata/items/toweraugments/poe2price/ritual.it').decode()
         assert text.count('=1~2D') == 2
@@ -856,7 +856,7 @@ def test_resource_validation_rejects_repeated_single_description_field():
 @pytest.mark.parametrize('rare,magic,expected', [
     ('5','16','5~16D'), ('16','5','5~16D'),
     ('0.05','0.06','5.5E'), ('0.06','0.05','5.5E'),
-    ('0.05','0.16','5~16E'), ('1','1','100E'),
+    ('0.05','0.16','5~16E'), ('1','1','1D'),
     ('5','5.5','5.25D'), ('5','5.51','5~5.51D'),
 ])
 def test_dual_price_order_and_shared_currency(rare, magic, expected):
@@ -1019,7 +1019,7 @@ def test_cn_v79_default_chinese_uses_bound_raw_stat_range(condition, tail, raw_r
         first = next(r for r in records if
             (m.condition_bounds(r[2])[0] is None or m.condition_bounds(r[2])[0] <= value) and
             (m.condition_bounds(r[2])[1] is None or value <= m.condition_bounds(r[2])[1]))
-        assert first[3].endswith('=1.00D') == (lo <= value <= hi)
+        assert first[3].endswith('=1D') == (lo <= value <= hi)
         assert first[3].startswith('<AT1>{{十秒后效能增加{0}%，最多100%}}')
         assert first[4] == tail
     # No translated-text guessing without current game identity and range.
@@ -1040,7 +1040,7 @@ def test_cn_v79_coloured_default_branches_keep_first_match_semantics():
     for value in [0,1,2,3,4]:
         r = next(r for r in records if m.condition_bounds(r[2]) == (None,None) or
             m.condition_bounds(r[2])[0] <= value <= m.condition_bounds(r[2])[1])
-        assert r[3].endswith('=1.00D') == (value in [1,2])
+        assert r[3].endswith('=1D') == (value in [1,2])
 
 
 @pytest.mark.parametrize('rarity', ['magic', 'rare'])

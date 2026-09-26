@@ -1,6 +1,7 @@
 """CN whole-item tablet asking prices, isolated from modifier prices and FX."""
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 import hashlib
 import json
 import os
@@ -8,10 +9,10 @@ from pathlib import Path
 import tempfile
 from urllib.parse import urlencode
 
-from poe2_tablet_display import display_number, UNITS
+from poe2_tablet_display import display_number, format_value, UNITS
 from poe2_tablet_prices import TABLET_SLUGS, trade_query_scope
 
-RARITIES = {'normal': '普', 'magic': '魔', 'rare': '稀'}
+RARITIES = ('normal', 'magic', 'rare')
 USE_STATS = {
     'Abyss_Tablet': '2369421690', 'Breach_Tablet': '2219129443',
     'Delirium_Tablet': '3879011313', 'Expedition_Tablet': '1714888636',
@@ -87,6 +88,41 @@ def select_quote(row):
     count, unit, amount, statistic = max(candidates, key=lambda x: (x[0], x[1]))
     return {'price': display_number(amount) + UNITS[unit], 'amount': str(amount),
             'currency': unit, 'sample_count': count, 'statistic': statistic}
+
+
+def select_base_reference(variants):
+    """Use one name reference, preferring normal like international tablets."""
+    if 'normal' in variants:
+        rarity = 'normal'
+        selection = 'normal'
+    else:
+        # The CN API quotes native currencies rather than normalized values.
+        # Choose the most-sampled currency before comparing fallback prices.
+        samples = {}
+        for quote in variants.values():
+            unit = quote['currency']
+            samples[unit] = samples.get(unit, 0) + quote['sample_count']
+        currency = max(samples, key=lambda unit: (samples[unit], unit))
+        rarity = min((r for r in variants if variants[r]['currency'] == currency),
+                     key=lambda r: (Decimal(variants[r]['amount']), r))
+        selection = 'lowest_available_native_currency'
+    return {**variants[rarity], 'variant': rarity.title(),
+            'selection': selection, 'variants': variants}
+
+
+def apply_whole_tablet_display(report, rates):
+    """Keep selected native quotes, changing only their final display labels."""
+    for quote in report.get('quotes', []):
+        quote['native_price'] = display_number(Decimal(quote['amount'])) + UNITS[quote['currency']]
+        rate = rates.get(quote['currency'], 0)
+        quote['price'] = (format_value(Fraction(quote['amount']) * Fraction(rate), rates)
+                          if rate > 0 else quote['native_price'])
+        quote['display_converted'] = rate > 0
+    for base in report.get('base_prices', {}).values():
+        selected = base['variants'][base['variant'].lower()]
+        base.update({key: selected[key] for key in ('price', 'native_price', 'display_converted')})
+    report['display_rates_exalted'] = {key: str(value) for key, value in rates.items()}
+    report['display_policy'] = 'E/C/D ladder, truncate without rounding'
 
 
 def _fetch_snapshot(client, api_base, league, allow_stale):
@@ -170,9 +206,7 @@ def _fetch_snapshot(client, api_base, league, allow_stale):
             uniques[key] = row
         else:
             bases.setdefault(row['base_id'], {})[row['rarity']] = row
-    base_prices = {base: {'price': ' '.join(RARITIES[r] + variants[r]['price']
-                                         for r in RARITIES if r in variants),
-                         'selection': 'explicit_rarity_reference', 'variants': variants}
+    base_prices = {base: select_base_reference(variants)
                    for base, variants in bases.items()}
     return {'status': 'partial' if skipped else 'ok', 'server': 'cn', 'market': 'whole-tablet',
             'league': league, 'url': url, 'total': total, 'pages': pages, 'rows': len(selected),
