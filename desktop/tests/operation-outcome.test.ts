@@ -62,7 +62,7 @@ test('whole tablet result is independent of affix success and works for uniques-
     output.end()
     assert.equal(output.wholeTablets, 'unavailable')
     assert.equal(output.tabletAffixes, 'applied')
-    assert.match(operationWarning({ ...result, ...output })!, /整件\/暗金碑牌价格未完整生效/)
+    assert.match(operationWarning({ ...result, ...output })!, /碑牌价格未完整生效/)
   }
   for (const patchScope of ['all', 'currency', 'uniques'] as const)
     assert.equal(wholeTabletStatusForRequest({ ...request, patchScope }, 'unavailable'), 'unavailable')

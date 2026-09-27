@@ -19,6 +19,8 @@ export const useAppStore = defineStore('app', () => {
       languageMode: 'auto',
       patchScope: 'all',
       islandRumourHints: true,
+      tabletPrices: true,
+      tabletAffixPrices: true,
       autoStart: false,
       autoUpdate: false,
       closeToTray: true,
@@ -43,6 +45,10 @@ export const useAppStore = defineStore('app', () => {
     selectedLeague = ref<string>('__auto__')
   const leagueNotice = ref('')
   const leagueSaving = ref(false)
+  const pendingSaves = ref(0)
+  const saving = computed(() => pendingSaves.value > 0)
+  const saveError = ref(false)
+  let saveQueue: Promise<unknown> = Promise.resolve()
   const events = shallowRef<ProgressEvent[]>([])
   const background = ref<string | null>(null)
   const running = computed(() => busy.value || !!state.value.active)
@@ -136,7 +142,21 @@ export const useAppStore = defineStore('app', () => {
   }
   async function save(patch: Partial<AppSettings>) {
     // Settings are JSON data; remove nested Vue proxies before crossing Electron IPC.
-    state.value.settings = await window.desktop.saveSettings(JSON.parse(JSON.stringify(patch)))
+    const input = JSON.parse(JSON.stringify(patch))
+    pendingSaves.value++
+    const task = saveQueue.then(async () => {
+      state.value.settings = await window.desktop.saveSettings(input)
+      saveError.value = false
+    })
+    saveQueue = task.catch(() => {})
+    try {
+      await task
+    } catch (error) {
+      saveError.value = true
+      throw error
+    } finally {
+      pendingSaves.value--
+    }
   }
   function restoreLeagueSelection() {
     const preference = settings.value.leagueSelections?.[leagueScope.value]
@@ -255,12 +275,15 @@ export const useAppStore = defineStore('app', () => {
     if (querying.value) throw new Error('正在查询游戏目录，请稍候')
     if (!client.value) throw new Error('请先选择有效的游戏目录')
     if (leagueSaving.value) throw new Error('正在保存赛季选择，请稍候')
+    if (saving.value) throw new Error('正在保存配置，请稍候')
     return {
       operation,
       gameVersion: settings.value.gameVersion,
       gameDirectory: client.value.path,
       languageMode: settings.value.languageMode,
       patchScope: settings.value.patchScope,
+      tabletPrices: settings.value.tabletPrices ?? true,
+      tabletAffixPrices: settings.value.tabletAffixPrices ?? true,
       islandRumourHints: settings.value.gameVersion === 'poe2' && settings.value.islandRumourHints,
       league:
         settings.value.gameVersion === 'poe1'
@@ -301,6 +324,8 @@ export const useAppStore = defineStore('app', () => {
     querying,
     leagueLoading,
     leagueSaving,
+    saving,
+    saveError,
     leagueNotice,
     leagueOptions,
     client,

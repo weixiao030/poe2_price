@@ -20,6 +20,8 @@ export interface PatchRequest {
   leagueIsCurrent: boolean
   leagueMode?: LeagueMode
   islandRumourHints: boolean
+  tabletPrices?: boolean
+  tabletAffixPrices?: boolean
 }
 export interface GameClient {
   gameVersion: GameVersion
@@ -67,6 +69,8 @@ export interface AppSettings {
   languageMode: LanguageMode
   patchScope: PatchScope
   islandRumourHints: boolean
+  tabletPrices?: boolean
+  tabletAffixPrices?: boolean
   autoStart: boolean
   autoUpdate: boolean
   closeToTray: boolean
@@ -92,7 +96,9 @@ export interface DesktopApi {
   cancelSoftwareUpdate(): Promise<void>
   copyFeedbackGroup(): Promise<void>
   softwareUiReady(): Promise<void>
-  onSoftwareUpdate(callback: (state: import('./software-update').SoftwareUpdateState) => void): () => void
+  onSoftwareUpdate(
+    callback: (state: import('./software-update').SoftwareUpdateState) => void
+  ): () => void
   cleanupFiles(
     kind: 'cache' | 'logs',
     remove: boolean

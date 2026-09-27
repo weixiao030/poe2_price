@@ -9,7 +9,8 @@ export function tabletStatusForRequest(
   if (
     request.operation !== 'update' ||
     request.gameVersion !== 'poe2' ||
-    !['all', 'currency'].includes(request.patchScope)
+    !['all', 'currency'].includes(request.patchScope) ||
+    request.tabletAffixPrices === false
   )
     return undefined
   return status === 'disabled' ? 'unknown' : (status ?? 'unknown')
@@ -22,7 +23,7 @@ export function operationWarning(result: OperationResult | undefined): string | 
   if (result.tabletAffixes === 'unknown')
     return '物价已更新，但未能确认碑牌词缀结果，请查看日志后重试。'
   if (result.wholeTablets === 'unavailable' || result.wholeTablets === 'unknown')
-    return '物价已更新，但国服整件/暗金碑牌价格未完整生效，请查看日志后重试。'
+    return '物价已更新，但碑牌价格未完整生效，请查看日志后重试。'
   return undefined
 }
 
@@ -30,7 +31,12 @@ export function wholeTabletStatusForRequest(
   request: PatchRequest,
   status: TabletLayerStatus | undefined
 ): TabletLayerStatus | undefined {
-  if (request.operation !== 'update' || request.gameVersion !== 'poe2' || request.patchScope === 'none')
+  if (
+    request.operation !== 'update' ||
+    request.gameVersion !== 'poe2' ||
+    request.patchScope === 'none' ||
+    request.tabletPrices === false
+  )
     return undefined
   return status === 'disabled' ? undefined : status
 }

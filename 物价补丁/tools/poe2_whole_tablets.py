@@ -13,6 +13,12 @@ from poe2_tablet_display import display_number, format_value, UNITS
 from poe2_tablet_prices import TABLET_SLUGS, trade_query_scope
 
 RARITIES = ('normal', 'magic', 'rare')
+# Verified catalogue identities also permit offline cleanup when prices are off.
+UNIQUE_TABLET_NAMES = frozenset({
+    'Clear Skies', 'Cruel Hegemony', 'Freedom of Faith', 'Mastered Domain',
+    'Season of the Hunt', 'The Grand Project', 'Unforeseen Consequences',
+    'Visions of Paradise', 'Wraeclast Besieged',
+})
 USE_STATS = {
     'Abyss_Tablet': '2369421690', 'Breach_Tablet': '2219129443',
     'Delirium_Tablet': '3879011313', 'Expedition_Tablet': '1714888636',

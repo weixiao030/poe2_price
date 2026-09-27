@@ -41,6 +41,7 @@ import { getBackground, chooseBackground, clearBackground } from './background'
 import { cleanupOldFiles } from './maintenance'
 import {
   BUSY_RETRY,
+  currentAutoUpdateRequest,
   restoreAutoUpdateSchedule,
   restoreConfirmedUpdate,
   scheduleAfterUpdate
@@ -120,8 +121,12 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
   if (softwareUpdater?.installing) throw new Error('正在安装软件更新，请稍后重试')
   if (active) throw new Error('已有任务正在执行，请等待完成')
   if (maintenanceRunning) throw new Error('请等待文件清理完成')
-  const request = validateRequest(input)
-  if (automatic && request.operation !== 'update') throw new Error('自动任务只允许更新物价')
+  const validated = validateRequest(input)
+  if (automatic && validated.operation !== 'update') throw new Error('自动任务只允许更新物价')
+  const request = automatic
+    ? currentAutoUpdateRequest(store.get('confirmed'), store.get('settings'))
+    : validated
+  if (!request) throw new Error('当前客户端尚未完成手动更新，自动更新已暂停')
   const runId = crypto.randomUUID(),
     startedAt = new Date().toISOString(),
     start = Date.now()
@@ -270,13 +275,15 @@ function autoUpdateStatus(): string {
   if (!store.get('settings').autoUpdate) return '自动更新已关闭。'
   if (autoUpdatePausedReason) return autoUpdatePausedReason
   if (!store.get('confirmed')) return '等待首次手动更新成功，以确认游戏目录和更新配置。'
+  if (!currentAutoUpdateRequest(store.get('confirmed'), store.get('settings')))
+    return '客户端已切换，请先手动更新一次；确认后将按当前保存的配置自动更新。'
   if (active) return '任务正在执行，完成后继续安排自动更新。'
   const reason = store.get('autoUpdateSchedule')?.reason
   if (reason === 'game') return '游戏运行或目录占用，每 2 分钟重查；本轮未下载或写入补丁。'
   if (reason === 'busy') return '后台任务占用，1 分钟后重查。'
   if (reason === 'retry') return '上次更新失败，按 1、5、15 分钟间隔重试；详情见运行记录。'
   if (reason === 'cancelled') return '本次任务已取消，5 分钟后重试；关闭开关可停止后续自动更新。'
-  return '按上次成功时间每小时更新；启动和休眠恢复后会补做已到期的更新。'
+  return '按当前已保存配置每小时更新；启动和休眠恢复后会补做已到期的更新。'
 }
 function schedule() {
   if (
@@ -284,6 +291,7 @@ function schedule() {
     autoUpdatePausedReason ||
     !store.get('settings').autoUpdate ||
     store.get('confirmed')?.request.operation !== 'update' ||
+    !currentAutoUpdateRequest(store.get('confirmed'), store.get('settings')) ||
     active
   ) {
     cancelSchedule()
@@ -381,7 +389,10 @@ function updateTray() {
       },
       {
         label: '立即自动更新',
-        enabled: !active && !maintenanceRunning && !!store.get('confirmed'),
+        enabled:
+          !active &&
+          !maintenanceRunning &&
+          !!currentAutoUpdateRequest(store.get('confirmed'), store.get('settings')),
         click: () => {
           const c = store.get('confirmed')
           if (c) void runOperation(c.request, true).catch(log.error)

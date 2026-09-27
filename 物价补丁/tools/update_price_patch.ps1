@@ -6,6 +6,8 @@
     [switch]$SkipGameDirectoryMutex,
     [switch]$NoPoe2dbFallback,
     [switch]$IslandRumourHints,
+    [bool]$TabletPrices = $true,
+    [bool]$TabletAffixPrices = $true,
     [ValidateSet("", "all", "currency", "uniques", "none")]
     [string]$PatchScope = "",
     [string]$League = "",
@@ -32,7 +34,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.9"
+$script:PatchVersion = "v1.0.10"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -2943,7 +2945,7 @@ catch {
 }
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
 $PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques"))
-$PatchTabletAffixesEnabled = ($PatchScope -in @("all", "currency"))
+$PatchTabletAffixesEnabled = $TabletAffixPrices -and ($PatchScope -in @("all", "currency"))
 $PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
@@ -3027,6 +3029,8 @@ Write-Host "写入目标：$($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cya
 Write-Host "通货价格补丁：$(if ($PatchScope -in @('all', 'currency')) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 Write-Host "传奇装备价格补丁：$(if ($PatchUniqueWordsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 Write-Host "岛屿传言补丁：$(if ($PatchIslandRumourHintsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
+Write-Host "碑牌价格：$(if ($TabletPrices -and $PatchScope -ne 'none') { '开启' } else { '关闭' })" -ForegroundColor Cyan
+Write-Host "碑牌词缀价格：$(if ($PatchTabletAffixesEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
@@ -3321,6 +3325,8 @@ $PriceCacheKey = [string]::Concat(
     "_island-",
     $(if ($PatchIslandRumourHintsEnabled) { "on" } else { "off" }),
     $(if ($PatchTabletAffixesEnabled) { "_tablet-markup-v1" } else { "" }),
+    "_tablet-prices-",
+    $(if ($TabletPrices) { "on" } else { "off" }),
     "_league-",
     $LeagueCacheToken
 )
@@ -3457,8 +3463,10 @@ if ($UseChinaPriceSource) {
 }
 
 $UsingCachedPatch = $false
+if (-not $TabletPrices) { $BuildArgs += "--no-tablet-prices" }
 $TabletLayerStatus = if ($PatchTabletAffixesEnabled) { "unknown" } else { "disabled" }
-$WholeTabletEnabled = $UseChinaPriceSource -and ($PatchScope -ne "none")
+$WholeTabletEnabled = $TabletPrices -and (($UseChinaPriceSource -and ($PatchScope -ne "none")) -or
+    (($PatchScope -in @("all", "currency")) -and $InstallInfo.TcBaseItemsPath -ne "data/balance/baseitemtypes.datc64"))
 $WholeTabletLayerStatus = if ($WholeTabletEnabled) { "unknown" } else { "disabled" }
 $PatchFolderZip = Join-Path $RepoRoot $PricePatchZipName
 try {
@@ -3542,7 +3550,7 @@ catch {
     $CompatibleFallbackPatch = ""
     try {
         if (
-            $CanUseSeasonCache -and $BuildPatchScope -in @("all", "currency") -and
+            $CanUseSeasonCache -and $TabletPrices -and $BuildPatchScope -in @("all", "currency") -and
             (Test-PricePatchZipCompatible -Path $CachedPatchZip -ReferenceDat $TcBaseItems)
         ) {
             $SafeFallbackZip = Join-Path $BuildStageDir "safe-core-cache.zip"

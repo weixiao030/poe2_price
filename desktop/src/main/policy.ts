@@ -6,6 +6,8 @@ export const defaults: AppSettings = {
   languageMode: 'auto',
   patchScope: 'all',
   islandRumourHints: true,
+  tabletPrices: true,
+  tabletAffixPrices: true,
   autoStart: false,
   autoUpdate: false,
   closeToTray: true,
@@ -65,6 +67,8 @@ export function settingsPatch(input: unknown): Partial<AppSettings> {
       case 'autoUpdate':
       case 'closeToTray':
       case 'islandRumourHints':
+      case 'tabletPrices':
+      case 'tabletAffixPrices':
         out[key] = boolean(value)
         break
       case 'directories': {
@@ -127,7 +131,9 @@ export function validateRequest(input: unknown): PatchRequest {
     poeCurrencySeason: text(r.poeCurrencySeason, 160),
     leagueIsCurrent: boolean(r.leagueIsCurrent),
     leagueMode: r.leagueMode === undefined ? 'fixed' : choice(r.leagueMode, ['auto', 'fixed']),
-    islandRumourHints: gameVersion === 'poe2' && boolean(r.islandRumourHints)
+    islandRumourHints: gameVersion === 'poe2' && boolean(r.islandRumourHints),
+    tabletPrices: r.tabletPrices === undefined ? true : boolean(r.tabletPrices),
+    tabletAffixPrices: r.tabletAffixPrices === undefined ? true : boolean(r.tabletAffixPrices)
   }
 }
 export function scriptFor(r: PatchRequest): string {
@@ -149,6 +155,8 @@ export function argsFor(r: PatchRequest): Record<string, string | boolean> {
     if (r.gameVersion === 'poe2') {
       args.PoeNinjaLeague = r.poeNinjaLeague
       args.IslandRumourHints = r.islandRumourHints
+      args.TabletPrices = r.tabletPrices ?? true
+      args.TabletAffixPrices = r.tabletAffixPrices ?? true
     }
   }
   return args

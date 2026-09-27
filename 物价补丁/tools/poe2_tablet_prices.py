@@ -819,7 +819,8 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
                                 english_baseitems=None, template_map_csd=None, template_global_csd=None,
                                 allow_stale=True, tablet_mods=None, tablet_stats=None, tablet_tags=None,
                                 on_retry=None, cache_dir=None, server="international",
-                                cn_season="", league_is_current=True, display_rates=None):
+                                cn_season="", league_is_current=True, display_rates=None,
+                                include_base_prices=True):
     reports = {}; quotes_by_rarity = {}; ninja = {}
     if server == 'cn':
         league = resolve_cn_tablet_league(client, api_base, cn_season, league_is_current)
@@ -846,7 +847,7 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
         **next((r for r in api_reports.values() if r.get('status') == 'ok'), {}),
         'status': 'ok' if all(api_ok) else ('partial' if any(api_ok) else 'unavailable'),
     }
-    if server == 'international':
+    if server == 'international' and include_base_prices:
         try:
             ninja = fetch_poe_ninja_precursor_tablets(client, league, display_rates=display_rates)
             reports['poe_ninja_precursor_tablets'] = ninja

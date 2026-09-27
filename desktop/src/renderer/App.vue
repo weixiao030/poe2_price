@@ -56,6 +56,7 @@ const canUpdate = computed(
     !app.running &&
     !app.querying &&
     !app.leagueSaving &&
+    !app.saving &&
     (app.settings.patchScope === 'none'
       ? app.settings.gameVersion === 'poe2' && app.settings.islandRumourHints
       : app.selectedLeague === '__auto__' || !!app.league)
@@ -68,6 +69,10 @@ const sourceLabel = computed(() =>
       : 'poe2scout + poe.ninja'
 )
 const latest = computed(() => app.state.history[0])
+const hasCurrency = computed(() => ['all', 'currency'].includes(app.settings.patchScope))
+const saveStatus = computed(() =>
+  app.saving ? '正在保存…' : app.saveError ? '保存失败，请重试' : '配置已自动保存'
+)
 const latestWarning = computed(() => operationWarning(latest.value))
 const phase = computed(() => {
   if (!app.running)
@@ -157,7 +162,7 @@ function confirmOperation(operation: Operation) {
         : operation === 'restore'
           ? '确认还原补丁'
           : '确认汉化 POE1',
-    content: `${app.client?.displayName || ''}\n${request.gameDirectory}\n\n${operation === 'restore' ? `将用此客户端的专属基线还原补丁。${app.settings.autoUpdate ? '每小时自动更新仍保持开启，下一轮会按最近成功的配置重新应用补丁。' : ''}` : operation === 'localize' ? '将下载并校验 POE1 国际服汉化工具。完成后在游戏内选择法文国旗。' : '将获取所选赛季价格并写入当前游戏客户端。'}请确认游戏已关闭。`,
+    content: `${app.client?.displayName || ''}\n${request.gameDirectory}\n\n${operation === 'restore' ? `将用此客户端的专属基线还原补丁。${app.settings.autoUpdate ? '每小时自动更新仍保持开启，下一轮会按当前保存的配置重新应用补丁。' : ''}` : operation === 'localize' ? '将下载并校验 POE1 国际服汉化工具。完成后在游戏内选择法文国旗。' : '将按当前配置获取所选赛季价格，清理已关闭项目的旧标注，并写入当前游戏客户端。'}请确认游戏已关闭。`,
     positiveText: '确认执行',
     negativeText: '返回',
     onPositiveClick: () => {
@@ -336,24 +341,18 @@ onUnmounted(() => {
                 >自动识别</n-button
               >
             </div>
-            <div v-if="app.client" class="client-meta">
-              <n-tag size="small" type="success" :bordered="false">目录已识别</n-tag
-              ><span>{{ app.client.displayName }}</span
-              ><span>{{ app.client.language }}</span>
-            </div>
-            <div v-else class="client-meta">
-              <n-spin v-if="app.querying" size="small" /><span>{{
-                app.querying
-                  ? '正在识别客户端，请稍候…'
-                  : '支持官服 GGPK、Steam / Epic 与国服 WeGame'
-              }}</span>
-            </div>
-          </section>
-          <div class="workspace-grid">
-            <section class="panel configuration">
-              <div class="panel-heading">
-                <h2>补丁内容</h2>
-                <span>按需选择</span>
+            <div class="client-market">
+              <div v-if="app.client" class="client-meta">
+                <n-tag size="small" type="success" :bordered="false">目录已识别</n-tag
+                ><span>{{ app.client.displayName }}</span
+                ><span>{{ app.client.language }}</span>
+              </div>
+              <div v-else class="client-meta">
+                <n-spin v-if="app.querying" size="small" /><span>{{
+                  app.querying
+                    ? '正在识别客户端，请稍候…'
+                    : '支持官服 GGPK、Steam / Epic 与国服 WeGame'
+                }}</span>
               </div>
               <div class="form-field">
                 <label for="league">价格赛季</label>
@@ -386,13 +385,21 @@ onUnmounted(() => {
               <n-alert v-if="app.leagueNotice" type="info" class="mb-4">{{
                 app.leagueNotice
               }}</n-alert>
-              <fieldset class="scope-field" :disabled="app.running">
+            </div>
+          </section>
+          <div class="workspace-grid">
+            <section class="panel configuration">
+              <div class="panel-heading">
+                <h2>补丁内容</h2>
+                <span role="status" aria-live="polite">{{ saveStatus }}</span>
+              </div>
+              <fieldset class="scope-field" :disabled="app.running || app.saving">
                 <legend>更新范围</legend>
                 <div class="scope-list">
                   <label
                     v-for="item in [
                       ['all', '通货与传奇', '完整显示物品参考价格'],
-                      ['currency', '仅通货', '通货、碑牌词缀与可交易物品'],
+                      ['currency', '仅通货', '通货与可交易物品'],
                       ['uniques', '仅传奇', '传奇装备参考价格']
                     ] as const"
                     :key="item[0]"
@@ -425,6 +432,51 @@ onUnmounted(() => {
                   >
                 </div>
               </fieldset>
+              <fieldset
+                v-if="app.settings.gameVersion === 'poe2'"
+                class="scope-field tablet-options"
+                :disabled="app.running || app.saving"
+              >
+                <legend>碑牌显示</legend>
+                <div class="option-row">
+                  <div>
+                    <b id="tablet-prices-label">碑牌价格</b>
+                    <p id="tablet-prices-help">
+                      {{
+                        app.settings.patchScope === 'none'
+                          ? '当前范围不显示价格，保留此选择'
+                          : '底材随通货范围，暗金随传奇范围'
+                      }}
+                    </p>
+                  </div>
+                  <n-switch
+                    :value="app.settings.tabletPrices ?? true"
+                    :disabled="app.running || app.saving || app.settings.patchScope === 'none'"
+                    aria-label="碑牌价格"
+                    aria-describedby="tablet-prices-help"
+                    @update:value="save({ tabletPrices: $event })"
+                  />
+                </div>
+                <div class="option-row">
+                  <div>
+                    <b id="tablet-affixes-label">碑牌词缀价格</b>
+                    <p id="tablet-affixes-help">
+                      {{
+                        hasCurrency
+                          ? '在词缀旁显示参考价，可与碑牌价格分开设置'
+                          : '通货范围启用时生效，保留此选择'
+                      }}
+                    </p>
+                  </div>
+                  <n-switch
+                    :value="app.settings.tabletAffixPrices ?? true"
+                    :disabled="app.running || app.saving || !hasCurrency"
+                    aria-label="碑牌词缀价格"
+                    aria-describedby="tablet-affixes-help"
+                    @update:value="save({ tabletAffixPrices: $event })"
+                  />
+                </div>
+              </fieldset>
               <div v-if="app.settings.gameVersion === 'poe2'" class="option-row">
                 <div>
                   <b>岛屿传言地图提示</b>
@@ -432,10 +484,27 @@ onUnmounted(() => {
                 </div>
                 <n-switch
                   :value="app.settings.islandRumourHints"
-                  :disabled="app.running || app.settings.patchScope === 'none'"
+                  :disabled="app.running || app.saving || app.settings.patchScope === 'none'"
                   aria-label="岛屿传言地图提示"
                   @update:value="save({ islandRumourHints: $event })"
                 />
+              </div>
+              <div class="configuration-help">
+                <p>修改后自动保存，下次手动或自动更新时生效。</p>
+                <n-button
+                  text
+                  size="tiny"
+                  :disabled="app.running || app.saving"
+                  @click="
+                    save({
+                      patchScope: 'all',
+                      tabletPrices: true,
+                      tabletAffixPrices: true,
+                      islandRumourHints: true
+                    })
+                  "
+                  >全部开启</n-button
+                >
               </div>
               <div v-if="app.settings.gameVersion === 'poe1'" class="form-field">
                 <label>POE1 显示语言</label
@@ -459,6 +528,24 @@ onUnmounted(() => {
               </div>
               <div class="action-note">
                 <Icon icon="ph:info" /><span>请先关闭游戏。修改游戏文件存在封号风险。</span>
+              </div>
+              <div class="workspace-auto-update">
+                <div class="option-row">
+                  <div>
+                    <b>每小时自动更新物价</b>
+                    <p>使用当前已保存的补丁配置</p>
+                  </div>
+                  <n-switch
+                    :value="app.settings.autoUpdate"
+                    :disabled="app.saving"
+                    aria-label="每小时自动更新物价"
+                    @update:value="save({ autoUpdate: $event })"
+                  />
+                </div>
+                <p class="field-help">{{ app.state.autoUpdateStatus }}</p>
+                <p v-if="app.state.nextUpdate" class="field-help">
+                  下次更新：{{ localeDate(app.state.nextUpdate) }}
+                </p>
               </div>
             </section>
             <section class="panel activity-panel">

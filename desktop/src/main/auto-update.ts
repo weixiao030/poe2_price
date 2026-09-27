@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { text, validateRequest } from './policy'
-import type { OperationResult, PatchRequest } from '../shared/types'
+import type { AppSettings, LeagueScope, OperationResult, PatchRequest } from '../shared/types'
 
 export interface ConfirmedUpdate {
   request: PatchRequest
@@ -15,6 +15,47 @@ export interface AutoUpdateSchedule {
 export const UPDATE_INTERVAL = 60 * 60_000
 export const BUSY_RETRY = 60_000
 export const GAME_RETRY = 2 * 60_000
+
+// Only a manually verified target may be scheduled. Content and league choices
+// are read at execution time, so saving a preference never leaves a stale plan.
+export function currentAutoUpdateRequest(
+  confirmed: ConfirmedUpdate | null,
+  settings: AppSettings
+): PatchRequest | null {
+  if (!confirmed || confirmed.request.operation !== 'update') return null
+  const previous = confirmed.request
+  const directory = settings.directories[previous.gameVersion]
+  if (
+    settings.gameVersion !== previous.gameVersion ||
+    !directory ||
+    path.win32.resolve(directory).toLowerCase() !==
+      path.win32.resolve(previous.gameDirectory).toLowerCase()
+  )
+    return null
+  const scope: LeagueScope = `${previous.gameVersion}-${confirmed.installKind.includes('CN-') ? 'china' : 'international'}`
+  const preference = settings.leagueSelections?.[scope]
+  const option = preference?.mode === 'fixed' ? preference.option : undefined
+  return validateRequest({
+    ...previous,
+    patchScope: settings.patchScope ?? previous.patchScope,
+    languageMode: settings.languageMode ?? previous.languageMode,
+    islandRumourHints: settings.islandRumourHints ?? previous.islandRumourHints,
+    tabletPrices: settings.tabletPrices ?? true,
+    tabletAffixPrices: settings.tabletAffixPrices ?? true,
+    ...(preference
+      ? {
+          leagueMode: preference.mode,
+          league:
+            previous.gameVersion === 'poe1'
+              ? option?.PoeNinjaLeague || ''
+              : option?.ScoutLeague || '',
+          poeNinjaLeague: option?.PoeNinjaLeague || '',
+          poeCurrencySeason: option?.PoeCurrencySeason || '',
+          leagueIsCurrent: option?.IsCurrent ?? true
+        }
+      : {})
+  })
+}
 
 // A damaged or legacy confirmation must never turn a scheduled update into a
 // restore/localization operation or discard the user's auto-update preference.

@@ -312,8 +312,25 @@ p {
 }
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(295px, 0.85fr) minmax(340px, 1.15fr);
+  grid-template-columns: minmax(340px, 1.05fr) minmax(295px, 0.95fr);
   gap: 20px;
+}
+.client-market {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 1.15fr);
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 12px;
+}
+.client-market .client-meta {
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+.client-market .form-field {
+  margin-bottom: 0;
+}
+.client-market > .n-alert {
+  grid-column: 1 / -1;
 }
 .panel {
   border: 1px solid var(--line);
@@ -375,6 +392,7 @@ p {
 }
 .scope-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
 }
 .scope-option {
@@ -441,6 +459,34 @@ p {
   font-size: 10px;
   color: var(--muted);
   margin-top: 3px;
+}
+.option-row > div {
+  min-width: 0;
+}
+.option-row > .n-switch {
+  flex-shrink: 0;
+}
+.tablet-options .option-row:last-child {
+  padding-bottom: 0;
+}
+.configuration-help {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.configuration-help .n-button {
+  flex-shrink: 0;
+}
+.workspace-auto-update {
+  border-top: 1px solid var(--line);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.workspace-auto-update .option-row {
+  padding-bottom: 0;
 }
 .action-note {
   display: flex;
@@ -793,7 +839,7 @@ p {
   }
   .workspace-grid {
     gap: 14px;
-    grid-template-columns: minmax(265px, 0.9fr) minmax(285px, 1.1fr);
+    grid-template-columns: minmax(310px, 1.05fr) minmax(240px, 0.95fr);
   }
   .configuration,
   .activity-panel {
@@ -814,6 +860,9 @@ p {
     padding: 20px 18px 0;
   }
   .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+  .client-market {
     grid-template-columns: 1fr;
   }
   .activity-panel {

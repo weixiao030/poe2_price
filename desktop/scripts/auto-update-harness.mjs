@@ -38,6 +38,7 @@ export function createHarness(root, initial = {}) {
     engineWait = null,
     failWrites = false
   const timers = new Set()
+  const workerRequests = []
   const store = {
     get: (key) => structuredClone(state[key]),
     set(key, value) {
@@ -87,8 +88,9 @@ export function createHarness(root, initial = {}) {
         isChina: false
       }
     },
-    worker: async () => {
+    worker: async (payload) => {
       calls++
+      workerRequests.push(structuredClone(payload))
       if (engineWait) await engineWait
       return { exitCode: engineExit, stdout: 'fixture', stderr: '', tabletAffixes: 'applied' }
     },
@@ -117,7 +119,7 @@ export function createHarness(root, initial = {}) {
     ${source('src/shared/operation-outcome.ts')}
     ${source('src/main/auto-update.ts')}
     ${source('src/main/index.ts', ['runOperation', 'schedule', 'cancelSchedule', 'autoUpdateStatus', 'saveAutoUpdateSchedule'])}
-    globalThis.probe = { runOperation, schedule, deadline: () => nextUpdate,
+    globalThis.probe = { runOperation, schedule, autoUpdateStatus, deadline: () => nextUpdate,
       setActive: (value) => { active = value }, cancel: () => { cancellationRequested = true } };`
   vm.runInContext(ts.transpile(code, { target: ts.ScriptTarget.ES2022 }), context)
   async function advance(ms) {
@@ -137,6 +139,7 @@ export function createHarness(root, initial = {}) {
     ...context.probe,
     advance,
     store,
+    get workerRequests() { return structuredClone(workerRequests) },
     get state() {
       return structuredClone(state)
     },

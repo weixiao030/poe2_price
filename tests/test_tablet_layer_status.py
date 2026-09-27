@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 
-def test_tablet_format_cache_is_separate_and_currency_only_key_is_unchanged():
+def test_tablet_options_have_four_distinct_cache_keys():
     shell = shutil.which('powershell.exe') or shutil.which('pwsh')
     if not shell:
         pytest.skip('PowerShell required')
@@ -23,8 +23,11 @@ $PatchIslandRumourHintsEnabled=$true; $LeagueCacheToken='same-season'
 $results=@()
 foreach ($enabled in @($false,$true)) {
     $PatchTabletAffixesEnabled=$enabled
-    Invoke-Expression $node.Extent.Text
-    $results+=$PriceCacheKey
+    foreach ($prices in @($false,$true)) {
+        $TabletPrices=$prices
+        Invoke-Expression $node.Extent.Text
+        $results+=$PriceCacheKey
+    }
 }
 $results | ConvertTo-Json -Compress
 '''.replace('__SOURCE__', str(source).replace("'", "''"))
@@ -32,9 +35,12 @@ $results | ConvertTo-Json -Compress
                              base64.b64encode(script.encode('utf-16-le')).decode()],
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
-    disabled, enabled = json.loads(result.stdout)
-    assert disabled == 'CN-Bundles2_zh-CN_all_mode-append_unique-on_island-on_league-same-season'
-    assert enabled != disabled and enabled.replace('_tablet-markup-v1', '') == disabled
+    keys = json.loads(result.stdout)
+    assert len(set(keys)) == 4
+    assert all(key.endswith('_league-same-season') for key in keys)
+    assert '_tablet-prices-off_' in keys[0] and '_tablet-prices-on_' in keys[1]
+    assert keys[2].replace('_tablet-markup-v1', '') == keys[0]
+    assert keys[3].replace('_tablet-markup-v1', '') == keys[1]
 
 
 def test_current_summary_distinguishes_missing_layer_from_missing_single_quote():

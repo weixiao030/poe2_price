@@ -184,7 +184,8 @@ try {
       return original(callback, delay, ...args)
     }
   })
-  await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: true }))
+  await page.evaluate(dir => window.desktop.saveSettings({ autoUpdate: true,
+    directories: { poe1: '', poe2: dir } }), game)
   await app.evaluate(() => {
     globalThis.__qaDateNow = Date.now
     const current = Date.now()
@@ -206,7 +207,7 @@ try {
   await app.evaluate(({ dialog }, directory) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] })
   }, game)
-  await page.getByRole('button', { name: '选择目录', exact: true }).click()
+  await page.getByRole('button', { name: '更换目录', exact: true }).click()
   await page
     .getByText('目录已识别', { exact: true })
     .waitFor()
