@@ -17,7 +17,10 @@ interface VerifiedOptions extends CustomPublishOptions {
 export class VerifiedReleaseProvider extends Provider<UpdateInfo> {
   private options: VerifiedOptions
   constructor(options: CustomPublishOptions, _updater: unknown, runtime: ProviderRuntimeOptions) {
-    super({ ...runtime, isUseMultipleRangeRequest: false })
+    super({
+      ...runtime,
+      isUseMultipleRangeRequest: (options as VerifiedOptions).source?.useMultipleRangeRequest ?? false
+    })
     this.options = options as VerifiedOptions
     if (!this.options.release || !this.options.source) throw new Error('缺少已验证的更新来源')
   }

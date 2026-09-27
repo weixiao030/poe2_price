@@ -1,6 +1,6 @@
 {
   "name": "poe-price-patch-desktop",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "POE1 / POE2 物价补丁桌面应用",
   "main": "out/main/index.js",
   "author": "POE Price Patch",
@@ -8,6 +8,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-electron-updater.mjs",
     "dev": "electron-vite dev",
     "typecheck": "vue-tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",

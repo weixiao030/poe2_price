@@ -121,6 +121,11 @@ test('all configured GitHub mirrors precede ZOS and package URLs pin the verifie
     sources[8].url,
     'https://example.zos.ctyun.cn/installer/POE-Price-Patch-2.4.0-x64-Setup.exe'
   )
+  assert.equal(sources[8].useMultipleRangeRequest, false)
+  assert.equal(sources[0].name, '国内备用源 gh-proxy.com')
+  assert.equal(sources[0].useMultipleRangeRequest, true)
+  assert.ok(sources.slice(0, 4).every((source) => source.useMultipleRangeRequest))
+  assert.ok(sources.slice(4, 8).every((source) => !source.useMultipleRangeRequest))
   assert.ok(!manifests.some((source) => source.url.startsWith('https://github.com/')))
   assert.throws(() => manifestSources({ ...config, github: { repository: '../other' } }))
 })
