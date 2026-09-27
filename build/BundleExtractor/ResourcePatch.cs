@@ -139,13 +139,27 @@ static class ResourcePatch
         w.Write(Pack(paths.ToArray()));
         return Pack(output.ToArray());
     }
-    static void EnsureStopped()
+    static bool IsGameLauncher(Process process, string gameRoot)
+    {
+        try
+        {
+            var executable = process.MainModule?.FileName;
+            return !string.IsNullOrWhiteSpace(executable) &&
+                Path.GetFullPath(executable).StartsWith(gameRoot, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (System.ComponentModel.Win32Exception) { return false; }
+        catch (InvalidOperationException) { return false; } // Process exited during inspection.
+        // Client is a generic name: an unreadable path is not proof of a POE
+        // launcher. Exclusive game-file access below still rejects locked files.
+    }
+    static void EnsureStopped(string gameRoot)
     {
         foreach (var name in new[] { "PathOfExile", "PathOfExile_x64", "PathOfExileSteam", "PathOfExile_x64Steam", "Client" })
         {
             var processes = Process.GetProcessesByName(name);
-            bool running = processes.Length > 0;
-            foreach (var process in processes) process.Dispose();
+            bool running;
+            try { running = processes.Any(process => name != "Client" || IsGameLauncher(process, gameRoot)); }
+            finally { foreach (var process in processes) process.Dispose(); }
             Check(!running, "Close game and launcher before writing: " + name);
         }
     }
@@ -158,8 +172,11 @@ static class ResourcePatch
             bool ggpkMode = args[0].Contains("ggpk");
             bool verifyOnly = args[0].StartsWith("--verify");
             var target = Path.GetFullPath(args[1]);
+            // GGPK lives in the game root; the loose index lives in Bundles2.
+            var gameDirectory = ggpkMode ? Path.GetDirectoryName(target)! : Path.GetDirectoryName(Path.GetDirectoryName(target))!;
+            var gameRoot = Path.TrimEndingDirectorySeparator(gameDirectory) + Path.DirectorySeparatorChar;
             var files = ReadZip(args[2]);
-            if (!verifyOnly) EnsureStopped();
+            if (!verifyOnly) EnsureStopped(gameRoot);
             var transaction = args.Length == 4 ? Path.GetFullPath(args[3]) : Path.Combine(Path.GetDirectoryName(target)!, ".poe2-price-patch", "resource-transaction");
             byte[] before, after, packed;
             var stem = "LibGGPK3/poe2price-" + Guid.NewGuid().ToString("N");
@@ -207,7 +224,7 @@ static class ResourcePatch
                 }, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
                 Console.WriteLine($"STAGED: {payloads.Count} resources; {index.Files.Count} original records checked; {payloads.Count(f => !f.Exists)} new paths");
             }
-            EnsureStopped();
+            EnsureStopped(gameRoot);
             if (ggpkMode)
             {
                 using var stream = File.Open(target, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
