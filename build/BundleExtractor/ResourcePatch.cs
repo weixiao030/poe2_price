@@ -173,8 +173,9 @@ static class ResourcePatch
             bool verifyOnly = args[0].StartsWith("--verify");
             var target = Path.GetFullPath(args[1]);
             // GGPK lives in the game root; the loose index lives in Bundles2.
-            var gameDirectory = ggpkMode ? Path.GetDirectoryName(target)! : Path.GetDirectoryName(Path.GetDirectoryName(target))!;
-            var gameRoot = Path.TrimEndingDirectorySeparator(gameDirectory) + Path.DirectorySeparatorChar;
+            var gameDirectory = Path.GetDirectoryName(target)!;
+            if (!ggpkMode) gameDirectory = Path.GetDirectoryName(gameDirectory) ?? gameDirectory;
+            var gameRoot = gameDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
             var files = ReadZip(args[2]);
             if (!verifyOnly) EnsureStopped(gameRoot);
             var transaction = args.Length == 4 ? Path.GetFullPath(args[3]) : Path.Combine(Path.GetDirectoryName(target)!, ".poe2-price-patch", "resource-transaction");

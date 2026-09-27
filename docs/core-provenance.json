@@ -114,9 +114,9 @@
     {
       "path": "物价补丁/tools/BundleExtractor/BundleExtractor.exe",
       "upstream_blob": "68461a9d5763e9a59226a7e3816cab68a147a9aa4883176dc0d06ee7498b33d9",
-      "local_sha256": "cc754a8b6e8b694d1d8d7e2695d5f26bca5e5b91f663924a7da8cf48d02c276d",
+      "local_sha256": "e652bb1150dc7f03e7a11af7db0a87814041f4f0c82e639bfd3379989db83ddc",
       "equivalent": false,
-      "normalized_sha256": "cc754a8b6e8b694d1d8d7e2695d5f26bca5e5b91f663924a7da8cf48d02c276d",
+      "normalized_sha256": "e652bb1150dc7f03e7a11af7db0a87814041f4f0c82e639bfd3379989db83ddc",
       "local_changes": " v0.8.6：修复碑牌资源安装、分档参考价、失败隔离与还原。 v1.0.7：按游戏目录核对 Client.exe，修复无关同名程序阻止写入；重新构建压缩单文件。"
     },
     {
@@ -371,7 +371,7 @@
     },
     {
       "path": "build/BundleExtractor/ResourcePatch.cs",
-      "sha256": "61e30150f9951c702207fe717f3801711069ce8408f985276397cc029e62efc5",
+      "sha256": "11c23ed9d56e3dc4825e10cfa4d097ee75e8edd6d920b64a280ee8f20056ceb0",
       "local_changes": "v1.0.7：GGPK 与 Bundles2 在暂存前和提交前均核对 Client.exe 的实际路径及目录边界；保留游戏进程与独占访问保护。"
     }
   ]
