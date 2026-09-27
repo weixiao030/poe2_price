@@ -2,6 +2,7 @@ from decimal import Decimal
 import base64
 import gzip
 import json
+import re
 from pathlib import Path
 import struct
 import subprocess
@@ -210,6 +211,35 @@ def test_link_text_and_plural_forms_match_market_text():
     assert m._tablet_text_key("Map is inhabited by {0} additional Rogue Exile") == m._tablet_text_key("Map is inhabited by 1 additional Rogue Exiles")
 
 
+@pytest.mark.parametrize('price', ['1~2.91C', '<1E', '0.01D'])
+@pytest.mark.parametrize('text,visible', [
+    ('增加{0}%地圖含有的[Magic|魔法]怪物', '增加{0}%地圖含有的魔法怪物'),
+    ('增加{0}%地图含有的[稀有]怪物', '增加{0}%地图含有的稀有怪物'),
+    ('<AT1>{{增加{0}%[Rarity|稀有]怪物}}\\n<DF2>{{额外奖励}}',
+     '<AT1>{{增加{0}%稀有怪物}}\\n<DF2>{{额外奖励}}'),
+])
+def test_tablet_affix_link_recovers_display_text_in_one_pass(price, text, visible):
+    result = m.format_tablet_affix_price(text, price, 'test_stat')
+    assert result == f'[{price}|{visible}]'
+    # A single game-link decode recovers the modifier; price numbers must not
+    # become stat values, including advanced-copy numeric ranges.
+    for value in ['40', '40(30-40)']:
+        copied = result.replace('{0}', value)
+        assert re.sub(r'\[(?:[^|\]]*\|)?([^|\]]+)\]', r'\1', copied) == visible.replace('{0}', value)
+
+
+@pytest.mark.parametrize('text', ['[A|[B|文字]]', '[缺失右括号', '文字|额外内容'])
+def test_malformed_tablet_links_fail_before_resource_install(text):
+    with pytest.raises(ValueError, match='tablet price link'):
+        m.format_tablet_affix_price(text, '1C', 'test_stat')
+
+
+def test_breach_wording_alias_is_limited_to_its_stat():
+    text = '地圖內的不穩定[ContainsBreach|裂痕]會在穩定後生成一名額外[Rarity|稀有]怪物]'
+    assert m.format_tablet_affix_price(text, '2C', 'map_unstable_breach_enrage_x_additional_rare_monsters') == '[2C|不穩定裂痕在穩定後會生成一名額外稀有怪物]'
+    assert '地圖內的不穩定裂痕會在穩定後生成' in m.format_tablet_affix_price(text, '2C', 'other_stat')
+
+
 @pytest.mark.parametrize('singular,plural', [
     ('Map contains an additional [Strongbox]', 'Map contains 1 additional Strongboxes'),
     ('Ritual Altars in Map allow rerolling Favours an additional time', 'Ritual Altars in Map allow rerolling Favours (1-3) additional times'),
@@ -237,7 +267,7 @@ def test_singular_and_plural_branches_are_both_priced_with_missing_locale(tmp_pa
                 if not record:continue
                 lo,hi=m.condition_bounds(record[2])
                 if (lo is None or value>=lo) and (hi is None or value<=hi):
-                    assert record[3].endswith('=1D')
+                    assert record[3].startswith('[1D|')
                     break
             else: pytest.fail('no matching price branch')
     m.validate_csd(text)
@@ -250,7 +280,7 @@ def test_csd_preserves_syntax_encoding_english_and_unpriced_branches(tmp_path, e
     assert result.startswith(bom)
     text = result[len(bom):].decode(encoding)
     assert '\x01' not in text
-    assert '15|20 "地圖增加{0}%[MonsterRarity|怪物稀有度]=1D"\r\n' in text
+    assert '15|20 "[1D|地圖增加{0}%怪物稀有度]"\r\n' in text
     assert '1|# "地圖增加{0}%[MonsterRarity|怪物稀有度]"\r\n' in text
     assert '#|-1 "地圖減少{0}%[MonsterRarity|怪物稀有度]" negate 1\r\n' in text
     assert text.split('lang "')[0] == csd().split('lang "')[0]
@@ -263,8 +293,8 @@ def test_reduced_branch_and_hundredth_units_are_respected(tmp_path):
     source.write_bytes(csd().replace(' negate 1', ' negate 1 divide_by_one_hundred 1').encode('utf-8'))
     result, _, changed = m._append_tablet_price_to_csd(source, [m.Quote("Map has (15-20)% reduced Monster Rarity", Decimal(500), 15, 20)], Decimal(500))
     text = result.decode('utf-8')
-    assert '-2000|-1500 "地圖減少{0}%[MonsterRarity|怪物稀有度]=1D" negate 1 divide_by_one_hundred 1' in text
-    assert '地圖增加{0}%[MonsterRarity|怪物稀有度]=1D' not in text
+    assert '-2000|-1500 "[1D|地圖減少{0}%怪物稀有度]" negate 1 divide_by_one_hundred 1' in text
+    assert '[1D|地圖增加{0}%怪物稀有度]' not in text
     assert changed == 2
 
 
@@ -325,7 +355,7 @@ def test_constant_cap_quote_is_retained_and_priced_against_game_variable(tmp_pat
         '\t\t1|# "每有一個已關閉的坑洞，增加{0}%[ContainsAbyss|深淵]怪物[MonsterEffectiveness|效用]，最多100%"\n',encoding='utf-8')
     output,matched,changed=m._append_tablet_price_to_csd(source,quotes['Ritual_Tablet'],Decimal(500))
     assert matched==1 and changed==2
-    assert '8|12 "每有一個已關閉的坑洞，增加{0}%[ContainsAbyss|深淵]怪物[MonsterEffectiveness|效用]，最多100%=1D"' in output.decode()
+    assert '8|12 "[1D|每有一個已關閉的坑洞，增加{0}%深淵怪物效用，最多100%]"' in output.decode()
     bad=[m.Quote(text.replace('100%','200%'),Decimal(500),8,12)]
     _,matched,changed=m._append_tablet_price_to_csd(source,bad,Decimal(500))
     assert matched==changed==0
@@ -375,8 +405,8 @@ def test_shss_split_tiers_keep_styles_and_first_matching_price():
             first = next(r for r in parsed if
                 (m.condition_bounds(r[2])[0] is None or value >= m.condition_bounds(r[2])[0]) and
                 (m.condition_bounds(r[2])[1] is None or value <= m.condition_bounds(r[2])[1]))
-            assert first[3].endswith('=1D') == (value in [1,2])
-            assert first[3].startswith('<' + {1:'AT3',2:'AT2'}.get(value,'AT1') + '>{{')
+            assert first[3].startswith('[1D|') == (value in [1,2])
+            assert ('<' + {1:'AT3',2:'AT2'}.get(value,'AT1') + '>{{') in first[3]
     m.validate_csd(result)
 
 
@@ -388,7 +418,7 @@ def test_shss_styled_reduced_branch_preserves_negation_and_original_text():
     result, used, _ = m.price_block(block,
         [m.Quote('Map has (20-30)% reduced Monster Rarity', Decimal(500),20,30,identifier='reduced')], Decimal(500))
     assert used == {'reduced'}
-    assert '-30|-20 "<AT1>{{地圖減少{0}%[MonsterRarity|怪物稀有度]}}=1D" negate 1' in result
+    assert '-30|-20 "[1D|<AT1>{{地圖減少{0}%怪物稀有度}}]" negate 1' in result
     assert '1|# "地圖增加{0}%[MonsterRarity|怪物稀有度]"' in result
     m.validate_csd(result)
 
@@ -723,9 +753,11 @@ def test_original_breach_typo_is_removed_from_priced_and_fallback_lines(tmp_path
     result, matched, _ = m._append_tablet_price_to_csd(source,
         [m.Quote('Unstable Breaches in Map spawn (1-2) additional Rare Monsters when stabilised',Decimal(500),1,2)], Decimal(500))
     text = result.decode()
-    assert matched == 1 and '怪物]' not in text
+    assert matched == 1 and '怪物]]' not in text
+    assert '[1D|不穩定裂痕在穩定後會生成一名額外稀有怪物]' in text
+    assert '[1D|不穩定裂痕在穩定後會生成{0}名額外稀有怪物]' in text
     assert '[ContainsBreach|裂痕]' in text and '[Rarity|稀有]' in text
-    assert text.count('=1D') == 4
+    assert text.count('[1D|') == 4
     assert '怪物" canonical_line' in text
     assert m.clean_chinese_markup(text) == text
     m.validate_csd(text)
@@ -747,7 +779,7 @@ def test_all_affix_lines_are_priced_in_shared_magic_and_rare_descriptions(tmp_pa
     assert matched == 3
     output = result.decode()
     for i,(_,_,chinese) in enumerate(stats):
-        assert f'{chinese}]={i+1}D' in output
+        assert f'[{i+1}D|地圖增加{{0}}%{chinese}]' in output
     m.validate_csd(output)
 
 
@@ -825,9 +857,16 @@ def test_pair_medians_install_into_one_description_with_game_stat_mapping(tmp_pa
         assert names.read_string_offset(english_data, layout, pointer)[0] == 'Metadata/Items/TowerAugments/Poe2Price/Ritual'
         if not english_target:
             assert names.scan_base_item_names(z.read(game_path))[0].name == '[1D|祭祀碑牌]'
+        # The tablet layer must leave the normal currency record unchanged,
+        # including its name pointer, inheritance and fixed-size fields.
+        for key, before in [(game_path, source.read_bytes()), (refs.ENGLISH_BASEITEMS, english.read_bytes())]:
+            after = z.read(key)
+            currency_start = 4 + 2 * 360
+            assert after[currency_start:currency_start+360] == before[currency_start:currency_start+360]
+            assert names.scan_base_item_names(after)[2].name == names.scan_base_item_names(before)[2].name
         text = z.read('data/statdescriptions/poe2price/ritual_tablet_stat_descriptions.csd').decode()
         it = z.read('metadata/items/toweraugments/poe2price/ritual.it').decode()
-        assert text.count('=1~2D') == 2
+        assert text.count('[1~2D|') == 2
         assert it.count('stat_description_list') == 1
         assert '魔法价格' not in text and '稀有价格' not in text
 
@@ -1019,8 +1058,8 @@ def test_cn_v79_default_chinese_uses_bound_raw_stat_range(condition, tail, raw_r
         first = next(r for r in records if
             (m.condition_bounds(r[2])[0] is None or m.condition_bounds(r[2])[0] <= value) and
             (m.condition_bounds(r[2])[1] is None or value <= m.condition_bounds(r[2])[1]))
-        assert first[3].endswith('=1D') == (lo <= value <= hi)
-        assert first[3].startswith('<AT1>{{十秒后效能增加{0}%，最多100%}}')
+        assert first[3].startswith('[1D|') == (lo <= value <= hi)
+        assert '<AT1>{{十秒后效能增加{0}%，最多100%}}' in first[3]
         assert first[4] == tail
     # No translated-text guessing without current game identity and range.
     assert m.price_block(block, [q], Decimal(500))[1] == set()
@@ -1040,7 +1079,7 @@ def test_cn_v79_coloured_default_branches_keep_first_match_semantics():
     for value in [0,1,2,3,4]:
         r = next(r for r in records if m.condition_bounds(r[2]) == (None,None) or
             m.condition_bounds(r[2])[0] <= value <= m.condition_bounds(r[2])[1])
-        assert r[3].endswith('=1D') == (value in [1,2])
+        assert r[3].startswith('[1D|') == (value in [1,2])
 
 
 @pytest.mark.parametrize('rarity', ['magic', 'rare'])

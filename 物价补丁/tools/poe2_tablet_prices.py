@@ -644,6 +644,21 @@ def price_tablet_names(data, base_prices):
     return apply_replacements_append(data, replacements), priced
 
 
+def format_tablet_affix_price(text, price, stat):
+    """Wrap only tablet affixes in a price link, preserving localization styles."""
+    # Flatten existing game links before wrapping: nested links are not valid
+    # and price checkers must recover the original visible modifier in one pass.
+    text = re.sub(r'\[([^\[\]|]+)(?:\|([^\[\]|]+))?\]',
+                  lambda match: match[2] or match[1], text)
+    # The official unstable-breach translation has a stray closing bracket.
+    text = text.replace(']', '')
+    if stat == 'map_unstable_breach_enrage_x_additional_rare_monsters':
+        text = text.replace('地圖內的不穩定裂痕會在穩定後生成', '不穩定裂痕在穩定後會生成')
+    if any(char in text for char in '[|') or any(char in price for char in '[]|"\r\n'):
+        raise ValueError(f'unsupported tablet price link for {stat}')
+    return f'[{price}|{text}]'
+
+
 def price_block(block, quotes, ratio):
     lines = block.splitlines(keepends=True)
     if len(lines) < 3 or not re.match(r'^\s*1\s+\S+\s*$', lines[1]):
@@ -736,7 +751,8 @@ def price_block(block, quotes, ratio):
                 condition = '#' if low is None and high is None else str(low) if low == high else f"{low if low is not None else '#'}|{high if high is not None else '#'}"
                 price = quote.label or format_price(quote.price, ratio)
                 if not price: continue
-                additions.append(f'{record[1]}{condition} "{record[3]}={price}"{record[4]}{record[5]}')
+                content = format_tablet_affix_price(record[3], price, stat)
+                additions.append(f'{record[1]}{condition} "{content}"{record[4]}{record[5]}')
                 # Coverage is recorded only after the matching price is emitted.
                 used.update(q.identifier or q.text for lo, hi, q in candidates
                             if (hi is None or low is None or hi >= low)

@@ -32,7 +32,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.8"
+$script:PatchVersion = "v1.0.9"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -3320,6 +3320,7 @@ $PriceCacheKey = [string]::Concat(
     $(if ($CanPatchUniqueWords) { "on" } else { "off" }),
     "_island-",
     $(if ($PatchIslandRumourHintsEnabled) { "on" } else { "off" }),
+    $(if ($PatchTabletAffixesEnabled) { "_tablet-markup-v1" } else { "" }),
     "_league-",
     $LeagueCacheToken
 )
