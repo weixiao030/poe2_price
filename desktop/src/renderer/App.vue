@@ -18,6 +18,7 @@ import {
 import { useAppStore } from './stores/app'
 import UpdateNotice from './components/UpdateNotice.vue'
 import { operationWarning } from '../shared/operation-outcome'
+import { hasPatchContent, hasPriceContent } from '../shared/patch-options'
 import type {
   AppSettings,
   GameVersion,
@@ -57,9 +58,8 @@ const canUpdate = computed(
     !app.querying &&
     !app.leagueSaving &&
     !app.saving &&
-    (app.settings.patchScope === 'none'
-      ? app.settings.gameVersion === 'poe2' && app.settings.islandRumourHints
-      : app.selectedLeague === '__auto__' || !!app.league)
+    hasPatchContent(app.settings) &&
+    (!hasPriceContent(app.settings) || app.selectedLeague === '__auto__' || !!app.league)
 )
 const sourceLabel = computed(() =>
   app.client?.isChina
@@ -69,7 +69,6 @@ const sourceLabel = computed(() =>
       : 'poe2scout + poe.ninja'
 )
 const latest = computed(() => app.state.history[0])
-const hasCurrency = computed(() => ['all', 'currency'].includes(app.settings.patchScope))
 const saveStatus = computed(() =>
   app.saving ? '正在保存…' : app.saveError ? '保存失败，请重试' : '配置已自动保存'
 )
@@ -398,9 +397,9 @@ onUnmounted(() => {
                 <div class="scope-list">
                   <label
                     v-for="item in [
-                      ['all', '通货与传奇', '完整显示物品参考价格'],
-                      ['currency', '仅通货', '通货与可交易物品'],
-                      ['uniques', '仅传奇', '传奇装备参考价格']
+                      ['all', '通货与传奇', '通货与传奇装备参考价格'],
+                      ['currency', '通货', '通货与可交易物品'],
+                      ['uniques', '传奇', '传奇装备参考价格']
                     ] as const"
                     :key="item[0]"
                     :class="['scope-option', { selected: app.settings.patchScope === item[0] }]"
@@ -428,7 +427,7 @@ onUnmounted(() => {
                       :checked="app.settings.patchScope === 'none'"
                       @change="save({ patchScope: 'none', islandRumourHints: true })"
                     />
-                    <div><b>仅岛屿传言提示</b></div></label
+                    <div><b>岛屿传言提示</b></div></label
                   >
                 </div>
               </fieldset>
@@ -441,17 +440,11 @@ onUnmounted(() => {
                 <div class="option-row">
                   <div>
                     <b id="tablet-prices-label">碑牌价格</b>
-                    <p id="tablet-prices-help">
-                      {{
-                        app.settings.patchScope === 'none'
-                          ? '当前范围不显示价格，保留此选择'
-                          : '底材随通货范围，暗金随传奇范围'
-                      }}
-                    </p>
+                    <p id="tablet-prices-help">碑牌底材与暗金价格，不受上方范围限制</p>
                   </div>
                   <n-switch
                     :value="app.settings.tabletPrices ?? true"
-                    :disabled="app.running || app.saving || app.settings.patchScope === 'none'"
+                    :disabled="app.running || app.saving"
                     aria-label="碑牌价格"
                     aria-describedby="tablet-prices-help"
                     @update:value="save({ tabletPrices: $event })"
@@ -460,17 +453,11 @@ onUnmounted(() => {
                 <div class="option-row">
                   <div>
                     <b id="tablet-affixes-label">碑牌词缀价格</b>
-                    <p id="tablet-affixes-help">
-                      {{
-                        hasCurrency
-                          ? '在词缀旁显示参考价，可与碑牌价格分开设置'
-                          : '通货范围启用时生效，保留此选择'
-                      }}
-                    </p>
+                    <p id="tablet-affixes-help">在词缀旁显示参考价，不受上方范围限制</p>
                   </div>
                   <n-switch
                     :value="app.settings.tabletAffixPrices ?? true"
-                    :disabled="app.running || app.saving || !hasCurrency"
+                    :disabled="app.running || app.saving"
                     aria-label="碑牌词缀价格"
                     aria-describedby="tablet-affixes-help"
                     @update:value="save({ tabletAffixPrices: $event })"
@@ -528,24 +515,6 @@ onUnmounted(() => {
               </div>
               <div class="action-note">
                 <Icon icon="ph:info" /><span>请先关闭游戏。修改游戏文件存在封号风险。</span>
-              </div>
-              <div class="workspace-auto-update">
-                <div class="option-row">
-                  <div>
-                    <b>每小时自动更新物价</b>
-                    <p>使用当前已保存的补丁配置</p>
-                  </div>
-                  <n-switch
-                    :value="app.settings.autoUpdate"
-                    :disabled="app.saving"
-                    aria-label="每小时自动更新物价"
-                    @update:value="save({ autoUpdate: $event })"
-                  />
-                </div>
-                <p class="field-help">{{ app.state.autoUpdateStatus }}</p>
-                <p v-if="app.state.nextUpdate" class="field-help">
-                  下次更新：{{ localeDate(app.state.nextUpdate) }}
-                </p>
               </div>
             </section>
             <section class="panel activity-panel">

@@ -9,7 +9,6 @@ export function tabletStatusForRequest(
   if (
     request.operation !== 'update' ||
     request.gameVersion !== 'poe2' ||
-    !['all', 'currency'].includes(request.patchScope) ||
     request.tabletAffixPrices === false
   )
     return undefined
@@ -34,7 +33,6 @@ export function wholeTabletStatusForRequest(
   if (
     request.operation !== 'update' ||
     request.gameVersion !== 'poe2' ||
-    request.patchScope === 'none' ||
     request.tabletPrices === false
   )
     return undefined

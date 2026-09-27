@@ -480,14 +480,6 @@ p {
 .configuration-help .n-button {
   flex-shrink: 0;
 }
-.workspace-auto-update {
-  border-top: 1px solid var(--line);
-  margin-top: 20px;
-  padding-top: 16px;
-}
-.workspace-auto-update .option-row {
-  padding-bottom: 0;
-}
 .action-note {
   display: flex;
   align-items: flex-start;

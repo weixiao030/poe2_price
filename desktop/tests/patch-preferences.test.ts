@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { argsFor, defaults, settingsPatch, validateRequest } from '../src/main/policy'
 import { currentAutoUpdateRequest, restoreConfirmedUpdate } from '../src/main/auto-update'
+import { hasPatchContent, hasPriceContent } from '../src/shared/patch-options'
 import {
   tabletStatusForRequest,
   wholeTabletStatusForRequest
@@ -105,4 +106,17 @@ test('saved CN season and language are used; legacy league choices remain until 
     })!.leagueMode,
     'auto'
   )
+})
+
+test('tablets remain valid price content without ordinary currency or uniques', async () => {
+  for (const tabletPrices of [false, true]) for (const tabletAffixPrices of [false, true]) {
+    const options = { ...defaults, patchScope: 'none' as const, islandRumourHints: false, tabletPrices, tabletAffixPrices }
+    assert.equal(hasPriceContent(options), tabletPrices || tabletAffixPrices)
+    assert.equal(hasPatchContent(options), tabletPrices || tabletAffixPrices)
+    assert.equal(hasPatchContent({ ...options, islandRumourHints: true }), true)
+    const harness = createHarness(fileURLToPath(new URL('../', import.meta.url)))
+    const result = await harness.runOperation({ ...request, ...options })
+    assert.equal(result.exitCode === 0, tabletPrices || tabletAffixPrices)
+  }
+  assert.equal(hasPriceContent({ ...defaults, gameVersion: 'poe1', patchScope: 'none' }), false)
 })

@@ -6,7 +6,8 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const report = path.resolve(root, '../verification/preferences-v1010/ui')
+const version = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version
+const report = path.resolve(root, `../verification/preferences-v${version.replaceAll('.', '')}/ui`)
 const profile = path.join(report, 'profile')
 await fs.mkdir(report, { recursive: true })
 const env = { ...process.env, POE_DESKTOP_DATA: profile }
@@ -44,10 +45,23 @@ try {
   let page = await launch()
   await page.getByRole('button', { name: '全部开启', exact: true }).click()
   await waitSaved(page, 'tabletPrices', true)
+  for (const [label, scope] of [['通货', 'currency'], ['传奇', 'uniques'], ['岛屿传言提示', 'none'], ['通货与传奇', 'all']]) {
+    await page.getByText(label, { exact: true }).click()
+    await waitSaved(page, 'patchScope', scope)
+    for (const [name, key] of [['碑牌价格', 'tabletPrices'], ['碑牌词缀价格', 'tabletAffixPrices']]) {
+      assert.equal(await page.getByRole('switch', { name, exact: true }).isEnabled(), true)
+      await flip(page, name, key, false)
+      await flip(page, name, key, true)
+    }
+  }
+  checks.push('四种更新范围均可独立开关碑牌价格与词缀，选择自动保存')
   await flip(page, '碑牌价格', 'tabletPrices', false)
   await flip(page, '碑牌词缀价格', 'tabletAffixPrices', false)
   await flip(page, '岛屿传言地图提示', 'islandRumourHints', false)
-  await flip(page, '每小时自动更新物价', 'autoUpdate', true)
+  assert.equal(await page.getByRole('switch', { name: /每小时自动更新/ }).count(), 0)
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /^引用设置/ }).click()
+  assert.equal(await page.getByRole('switch', { name: '每小时自动更新', exact: true }).count(), 1)
+  await flip(page, '每小时自动更新', 'autoUpdate', true)
   const saved = JSON.parse(await fs.readFile(path.join(profile, 'desktop-settings.json'), 'utf8'))
   assert.equal(saved.settings.tabletPrices, false)
   assert.equal(saved.settings.tabletAffixPrices, false)
@@ -57,9 +71,14 @@ try {
   page = await launch()
   for (const name of ['碑牌价格', '碑牌词缀价格', '岛屿传言地图提示'])
     assert.equal(await page.getByRole('switch', { name, exact: true }).getAttribute('aria-checked'), 'false')
-  assert.equal(await page.getByRole('switch', { name: '每小时自动更新物价', exact: true }).getAttribute('aria-checked'), 'true')
+  assert.equal(await page.getByRole('switch', { name: /每小时自动更新/ }).count(), 0)
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /^引用设置/ }).click()
+  assert.equal(await page.getByRole('switch', { name: '每小时自动更新', exact: true }).getAttribute('aria-checked'), 'true')
   checks.push('关闭并重新启动真实应用后完整恢复用户选择')
-  await flip(page, '每小时自动更新物价', 'autoUpdate', false)
+  await page.locator('.settings-row').filter({ has: page.getByRole('switch', { name: '每小时自动更新', exact: true }) }).screenshot({ path: path.join(report, 'auto-update-settings.png'), animations: 'disabled' })
+  await flip(page, '每小时自动更新', 'autoUpdate', false)
+  checks.push('每小时自动更新仅在引用设置中显示，开关与持久化正常')
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: /^物价补丁/ }).click()
   await page.getByRole('button', { name: '全部开启', exact: true }).click()
   await waitSaved(page, 'tabletAffixPrices', true)
   await page.getByRole('switch', { name: '碑牌词缀价格', exact: true }).getAttribute('aria-checked')

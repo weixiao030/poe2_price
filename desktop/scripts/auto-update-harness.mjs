@@ -117,6 +117,7 @@ export function createHarness(root, initial = {}) {
   const code = `let active = null, processChild = null, cancellationRequested = false, timer, nextUpdate = null, scheduleGeneration = 0, autoUpdatePausedReason = '';
     ${source('src/main/policy.ts')}
     ${source('src/shared/operation-outcome.ts')}
+    ${source('src/shared/patch-options.ts')}
     ${source('src/main/auto-update.ts')}
     ${source('src/main/index.ts', ['runOperation', 'schedule', 'cancelSchedule', 'autoUpdateStatus', 'saveAutoUpdateSchedule'])}
     globalThis.probe = { runOperation, schedule, autoUpdateStatus, deadline: () => nextUpdate,

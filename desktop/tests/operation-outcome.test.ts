@@ -25,14 +25,13 @@ test('final tablet marker survives chunk splits, UTF-8 text and log truncation',
 })
 
 test('only requested POE2 tablet layers are interpreted', () => {
-  for (const patchScope of ['all', 'currency'] as const) {
+  for (const patchScope of ['all', 'currency', 'uniques', 'none'] as const) {
     assert.equal(tabletStatusForRequest({ ...request, patchScope }, undefined), 'unknown')
     assert.equal(tabletStatusForRequest({ ...request, patchScope }, 'disabled'), 'unknown')
     assert.equal(tabletStatusForRequest({ ...request, patchScope }, 'applied'), 'applied')
   }
   for (const change of [
-    { patchScope: 'uniques' },
-    { patchScope: 'none' },
+    { tabletAffixPrices: false },
     { gameVersion: 'poe1' },
     { operation: 'restore' },
     { operation: 'localize' }
@@ -64,11 +63,11 @@ test('whole tablet result is independent of affix success and works for uniques-
     assert.equal(output.tabletAffixes, 'applied')
     assert.match(operationWarning({ ...result, ...output })!, /碑牌价格未完整生效/)
   }
-  for (const patchScope of ['all', 'currency', 'uniques'] as const)
+  for (const patchScope of ['all', 'currency', 'uniques', 'none'] as const)
     assert.equal(wholeTabletStatusForRequest({ ...request, patchScope }, 'unavailable'), 'unavailable')
   assert.equal(wholeTabletStatusForRequest(request, 'disabled'), undefined)
   assert.equal(wholeTabletStatusForRequest(request, undefined), undefined)
-  assert.equal(wholeTabletStatusForRequest({ ...request, patchScope: 'none' }, 'unavailable'), undefined)
+  assert.equal(wholeTabletStatusForRequest({ ...request, tabletPrices: false }, 'unavailable'), undefined)
   assert.equal(wholeTabletStatusForRequest({ ...request, gameVersion: 'poe1' }, 'unavailable'), undefined)
   assert.equal(operationWarning({ ...result, wholeTablets: 'applied' }), undefined)
   assert.equal(operationWarning({ ...result, wholeTablets: 'unavailable', cancelled: true }), undefined)

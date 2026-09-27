@@ -1512,6 +1512,8 @@ class PoecurrencyPricingTests(unittest.TestCase):
                     [
                         "--patch-scope",
                         "none",
+                        "--no-tablet-prices",
+                        "--no-tablet-affixes",
                         "--fallback-price-sources",
                         "none",
                         "--out-dir",

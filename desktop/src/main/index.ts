@@ -37,6 +37,7 @@ import {
   type TabletLayerStatus
 } from '../shared/operation-outcome'
 import { dataRoot } from './runtime'
+import { hasPatchContent, hasPriceContent } from '../shared/patch-options'
 import { getBackground, chooseBackground, clearBackground } from './background'
 import { cleanupOldFiles } from './maintenance'
 import {
@@ -165,11 +166,11 @@ async function runOperation(input: unknown, automatic = false): Promise<Operatio
     kind = automatic ? confirmed?.installKind || '' : client!.installKind
     if (automatic && !confirmed) throw new Error('请先完成一次手动更新')
     if (request.operation === 'update') {
-      if (request.patchScope === 'none' && !request.islandRumourHints)
+      if (!hasPatchContent(request))
         throw new Error('没有选中任何补丁内容')
       if (
         !automatic &&
-        request.patchScope !== 'none' &&
+        hasPriceContent(request) &&
         request.leagueMode !== 'auto' &&
         !(client!.isChina ? request.poeCurrencySeason : request.league || request.poeNinjaLeague)
       )

@@ -34,7 +34,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.10"
+$script:PatchVersion = "v1.0.11"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -2944,8 +2944,9 @@ catch {
     Write-Warning "无法保存最近使用的游戏目录，本次更新仍会继续：$($_.Exception.Message)"
 }
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
-$PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques"))
-$PatchTabletAffixesEnabled = $TabletAffixPrices -and ($PatchScope -in @("all", "currency"))
+$PatchWordsEnabled = $PatchUniqueWordsEnabled -or $TabletPrices
+$PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques")) -or $TabletPrices -or $TabletAffixPrices
+$PatchTabletAffixesEnabled = $TabletAffixPrices
 $PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
 $GameMode = $InstallInfo.Mode
@@ -3029,7 +3030,7 @@ Write-Host "写入目标：$($InstallInfo.TcBaseItemsPath)" -ForegroundColor Cya
 Write-Host "通货价格补丁：$(if ($PatchScope -in @('all', 'currency')) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 Write-Host "传奇装备价格补丁：$(if ($PatchUniqueWordsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 Write-Host "岛屿传言补丁：$(if ($PatchIslandRumourHintsEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
-Write-Host "碑牌价格：$(if ($TabletPrices -and $PatchScope -ne 'none') { '开启' } else { '关闭' })" -ForegroundColor Cyan
+Write-Host "碑牌价格：$(if ($TabletPrices) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 Write-Host "碑牌词缀价格：$(if ($PatchTabletAffixesEnabled) { '开启' } else { '关闭' })" -ForegroundColor Cyan
 if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
@@ -3169,7 +3170,7 @@ if (-not $SkipExtract) {
                     Label = "$DisplayLanguageName Words"
                     Required = $true
                 })
-            if ($PatchUniqueWordsEnabled) {
+            if ($PatchWordsEnabled) {
                 $ExtractEntries.Add([pscustomobject]@{
                         Path = "data/balance/uniquegoldprices.datc64"
                         Destination = $UniqueGoldPrices
@@ -3211,8 +3212,8 @@ if (-not $SkipExtract) {
         if (-not $SupportsUniqueWords) {
             Write-Host "当前语言不支持传奇物品 Words 提取，已跳过。语言：$DisplayLanguageName" -ForegroundColor Yellow
         }
-        elseif (-not $PatchUniqueWordsEnabled) {
-            Write-Host "当前选择只打通货补丁，已跳过 UniqueGoldPrices 提取。" -ForegroundColor Yellow
+        elseif (-not $PatchWordsEnabled) {
+            Write-Host "本次未启用传奇或暗金碑牌价格，已跳过 UniqueGoldPrices 提取。" -ForegroundColor Yellow
         }
     }
 }
@@ -3262,16 +3263,16 @@ if ($PatchIslandRumourHintsEnabled) {
     Assert-File $TcEndgameMaps "$($InstallInfo.LanguageName) EndgameMaps"
 }
 $CanPatchUniqueWords = (
-    $PatchUniqueWordsEnabled -and
+    $PatchWordsEnabled -and
     $SupportsUniqueWords -and
     (Test-Path -LiteralPath $EnWords -PathType Leaf) -and
     (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
     (Test-Path -LiteralPath $UniqueGoldPrices -PathType Leaf)
 )
-if ($PatchUniqueWordsEnabled -and $SupportsUniqueWords -and -not $CanPatchUniqueWords) {
+if ($PatchWordsEnabled -and $SupportsUniqueWords -and -not $CanPatchUniqueWords) {
     Write-Warning "传奇物品价格标记已禁用：Words 或 UniqueGoldPrices datc64 文件没有成功提取。"
 }
-elseif ($PatchUniqueWordsEnabled -and -not $SupportsUniqueWords) {
+elseif ($PatchWordsEnabled -and -not $SupportsUniqueWords) {
     Write-Warning "传奇物品价格标记已禁用：当前语言没有受支持的 Words.datc64 路径。"
 }
 $SourceBaseItemsLooksPatched = Test-BaseItemsLookPatched $TcBaseItems
@@ -3293,7 +3294,7 @@ if ($PatchIslandRumourHintsEnabled -and $SourceEndgameMapsLooksPatched -and $Gam
     Write-Host "当前 EndgameMaps.datc64 已包含岛屿传言提示，将在生成补丁时清理并重打。" -ForegroundColor Yellow
 }
 $CanPatchUniqueWords = (
-    $PatchUniqueWordsEnabled -and
+    $PatchWordsEnabled -and
     $SupportsUniqueWords -and
     (Test-Path -LiteralPath $EnWords -PathType Leaf) -and
     (Test-Path -LiteralPath $TcWords -PathType Leaf) -and
@@ -3327,6 +3328,7 @@ $PriceCacheKey = [string]::Concat(
     $(if ($PatchTabletAffixesEnabled) { "_tablet-markup-v1" } else { "" }),
     "_tablet-prices-",
     $(if ($TabletPrices) { "on" } else { "off" }),
+    "_tablet-independent-v1",
     "_league-",
     $LeagueCacheToken
 )
@@ -3365,7 +3367,7 @@ elseif ($GameMode -eq "Bundles2") {
     Write-Host "本次不会写入游戏，已跳过真实还原包的创建与替换。" -ForegroundColor Yellow
 }
 
-if ($BuildPatchScope -in @("all", "currency", "uniques")) {
+if ($PatchPriceFetchEnabled) {
     Write-Step "获取 $PriceSourceName 价格并生成补丁包"
 }
 else {
@@ -3465,8 +3467,7 @@ if ($UseChinaPriceSource) {
 $UsingCachedPatch = $false
 if (-not $TabletPrices) { $BuildArgs += "--no-tablet-prices" }
 $TabletLayerStatus = if ($PatchTabletAffixesEnabled) { "unknown" } else { "disabled" }
-$WholeTabletEnabled = $TabletPrices -and (($UseChinaPriceSource -and ($PatchScope -ne "none")) -or
-    (($PatchScope -in @("all", "currency")) -and $InstallInfo.TcBaseItemsPath -ne "data/balance/baseitemtypes.datc64"))
+$WholeTabletEnabled = $TabletPrices -and ($UseChinaPriceSource -or $InstallInfo.TcBaseItemsPath -ne "data/balance/baseitemtypes.datc64")
 $WholeTabletLayerStatus = if ($WholeTabletEnabled) { "unknown" } else { "disabled" }
 $PatchFolderZip = Join-Path $RepoRoot $PricePatchZipName
 try {
@@ -3550,7 +3551,7 @@ catch {
     $CompatibleFallbackPatch = ""
     try {
         if (
-            $CanUseSeasonCache -and $TabletPrices -and $BuildPatchScope -in @("all", "currency") -and
+            $CanUseSeasonCache -and $TabletPrices -and $BuildPatchScope -eq "all" -and
             (Test-PricePatchZipCompatible -Path $CachedPatchZip -ReferenceDat $TcBaseItems)
         ) {
             $SafeFallbackZip = Join-Path $BuildStageDir "safe-core-cache.zip"

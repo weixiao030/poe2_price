@@ -56,16 +56,21 @@ try {
   await fs.writeFile(path.join(report, 'client.json'), JSON.stringify(client, null, 2))
   await page.evaluate(dir => window.desktop.saveSettings({ gameVersion: 'poe2', directories: { poe1: '', poe2: dir },
     patchScope: 'all', tabletPrices: true, tabletAffixPrices: true, islandRumourHints: true, closeToTray: false, autoUpdate: false }), gameDirectory)
-  const cases = [
+  const cases = options['scope-matrix'] === 'true' ? [
+    ['currency-tablets', true, true, 'currency'], ['uniques-tablets', true, true, 'uniques'],
+    ['island-tablets', true, true, 'none'], ['island-names', true, false, 'none'],
+    ['island-affixes', false, true, 'none'], ['island-no-tablets', false, false, 'none'],
+    ['automatic-saved', false, true, 'none'], ['all-on-final', true, true, 'all']
+  ] : [
     ['all-on', true, true], ['names-only', true, false], ['affixes-only', false, true], ['all-off', false, false],
     ['automatic-saved', false, true], ['restore', false, true], ['all-on-final', true, true]
   ]
-  for (const [name, tabletPrices, tabletAffixPrices] of cases) {
+  for (const [name, tabletPrices, tabletAffixPrices, patchScope = 'all'] of cases) {
     if (checks.some(check => check.name === name)) continue
     current = path.join(report, name)
     await fs.mkdir(current, { recursive: true })
     const before = await page.evaluate(() => window.desktop.getSnapshot())
-    await page.evaluate(p => window.desktop.saveSettings(p), { tabletPrices, tabletAffixPrices })
+    await page.evaluate(p => window.desktop.saveSettings(p), { tabletPrices, tabletAffixPrices, patchScope })
     console.log(`REAL_CASE ${name} ${gameDirectory}`)
     let result
     if (name === 'automatic-saved') {
@@ -98,7 +103,7 @@ try {
       assert.equal(saved.confirmed.request.tabletPrices, false)
     } else {
       const request = { operation: name === 'restore' ? 'restore' : 'update', gameVersion: 'poe2', gameDirectory,
-        patchScope: 'all', tabletPrices, tabletAffixPrices, islandRumourHints: true,
+        patchScope, tabletPrices, tabletAffixPrices, islandRumourHints: true,
         languageMode: 'auto', league: '', poeNinjaLeague: '', poeCurrencySeason: '', leagueIsCurrent: true, leagueMode: 'auto' }
       result = await page.evaluate(r => window.desktop.runOperation(r), request)
     }
@@ -118,14 +123,16 @@ try {
       const summary = await readJson(path.join(output, 'summary.json'))
       assert.equal(summary.tablet_prices_enabled, tabletPrices)
       assert.equal(summary.tablet_affix_prices_enabled, tabletAffixPrices)
+      assert.equal(summary.patch_scope, patchScope)
       assert.equal(summary.tablet_affixes.resources?.length > 0, tabletAffixPrices)
       assert.equal(summary.whole_tablets.base_names?.length > 0, tabletPrices)
       if (client.isChina && tabletPrices) assert.ok(summary.whole_tablets.unique_names.length > 0)
-      assert.ok(summary.matched_items > 0 && summary.unique_words_patched > 0)
+      assert.equal(summary.matched_items > 0, ['all', 'currency'].includes(patchScope))
+      assert.equal(summary.unique_words_patched > 0, ['all', 'uniques'].includes(patchScope) || tabletPrices)
     }
     await runShell('python', [path.join(root, 'scripts/check-preference-readback.py'), path.join(current, 'readback'),
-      name === 'restore' ? 'false' : String(tabletPrices), name === 'restore' ? 'false' : String(tabletAffixPrices)], path.join(current, 'semantic-check.json'))
-    checks.push({ name, tabletPrices, tabletAffixPrices, runId: result.runId, automatic: result.automatic, readback: true })
+      name === 'restore' ? 'false' : String(tabletPrices), name === 'restore' ? 'false' : String(tabletAffixPrices), name === 'restore' ? 'none' : patchScope], path.join(current, 'semantic-check.json'))
+    checks.push({ name, patchScope, tabletPrices, tabletAffixPrices, runId: result.runId, automatic: result.automatic, readback: true })
     await fs.writeFile(path.join(report, 'result.json'), JSON.stringify({ checks, completed: false }, null, 2))
     console.log('CASE_PASSED', name)
   }

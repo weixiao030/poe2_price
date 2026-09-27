@@ -3625,13 +3625,13 @@ def main(argv: list[str]) -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     patch_base_items = args.patch_scope in {"all", "currency"}
     patch_unique_words = args.patch_scope in {"all", "uniques"}
-    effective_patch_unique_words = patch_unique_words and not args.no_uniques
+    effective_patch_unique_words = (patch_unique_words or not args.no_tablet_prices) and not args.no_uniques
     if args.patch_scope == "uniques" and args.no_uniques:
         raise SystemExit("--patch-scope=uniques cannot be combined with --no-uniques")
     if args.patch_scope == "none" and args.no_uniques:
         effective_patch_unique_words = False
 
-    fetch_prices = patch_base_items or effective_patch_unique_words
+    fetch_prices = patch_base_items or effective_patch_unique_words or not args.no_tablet_prices
     client = RetryingRequests(
         max_retries=args.retries,
         backoff=args.backoff,
@@ -3644,7 +3644,7 @@ def main(argv: list[str]) -> int:
     league_sources = {args.price_source, *fallback_price_sources}
     if args.price_source == "poecurrency-cn":
         league_sources.add(args.cn_reference_source)
-    needs_market_league = fetch_prices and bool(
+    needs_market_league = (fetch_prices or not args.no_tablet_affixes) and bool(
         league_sources.intersection({"poe2scout", "poe-ninja"})
     )
     if args.resolved_leagues:
@@ -4076,10 +4076,7 @@ def main(argv: list[str]) -> int:
         (args.out_dir / 'price_display.audit.json').write_text(
             json.dumps(audit, ensure_ascii=False, indent=2), encoding='utf-8')
     whole_tablets: dict[str, Any] = {"status": "disabled"}
-    if args.price_source == "poecurrency-cn" and not args.no_tablet_prices and (
-        patch_base_items
-        or effective_patch_unique_words and args.unique_price_label_mode != "off"
-    ):
+    if args.price_source == "poecurrency-cn" and not args.no_tablet_prices:
         try:
             progress("国服整件碑牌与暗金碑牌：获取独立国服行情")
             cn_tablet_league = resolve_cn_tablet_league(
@@ -4102,7 +4099,7 @@ def main(argv: list[str]) -> int:
             json.dumps(whole_tablets, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
-    if args.price_source != "poecurrency-cn" and patch_base_items and not args.no_tablet_prices:
+    if args.price_source != "poecurrency-cn" and not args.no_tablet_prices:
         try:
             progress("碑牌价格：获取国际服底材行情")
             whole_tablets = fetch_poe_ninja_precursor_tablets(
@@ -4115,21 +4112,20 @@ def main(argv: list[str]) -> int:
     # Keep ordinary feeds from reintroducing tablet labels after cleanup, or
     # bypassing the dedicated tablet market and the user's price switch.
     rows = [row for row in rows if not row.get('metadata_path', '').startswith('Metadata/Items/TowerAugment/')]
-    excluded_tablet_names = set()
-    if args.no_tablet_prices:
-        excluded_tablet_names = {normalize_name(name) for name in UNIQUE_TABLET_NAMES}
-        for market in [best, fallback_unique_by_name, *(result.prices or {} for result in fallback_results)]:
-            for obs in market.values():
-                if 'tablet' in obs.category.lower() or '碑牌' in obs.category:
-                    excluded_tablet_names.update(normalize_name(name) for name in (obs.en_name, obs.english_name) if name)
+    tablet_name_keys = {normalize_name(name) for name in UNIQUE_TABLET_NAMES}
+    tablet_name_keys.update(normalize_name(name) for name in whole_tablets.get('unique_catalog', {}))
+    for market in [best, fallback_unique_by_name, *(result.prices or {} for result in fallback_results)]:
+        for obs in market.values():
+            if 'tablet' in obs.category.lower() or '碑牌' in obs.category:
+                tablet_name_keys.update(normalize_name(name) for name in (obs.en_name, obs.english_name) if name)
+    excluded_unique_names = set(tablet_name_keys) if args.no_tablet_prices else set()
 
     unique_names: dict[str, UniqueName] = {}
     unique_word_rows: list[dict[str, str]] = []
     unique_word_missing: list[dict[str, str]] = []
     unique_words_patched = 0
     can_patch_unique_words = (
-        patch_unique_words
-        and effective_patch_unique_words
+        effective_patch_unique_words
         and args.en_words.exists()
         and args.tc_words.exists()
         and args.unique_gold_prices.exists()
@@ -4138,6 +4134,8 @@ def main(argv: list[str]) -> int:
         unique_names = load_unique_names(
             args.unique_gold_prices, args.en_words, args.tc_words
         )
+        if not patch_unique_words:
+            excluded_unique_names.update(set(unique_names) - tablet_name_keys)
 
     prices_csv = args.out_dir / "prices.csv"
     matched_csv = args.out_dir / "matched_prices_detail.csv"
@@ -4280,7 +4278,7 @@ def main(argv: list[str]) -> int:
             clean_english = clean_tablet_layer(original_english)
             if clean_english != original_english:
                 upsert_zip_entry(output_zip, "data/balance/baseitemtypes.datc64", clean_english)
-        if not args.no_tablet_affixes and args.patch_scope in {"all", "currency"}:
+        if not args.no_tablet_affixes:
             tablet_report_path = args.tablet_report or (args.out_dir / "tablet_affix.report.json")
             prerequisites = {
                 "game_path": bool(args.game_path),
@@ -4382,7 +4380,7 @@ def main(argv: list[str]) -> int:
                         f"{type(exc).__name__}: {exc}", file=sys.stderr
                     )
         # Independent whole-item prices still apply if the modifier layer failed.
-        if (patch_base_items and not args.no_tablet_prices and whole_tablets.get('base_prices')
+        if (not args.no_tablet_prices and whole_tablets.get('base_prices')
                 and args.patched_dat and args.patched_dat.exists()):
             try:
                 whole_tablets['base_names'] = apply_cn_whole_tablet_names(
@@ -4412,7 +4410,7 @@ def main(argv: list[str]) -> int:
                             label_mode=args.unique_price_label_mode,
                             tablet_prices={key: whole_tablets.get('unique_prices', {}).get(key)
                                            for key in whole_tablets.get('unique_catalog', {})},
-                            excluded_names=excluded_tablet_names,
+                            excluded_names=excluded_unique_names,
                         )
                     else:
                         unique_words_patched, unique_word_rows, unique_word_missing = patch_unique_word_prices(
@@ -4421,7 +4419,7 @@ def main(argv: list[str]) -> int:
                             prices=best,
                             patched_words=patched_words,
                             label_mode=args.unique_price_label_mode,
-                            excluded_names=excluded_tablet_names,
+                            excluded_names=excluded_unique_names,
                         )
                     unique_words_dat_changed = unique_words_patched > 0 or any(
                         row.get("status") == "cleaned" for row in unique_word_rows
@@ -4561,7 +4559,7 @@ def main(argv: list[str]) -> int:
     if whole_tablets['unique_names']:
         progress(f"写入国服暗金碑牌独立名称价格（{len(whole_tablets['unique_names'])} 种）")
     if whole_tablets.get('status') != 'disabled':
-        expected_bases = len(whole_tablets.get('base_prices', {})) if patch_base_items and not args.no_tablet_prices else 0
+        expected_bases = len(whole_tablets.get('base_prices', {})) if not args.no_tablet_prices else 0
         expected_uniques = len(whole_tablets.get('unique_prices', {})) if effective_patch_unique_words and args.unique_price_label_mode != 'off' else 0
         applied_bases = len(whole_tablets.get('base_names', []))
         applied_uniques = len(whole_tablets['unique_names'])

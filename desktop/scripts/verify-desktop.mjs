@@ -221,7 +221,7 @@ try {
     null,
     { timeout: 120_000 }
   )
-  await page.getByText('仅通货', { exact: true }).click()
+  await page.getByText('通货', { exact: true }).click()
   await page.getByRole('button', { name: '开始更新物价', exact: true }).click()
   await page.getByText('确认更新物价', { exact: true }).waitFor()
   await page.getByRole('button', { name: '确认执行', exact: true }).click()

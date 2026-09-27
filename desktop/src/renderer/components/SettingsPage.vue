@@ -140,19 +140,16 @@ async function cleanup(kind: 'cache' | 'logs') {
     <div class="settings-row">
       <div>
         <b>每小时自动更新</b>
-        <p>沿用最近一次成功更新的配置，成功后间隔一小时；重启和唤醒会补更到期任务。</p>
+        <p>使用当前已保存的补丁配置，成功后间隔一小时；重启和唤醒会补更到期任务。</p>
         <p>游戏运行或目录占用时每 2 分钟重查；失败后按 1、5、15 分钟间隔重试。</p>
         <p v-if="app.settings.autoUpdate">{{ app.state.autoUpdateStatus }}</p>
-        <span v-if="app.settings.autoUpdate" class="schedule-note">{{
-          app.state.nextUpdate
-            ? `下次执行：${localeDate(app.state.nextUpdate)}`
-            : app.state.active
-              ? '当前任务完成后安排下次执行。'
-              : '等待首次手动更新成功。'
-        }}</span>
+        <span v-if="app.settings.autoUpdate && app.state.nextUpdate" class="schedule-note">
+          下次执行：{{ localeDate(app.state.nextUpdate) }}
+        </span>
       </div>
       <n-switch
         :value="app.settings.autoUpdate"
+        :disabled="app.saving"
         aria-label="每小时自动更新"
         @update:value="save({ autoUpdate: $event })"
       />

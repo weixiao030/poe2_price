@@ -259,7 +259,9 @@ def test_noinstall_and_physical_restore_follow_high_availability_order():
     assert "New-CorePricePatchFromCache" in update
     assert "Publish-PriceBuildStage" in update
     assert 'foreach ($Candidate in @($CachedPatchZip, $PatchZip, $PatchFolderZip))' not in update
-    assert '$BuildPatchScope -in @("all", "currency")' in update
+    # Core-cache fallback preserves Words, so it is safe only when ordinary
+    # uniques and tablet names are both requested; narrower scopes must clean it.
+    assert '$CanUseSeasonCache -and $TabletPrices -and $BuildPatchScope -eq "all" -and' in update
     assert '"_mode-"' in update
     assert 'preserved_layers = @("Words", "EndgameMaps")' in update
 
