@@ -297,6 +297,40 @@ class TabletSnapshotError(ValueError):
     """A successful response contains an unavailable or inconsistent snapshot."""
 
 
+def resolve_latest_tablet_league(client, api_base, server):
+    """Tablets always follow this server's current softcore season."""
+    if server not in {'cn', 'international'}:
+        raise ValueError('unsupported tablet server')
+    query = urllib.parse.urlencode(dict(server=server, category='tablet', rarity='rare', league='auto'))
+    payload = client.get_json(api_base.rstrip('/') + '/api/v1/leagues?' + query)
+    if (not isinstance(payload, dict) or payload.get('server') != server
+            or payload.get('stale') is True or not payload.get('default')):
+        raise ValueError('碑牌最新赛季目录不可用')
+    matches = [row for row in payload.get('data', [])
+               if row.get('name') == payload['default'] and row.get('hardcore') is False
+               and not row.get('archived') and not row.get('permanent')
+               and row.get('current') is not False]
+    if len(matches) != 1:
+        raise ValueError('碑牌目录没有唯一的当前普通赛季')
+    return matches[0]['name']
+
+
+def fetch_tablet_display_rates(client, api_base, league, server):
+    """Load E/C/D units from the tablet season, independently of ordinary prices."""
+    query = urllib.parse.urlencode(dict(server=server, category='tablet', rarity='rare', league=league))
+    payload = client.get_json(api_base.rstrip('/') + '/api/v1/currencies?' + query)
+    if (payload.get('server') != server or payload.get('league') != league
+            or payload.get('primary') not in {'divine', 'exalted'}
+            or type(payload.get('stale')) is not bool):
+        raise ValueError('碑牌汇率与服务器或最新赛季不一致')
+    values = {key: decimal(payload.get('values', {}).get(key)) for key in ('exalted', 'chaos', 'divine')}
+    if values['exalted'] <= 0 or values['divine'] <= 0:
+        raise ValueError('碑牌最新赛季缺少有效汇率')
+    rates = {key: value / values['exalted'] for key, value in values.items() if value > 0}
+    return rates, {key: payload.get(key) for key in
+                   ('id', 'server', 'league', 'stale', 'source', 'fetched_at', 'source_updated_at')}
+
+
 def resolve_cn_tablet_league(client, api_base, season="", current=True):
     """Resolve the CN trade name; never substitute an international season."""
     query = urllib.parse.urlencode(dict(server='cn', category='tablet', rarity='rare'))
@@ -571,11 +605,47 @@ def fetch_poe_ninja_precursor_tablets(client, league, api_url=NINJA_URL, display
         variant = 'Normal' if 'Normal' in variants else min(variants, key=lambda v:(variants[v], v))
         base_prices[slug] = {'price':prices[slug][variant], 'variant':variant,
                              'selection':'normal' if variant == 'Normal' else 'lowest_available'}
-    return {"status": "ok", "url": url, "lines": len(payload["lines"]),
+    return {"status": "ok", "server": "international", "league": league, "url": url, "lines": len(payload["lines"]),
             "usable_lines": sum(map(len, prices.values())), "divine_exalted": str(ratio), "prices": prices,
             "values_divine": {slug: {variant: str(value) for variant, value in variants.items()}
                               for slug, variants in values.items()},
             "base_prices":base_prices}
+
+
+def fetch_poe_ninja_unique_tablets(client, league, api_url=NINJA_URL, display_rates=None):
+    if not league:
+        raise ValueError('poe.ninja tablet league is required')
+    url = api_url + '?' + urllib.parse.urlencode(dict(league=league, type='UniqueTablets'))
+    payload = client.get_json(url)
+    core = payload.get('core') or {}
+    ratio = decimal((core.get('rates') or {}).get('exalted'))
+    if core.get('primary') != 'divine' or ratio <= 0 or not isinstance(payload.get('lines'), list):
+        raise ValueError('invalid poe.ninja UniqueTablets response')
+    rates = {key: Fraction(value) / Fraction(display_rates['divine'])
+             for key, value in display_rates.items() if value > 0} if display_rates else {
+        'divine': Fraction(1), 'exalted': 1 / Fraction(ratio)}
+    if not display_rates and decimal((core.get('rates') or {}).get('chaos')) > 0:
+        rates['chaos'] = 1 / Fraction(decimal(core['rates']['chaos']))
+    catalog = {}; prices = {}
+    for row in payload['lines']:
+        name = row.get('name')
+        if not isinstance(name, str) or not name.strip():
+            continue
+        key = name.casefold()
+        catalog[key] = name.replace(' ', '_')
+        value = decimal(row.get('primaryValue'))
+        if value <= 0 or decimal(row.get('listingCount')) <= 0:
+            continue
+        # Several variants share one Words row: retain the lowest valid reference.
+        if key in prices and decimal(prices[key]['amount']) <= value:
+            continue
+        prices[key] = {'id': catalog[key], 'name_en': name, 'amount': str(value),
+                       'currency': 'divine', 'price': format_value(value, rates),
+                       'trade_url': url, 'league': league}
+    if not prices:
+        raise ValueError('no usable poe.ninja unique tablet prices')
+    return {'status': 'ok', 'server': 'international', 'league': league, 'url': url,
+            'unique_catalog': catalog, 'unique_prices': prices}
 
 
 def decode_resource(raw: bytes):
@@ -820,9 +890,9 @@ def build_tablet_affix_resources(*, client, api_base, league, template_it, templ
                                 allow_stale=True, tablet_mods=None, tablet_stats=None, tablet_tags=None,
                                 on_retry=None, cache_dir=None, server="international",
                                 cn_season="", league_is_current=True, display_rates=None,
-                                include_base_prices=True):
+                                include_base_prices=True, league_resolved=False):
     reports = {}; quotes_by_rarity = {}; ninja = {}
-    if server == 'cn':
+    if server == 'cn' and not league_resolved:
         league = resolve_cn_tablet_league(client, api_base, cn_season, league_is_current)
     api_reports = {}
     for rarity in ("magic", "rare"):

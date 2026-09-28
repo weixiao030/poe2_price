@@ -496,7 +496,22 @@ def patch_unique_word_prices(
     patched_words: Path,
     label_mode: str = DEFAULT_UNIQUE_PRICE_LABEL_MODE,
     excluded_names: set[str] | None = None,
+    tablet_prices: dict[str, Any] | None = None,
 ) -> tuple[int, list[dict[str, str]], list[dict[str, str]]]:
+    if tablet_prices is not None:
+        tablet_keys = {normalize_name(name) for name in tablet_prices}
+        prices = {key: obs for key, obs in prices.items()
+                  if normalize_name(obs.en_name) not in tablet_keys}
+        for tablet in tablet_prices.values():
+            if not tablet:
+                continue
+            key = 'unique:' + normalize_name(tablet['name_en'])
+            prices[key] = PriceObservation(
+                api_id=key, en_name=tablet['name_en'], category='UniqueTablets',
+                price_exalted=Decimal(0), value_traded=Decimal(0),
+                source_pair=tablet['trade_url'], display_price=tablet['price'],
+                native_currency='divine', native_price=Decimal(tablet['amount']),
+            )
     data = tc_words_path.read_bytes()
     layout = detect_words_layout(data)
     output = bytearray(data)
@@ -2897,7 +2912,8 @@ from poe2_tablet_prices import (
     _tablet_text_key, _tablet_price_from_row, fetch_tablet_affix_prices,
     fetch_poe_ninja_precursor_tablets, _append_tablet_price_to_csd,
     _redirect_tablet_base_items, build_tablet_affix_resources,
-    resolve_cn_tablet_league, price_tablet_names,
+    resolve_latest_tablet_league, fetch_tablet_display_rates,
+    fetch_poe_ninja_unique_tablets, price_tablet_names,
 )
 from poe2_tablet_refs import clean_tablet_layer, ENGLISH_BASEITEMS
 from poe2_whole_tablets import fetch_cn_whole_tablets, apply_whole_tablet_display, UNIQUE_TABLET_NAMES
@@ -3536,7 +3552,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--tablet-cache-dir", type=Path,
                         help="Persistent same-league tablet snapshots used only when the live source fails")
     parser.add_argument("--tablet-cn-season", default="",
-                        help="Selected CN season ID, resolved independently of international reference prices")
+                        help="Deprecated compatibility option; tablets always use the latest server season")
     parser.add_argument(
         "--no-tablet-affixes",
         action="store_true",
@@ -4106,19 +4122,40 @@ def main(argv: list[str]) -> int:
                 audit.append(price_display_audit(result.prices, rates, result.source))
         (args.out_dir / 'price_display.audit.json').write_text(
             json.dumps(audit, ensure_ascii=False, indent=2), encoding='utf-8')
+    tablet_server = 'cn' if args.price_source == 'poecurrency-cn' else 'international'
+    tablet_market = {'status': 'disabled', 'server': tablet_server, 'policy': 'latest'}
+    tablet_league = ''
+    tablet_display_rates = {}
+    if not args.no_tablet_prices or not args.no_tablet_affixes:
+        try:
+            tablet_league = resolve_latest_tablet_league(client, args.tablet_api_base, tablet_server)
+            tablet_market.update(status='ok', league=tablet_league)
+            progress(f"碑牌统一使用本服最新赛季：{tablet_league}（底材、暗金、词缀）")
+        except Exception as exc:
+            tablet_market.update(status='unavailable', reason=f'{type(exc).__name__}: {exc}')
+            progress(f"碑牌最新赛季暂不可用：{exc}")
+        if tablet_league:
+            try:
+                tablet_display_rates, rate_report = fetch_tablet_display_rates(
+                    client, args.tablet_api_base, tablet_league, tablet_server)
+                tablet_market['exchange_rates'] = rate_report
+                if rate_report['stale']:
+                    progress(f"碑牌汇率已过期，沿用最新赛季有效汇率（{rate_report.get('source_updated_at')}）")
+            except Exception as exc:
+                tablet_market['exchange_rate_warning'] = str(exc)
+                progress(f"碑牌统一汇率不可用，使用各碑牌来源同赛季汇率或原币种：{exc}")
+    tablet_market['display_rates_exalted'] = {key: str(value) for key, value in tablet_display_rates.items()}
     whole_tablets: dict[str, Any] = {"status": "disabled"}
     if args.price_source == "poecurrency-cn" and not args.no_tablet_prices:
         try:
             progress("国服整件碑牌与暗金碑牌：获取独立国服行情")
-            cn_tablet_league = resolve_cn_tablet_league(
-                client, args.tablet_api_base, args.tablet_cn_season,
-                args.league_is_current == "true",
-            )
+            if not tablet_league:
+                raise ValueError(tablet_market['reason'])
             whole_tablets = fetch_cn_whole_tablets(
-                client, args.tablet_api_base, cn_tablet_league,
+                client, args.tablet_api_base, tablet_league,
                 cache_dir=args.tablet_cache_dir, on_retry=progress,
             )
-            apply_whole_tablet_display(whole_tablets, display_rates)
+            apply_whole_tablet_display(whole_tablets, tablet_display_rates)
             progress(f"国服整件碑牌：{len(whole_tablets['base_prices'])} 类底材、"
                      f"{len(whole_tablets['unique_prices'])} 种暗金；按本服汇率显示 E/C/D，截断小数")
             if whole_tablets.get('stale'):
@@ -4133,12 +4170,28 @@ def main(argv: list[str]) -> int:
     if args.price_source != "poecurrency-cn" and not args.no_tablet_prices:
         try:
             progress("碑牌价格：获取国际服底材行情")
+            if not tablet_league:
+                raise ValueError(tablet_market['reason'])
             whole_tablets = fetch_poe_ninja_precursor_tablets(
-                client, args.poe_ninja_league, display_rates=display_rates,
+                client, tablet_league, display_rates=tablet_display_rates,
             )
         except Exception as exc:
             whole_tablets = {"status": "unavailable", "reason": f"{type(exc).__name__}: {exc}"}
             progress(f"碑牌价格暂不可用：{exc}")
+        try:
+            if not tablet_league:
+                raise ValueError(tablet_market['reason'])
+            unique_tablets = fetch_poe_ninja_unique_tablets(
+                client, tablet_league, display_rates=tablet_display_rates)
+            whole_tablets.update(unique_prices=unique_tablets['unique_prices'],
+                                 unique_catalog=unique_tablets['unique_catalog'],
+                                 unique_source=unique_tablets['url'], league=tablet_league)
+            if whole_tablets['status'] == 'unavailable':
+                whole_tablets['status'] = 'partial'
+        except Exception as exc:
+            whole_tablets.update(status='partial' if whole_tablets.get('base_prices') else 'unavailable',
+                                 unique_error=f'{type(exc).__name__}: {exc}')
+            progress(f"暗金碑牌最新赛季行情暂不可用：{exc}")
 
     # Keep ordinary feeds from reintroducing tablet labels after cleanup, or
     # bypassing the dedicated tablet market and the user's price switch.
@@ -4150,6 +4203,15 @@ def main(argv: list[str]) -> int:
             if 'tablet' in obs.category.lower() or '碑牌' in obs.category:
                 tablet_name_keys.update(normalize_name(name) for name in (obs.en_name, obs.english_name) if name)
     excluded_unique_names = set(tablet_name_keys) if args.no_tablet_prices else set()
+    # Always block selected-season tablet prices, including when latest data is absent.
+    tablet_price_overrides = {name.casefold(): whole_tablets.get('unique_prices', {}).get(name.casefold())
+                             for name in UNIQUE_TABLET_NAMES}
+    tablet_price_overrides.update({name: whole_tablets.get('unique_prices', {}).get(name)
+                                   for name in whole_tablets.get('unique_catalog', {})})
+    for market in [best, fallback_unique_by_name, *(result.prices or {} for result in fallback_results)]:
+        for obs in market.values():
+            if normalize_name(obs.en_name) in tablet_name_keys:
+                tablet_price_overrides.setdefault(obs.en_name.casefold(), None)
 
     unique_names: dict[str, UniqueName] = {}
     unique_word_rows: list[dict[str, str]] = []
@@ -4201,6 +4263,7 @@ def main(argv: list[str]) -> int:
         "patch_scope": args.patch_scope,
         "tablet_prices_enabled": not args.no_tablet_prices,
         "tablet_affix_prices_enabled": not args.no_tablet_affixes,
+        "tablet_market": tablet_market,
         "price_strategy": (
             "poecurrency-cn ordinary summary: validate each quote against grouped historical windows and previous buy; use supported decimal repair and robust historical fallback; validate domestic Divine ratio before conversion; international differences are diagnostic only"
             if args.price_source == "poecurrency-cn"
@@ -4329,12 +4392,14 @@ def main(argv: list[str]) -> int:
                 output_backup = output_zip.read_bytes() if output_zip.exists() else None
                 patched_backup = args.patched_dat.read_bytes()
                 try:
+                    if not tablet_league:
+                        raise ValueError(tablet_market['reason'])
                     progress("获取碑牌词缀价格（失败将跳过碑牌层）")
                     summary["tablet_affixes"] = build_tablet_affix_resources(
-                        display_rates=display_rates,
+                        display_rates=tablet_display_rates,
                         client=client,
                         api_base=args.tablet_api_base,
-                        league=args.poe_ninja_league,
+                        league=tablet_league,
                         template_it=args.tablet_template_it,
                         template_csd=args.tablet_template_csd,
                         source_baseitems=args.tc_baseitems,
@@ -4351,8 +4416,7 @@ def main(argv: list[str]) -> int:
                         on_retry=progress,
                         cache_dir=args.tablet_cache_dir,
                         server="cn" if args.price_source == "poecurrency-cn" else "international",
-                        cn_season=args.tablet_cn_season,
-                        league_is_current=args.league_is_current == "true",
+                        league_resolved=True,
                         include_base_prices=False,
                     )
                     tablet_result = summary["tablet_affixes"]
@@ -4439,8 +4503,7 @@ def main(argv: list[str]) -> int:
                             fallback_prices=fallback_unique_by_name,
                             patched_words=patched_words,
                             label_mode=args.unique_price_label_mode,
-                            tablet_prices={key: whole_tablets.get('unique_prices', {}).get(key)
-                                           for key in whole_tablets.get('unique_catalog', {})},
+                            tablet_prices=tablet_price_overrides,
                             excluded_names=excluded_unique_names,
                         )
                     else:
@@ -4451,6 +4514,7 @@ def main(argv: list[str]) -> int:
                             patched_words=patched_words,
                             label_mode=args.unique_price_label_mode,
                             excluded_names=excluded_unique_names,
+                            tablet_prices=tablet_price_overrides,
                         )
                     unique_words_dat_changed = unique_words_patched > 0 or any(
                         row.get("status") == "cleaned" for row in unique_word_rows
@@ -4585,10 +4649,10 @@ def main(argv: list[str]) -> int:
     summary["unique_words_available"] = len(unique_names)
     summary["unique_words_patched"] = unique_words_patched
     whole_tablets['unique_names'] = [row for row in unique_word_rows
-                                   if row.get('api_id', '').startswith('cn-whole-tablets:')
+                                   if normalize_name(row.get('en_name', '')) in tablet_name_keys
                                    and row.get('status') == 'patched']
     if whole_tablets['unique_names']:
-        progress(f"写入国服暗金碑牌独立名称价格（{len(whole_tablets['unique_names'])} 种）")
+        progress(f"写入暗金碑牌最新赛季名称价格（{len(whole_tablets['unique_names'])} 种）")
     if whole_tablets.get('status') != 'disabled':
         expected_bases = len(whole_tablets.get('base_prices', {})) if not args.no_tablet_prices else 0
         expected_uniques = len(whole_tablets.get('unique_prices', {})) if effective_patch_unique_words and args.unique_price_label_mode != 'off' else 0
@@ -4597,6 +4661,7 @@ def main(argv: list[str]) -> int:
         whole_tablets['installation_status'] = 'applied' if (
             not args.no_build_patch and applied_bases + applied_uniques > 0
             and applied_bases == expected_bases and applied_uniques == expected_uniques
+            and not whole_tablets.get('unique_error') and not whole_tablets.get('reason')
         ) else 'unavailable'
         (args.out_dir / "whole_tablets.report.json").write_text(
             json.dumps(whole_tablets, ensure_ascii=False, indent=2), encoding='utf-8'

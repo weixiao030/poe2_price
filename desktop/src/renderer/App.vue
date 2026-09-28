@@ -440,7 +440,7 @@ onUnmounted(() => {
                 <div class="option-row">
                   <div>
                     <b id="tablet-prices-label">碑牌价格</b>
-                    <p id="tablet-prices-help">碑牌底材与暗金价格，不受上方范围限制</p>
+                    <p id="tablet-prices-help">底材与暗金使用本服最新赛季价格，不受上方范围限制</p>
                   </div>
                   <n-switch
                     :value="app.settings.tabletPrices ?? true"
@@ -453,7 +453,7 @@ onUnmounted(() => {
                 <div class="option-row">
                   <div>
                     <b id="tablet-affixes-label">碑牌词缀价格</b>
-                    <p id="tablet-affixes-help">在词缀旁显示参考价，不受上方范围限制</p>
+                    <p id="tablet-affixes-help">词缀使用本服最新赛季参考价，不受上方范围限制</p>
                   </div>
                   <n-switch
                     :value="app.settings.tabletAffixPrices ?? true"

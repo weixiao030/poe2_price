@@ -34,7 +34,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.12"
+$script:PatchVersion = "v1.0.13"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -3328,7 +3328,7 @@ $PriceCacheKey = [string]::Concat(
     $(if ($PatchTabletAffixesEnabled) { "_tablet-markup-v1" } else { "" }),
     "_tablet-prices-",
     $(if ($TabletPrices) { "on" } else { "off" }),
-    "_tablet-independent-v1",
+    "_tablet-independent-v1_tablet-latest-v1",
     "_league-",
     $LeagueCacheToken
 )
@@ -3425,7 +3425,6 @@ if ($PatchPriceFetchEnabled) {
         "--fallback-price-sources", $(if ($PoeNinjaLeague) { "poe-ninja" } else { "none" })
     )
 }
-if ($PoeCurrencySeason) { $BuildArgs += @("--tablet-cn-season", $PoeCurrencySeason) }
 if ($PatchTabletAffixesEnabled) {
     $BuildArgs += @(
         "--tablet-api-base", "http://125.122.32.215:2083",
