@@ -34,7 +34,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.13"
+$script:PatchVersion = "v1.0.14"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -3471,6 +3471,8 @@ $WholeTabletLayerStatus = if ($WholeTabletEnabled) { "unknown" } else { "disable
 $PatchFolderZip = Join-Path $RepoRoot $PricePatchZipName
 try {
     New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null
+    # First installs have no published output yet; the durable log is written before publication.
+    New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
     $BuildResult = Invoke-Poe2Python -Python $Python -ArgumentList $BuildArgs
     $BuildResult.Text | Out-File -LiteralPath $StagePriceBuildLog -Encoding UTF8
     # Keep diagnostics outside staging, which is removed in finally even on failure.

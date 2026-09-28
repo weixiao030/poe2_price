@@ -158,32 +158,47 @@ def test_missing_divine_row_still_preserves_direct_quotes(tmp_path, monkeypatch)
     assert not report['poecurrency_quality']['divine_rate_available']
 
 
-def test_failed_full_and_core_build_logs_survive_stage_cleanup(tmp_path):
+@pytest.mark.parametrize('existing_output', [False, True], ids=['fresh-install', 'upgrade'])
+@pytest.mark.parametrize('full_exit,core_exit', [(0, 0), (1, 0), (1, 1)],
+                         ids=['full-success', 'core-retry-success', 'both-failed'])
+def test_build_logs_survive_stage_cleanup(tmp_path, existing_output, full_exit, core_exit):
     from tests.test_game_directory_selection import ps_quote, run_powershell
     script = (Path(__file__).resolve().parents[1] / '物价补丁/tools/update_price_patch.ps1').read_text(encoding='utf-8-sig')
     start = script.index('    New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null', script.index('$WholeTabletLayerStatus ='))
     end = script.index('    Assert-File $StagePatchZip', start)
     finally_start = script.index('finally {\n    if (Test-Path -LiteralPath $BuildStageDir', end)
     finally_end = script.index('\n\nWrite-Host', finally_start)
+    output = tmp_path / 'output' / 'poe2_price_patch_latest'
+    if existing_output:
+        output.mkdir(parents=True)
+        (output / 'price_patch_build.log').write_text('previous build', encoding='utf-8')
+    failed = bool(full_exit and core_exit)
     result = run_powershell(f"""
         $ErrorActionPreference='Stop'
         $BuildStageDir=Join-Path {ps_quote(tmp_path)} '.price-build-test'
         $StagePriceBuildLog=Join-Path $BuildStageDir 'price_patch_build.log'
-        $PriceBuildLog=Join-Path {ps_quote(tmp_path)} 'price_patch_build.log'
+        $OutDir={ps_quote(output)}
+        $PriceBuildLog=Join-Path $OutDir 'price_patch_build.log'
         $CanPatchUniqueWords=$true
         $BuildArgs=@('full')
+        $BuildFailed=$false
         function Get-CoreOnlyPriceBuildArgs {{ @('core') }}
         function Invoke-Poe2Python {{
             param($Python, $ArgumentList)
-            [pscustomobject]@{{ ExitCode=1; Text="failure: $ArgumentList" }}
+            $Code=if ($ArgumentList[0] -eq 'full') {{ {full_exit} }} else {{ {core_exit} }}
+            [pscustomobject]@{{ ExitCode=$Code; Text="result: $ArgumentList exit=$Code" }}
         }}
         try {{
             {script[start:end]}
         }} catch {{
+            if ($_.Exception.Message -notlike 'Price fetch or patch build failed.*') {{ throw }}
             if (-not $_.Exception.Message.Contains($PriceBuildLog)) {{ throw 'wrong log path' }}
+            $BuildFailed=$true
         }} {script[finally_start:finally_end]}
+        if ($BuildFailed -ne ${str(failed).lower()}) {{ throw 'unexpected build outcome' }}
         if (Test-Path -LiteralPath $BuildStageDir) {{ throw 'stage still exists' }}
         Get-Content -LiteralPath $PriceBuildLog -Raw -Encoding UTF8
     """)
-    assert 'failure: full' in result
-    assert 'failure: core' in result
+    assert f'result: full exit={full_exit}' in result
+    assert (f'result: core exit={core_exit}' in result) is bool(full_exit)
+    assert 'previous build' not in result
