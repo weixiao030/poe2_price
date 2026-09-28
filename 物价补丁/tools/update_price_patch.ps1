@@ -34,7 +34,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.11"
+$script:PatchVersion = "v1.0.12"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -3474,6 +3474,8 @@ try {
     New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null
     $BuildResult = Invoke-Poe2Python -Python $Python -ArgumentList $BuildArgs
     $BuildResult.Text | Out-File -LiteralPath $StagePriceBuildLog -Encoding UTF8
+    # Keep diagnostics outside staging, which is removed in finally even on failure.
+    $BuildResult.Text | Out-File -LiteralPath $PriceBuildLog -Encoding UTF8
     if ($BuildResult.ExitCode -ne 0 -and $CanPatchUniqueWords) {
         Write-Warning "完整补丁构建失败，正在自动降级为 BaseItemTypes 核心价格层并保留游戏中的 Words。"
         Remove-Item -LiteralPath $BuildStageDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -3481,9 +3483,10 @@ try {
         $CoreBuildArgs = Get-CoreOnlyPriceBuildArgs -ArgumentList $BuildArgs
         $BuildResult = Invoke-Poe2Python -Python $Python -ArgumentList $CoreBuildArgs
         $BuildResult.Text | Out-File -LiteralPath $StagePriceBuildLog -Encoding UTF8
+        "`r`n== BaseItemTypes 核心价格层重试 ==`r`n$($BuildResult.Text)" | Out-File -LiteralPath $PriceBuildLog -Encoding UTF8 -Append
     }
     if ($BuildResult.ExitCode -ne 0) {
-        throw "Price fetch or patch build failed. Exit code: $($BuildResult.ExitCode). Log: $StagePriceBuildLog"
+        throw "Price fetch or patch build failed. Exit code: $($BuildResult.ExitCode). Log: $PriceBuildLog"
     }
 
     Assert-File $StagePatchZip $PricePatchZipName

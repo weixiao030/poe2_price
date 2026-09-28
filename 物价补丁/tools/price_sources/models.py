@@ -27,6 +27,10 @@ class PriceObservation:
     source_timestamp: str = ""
     quality_flags: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
+    # Validated native quote retained when its domestic exchange rate is absent.
+    # price_exalted remains zero; callers must not treat native D as E.
+    native_price: Decimal = Decimal("0")
+    native_currency: str = ""
 
 
 @dataclass

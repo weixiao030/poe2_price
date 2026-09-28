@@ -509,7 +509,7 @@ def patch_unique_word_prices(
             continue
         if normalize_name(obs.en_name) in (excluded_names or set()):
             continue
-        if obs.price_exalted < Decimal("1") or not obs.display_price:
+        if not has_name_price(obs):
             continue
         unique = unique_names.get(normalize_name(obs.en_name))
         if not unique:
@@ -594,10 +594,10 @@ def patch_unique_word_prices_with_cn_fallback(
             continue
         obs = primary_prices.get(poecurrency_api_id(market_name))
         source = "poecurrency-cn"
-        if not tablet and (not obs or obs.price_exalted < Decimal("1") or not obs.display_price):
+        if not tablet and (not obs or not has_name_price(obs)):
             obs = fallback_prices.get(f"unique:{normalize_name(unique.en_name)}")
             source = "poe2scout-fallback"
-        if not tablet and (not obs or obs.price_exalted < Decimal("1") or not obs.display_price):
+        if not tablet and (not obs or not has_name_price(obs)):
             missing.append(
                 {
                     "api_id": f"cn:{normalize_market_name(market_name)}",
@@ -663,7 +663,7 @@ def list_unique_word_price_candidates(
     for obs in prices.values():
         if not obs.api_id.startswith("unique:"):
             continue
-        if obs.price_exalted < Decimal("1") or not obs.display_price:
+        if not has_name_price(obs):
             continue
         unique = unique_names.get(normalize_name(obs.en_name))
         if not unique:
@@ -2670,13 +2670,14 @@ def collect_poecurrency_observations_with_quality(
         price_exalted = poecurrency_price_to_exalted(price, unit, divine_exalted)
         if api_id == "divine" and unit == "d" and divine_exalted > 0:
             price_exalted = divine_exalted
-        if price_exalted <= 0:
+        native_only = unit == "d" and divine_exalted <= 0 and api_id != "divine"
+        if price_exalted <= 0 and not native_only:
             quality["skipped_missing_divine_ratio"] += 1
             continue
 
         explicit_exalted = candidate["explicit_exalted"]
         if explicit_exalted and api_id != "divine":
-            if decimal_spread_ratio(price_exalted, explicit_exalted) <= Decimal("1.25"):
+            if price_exalted > 0 and decimal_spread_ratio(price_exalted, explicit_exalted) <= Decimal("1.25"):
                 price_exalted = explicit_exalted
                 candidate["price_field"] = f"{candidate['explicit_field']}_api_exalted"
                 unit = "e"
@@ -2685,7 +2686,11 @@ def collect_poecurrency_observations_with_quality(
                 quality["explicit_price_rejected_items"] += 1
 
         unit_note = unit
-        if unit == "d":
+        if native_only:
+            quality["native_currency_items"] = quality.get("native_currency_items", 0) + 1
+            candidate["quality_flags"] += ("missing_divine_ratio",)
+            unit_note = "d_native_no_exchange_rate"
+        elif unit == "d":
             unit_note = f"d_to_e@{divine_exalted}"
         obs = PriceObservation(
             api_id=api_id,
@@ -2703,6 +2708,8 @@ def collect_poecurrency_observations_with_quality(
             source_timestamp=candidate["source_timestamp"],
             quality_flags=candidate["quality_flags"],
             source_metadata=candidate["source_metadata"],
+            native_price=price if native_only else Decimal("0"),
+            native_currency="divine" if native_only else "",
         )
         old = best.get(api_id)
         if old is None or poecurrency_quality_rank(
@@ -2723,6 +2730,7 @@ def collect_poecurrency_observations_with_quality(
         )
     quality["candidate_count"] = len(candidates)
     quality["observation_count"] = len(best)
+    quality["divine_rate_available"] = divine_exalted > 0
     return best, quality
 
 
@@ -2869,6 +2877,8 @@ def divine_price_exalted(best: dict[str, PriceObservation]) -> Decimal:
 
 
 def divine_exalted_ratio_summary(divine_exalted: Decimal) -> dict[str, str]:
+    if divine_exalted <= 0:
+        return {"divine_orb": "1", "exalted_orb": "", "text": "国服神圣/崇高汇率不可用，保留原币种报价"}
     return {
         "divine_orb": "1",
         "exalted_orb": str(divine_exalted),
@@ -2918,13 +2928,24 @@ def is_reference_currency(obs: PriceObservation) -> bool:
     return obs.api_id in {"divine", "exalted"}
 
 
+def has_name_price(obs: PriceObservation) -> bool:
+    return bool(obs.display_price) and (
+        obs.price_exalted >= 1 or (obs.native_currency == "divine" and obs.native_price > 0)
+    )
+
+
 def apply_display_prices(
     prices: dict[str, PriceObservation], divine_exalted: Decimal, display_rates=None
 ) -> None:
     rates = display_rates or price_display_rates(prices, divine_exalted)
     for obs in prices.values():
+        if obs.native_currency == "divine" and obs.native_price > 0:
+            obs.display_price = ("" if is_reference_currency(obs)
+                                 else format_value(obs.native_price, {"divine": Decimal(1)}))
+            continue
         source_divine = obs.source_metadata.get('display_source_divine_exalted', str(divine_exalted))
-        scale = Fraction(rates['divine']) / Fraction(source_divine)
+        scale = (Fraction(1) if Fraction(source_divine) == Fraction(rates['divine'])
+                 else Fraction(rates['divine']) / Fraction(source_divine))
         obs.source_metadata['display_source_divine_exalted'] = str(source_divine)
         obs.display_price = ("" if is_reference_currency(obs) or obs.price_exalted <= 0
                              else format_value(Fraction(obs.price_exalted) * scale, rates))
@@ -2949,7 +2970,9 @@ def price_display_audit(prices, rates, source):
             'observations': [dict(api_id=obs.api_id, name=obs.en_name, category=obs.category,
                 price_exalted=str(obs.price_exalted), display_price=obs.display_price,
                 source_divine_exalted=obs.source_metadata.get('display_source_divine_exalted', str(rates['divine'])),
-                reference_hidden=is_reference_currency(obs), below_name_threshold=obs.price_exalted < 1,
+                native_price=str(obs.native_price), native_currency=obs.native_currency,
+                reference_hidden=is_reference_currency(obs),
+                below_name_threshold=obs.price_exalted < 1 and not obs.native_currency,
                 source_pair=obs.source_pair) for obs in prices.values()]}
 
 
@@ -2983,7 +3006,7 @@ def match_prices_to_base_items(
     for obs in prices.values():
         if obs.api_id.startswith("unique:"):
             continue
-        if obs.price_exalted < Decimal("1") or not obs.display_price:
+        if not has_name_price(obs):
             continue
         pairs = by_en.get(obs.en_name) or by_en_norm.get(normalize_name(obs.en_name), [])
         price = obs.display_price
@@ -3110,7 +3133,7 @@ def match_cn_prices_to_base_items(
     matched: list[tuple[dict[str, str], str]] = []
     missing: list[dict[str, str]] = []
     for obs in prices.values():
-        if obs.price_exalted < Decimal("1") or not obs.display_price:
+        if not has_name_price(obs):
             continue
         pairs = select_localized_aliases(
             by_tc.get(normalize_market_name(obs.en_name), []),
@@ -3766,10 +3789,14 @@ def main(argv: list[str]) -> int:
                 raise ValueError(
                     "poecurrency-cn unit metadata is missing for at least half of rows"
                 )
-            if timestamp_items >= 10 and stale_ratio >= 0.5:
-                raise ValueError(
-                    "poecurrency-cn at least half of timestamped rows are stale"
+            source_warnings = []
+            if poecurrency_quality.get("stale_items"):
+                source_warnings.append(
+                    f"所选国服赛季含 {poecurrency_quality['stale_items']} 条较旧报价，继续使用可用价格；"
+                    f"最新采样时间：{poecurrency_quality.get('latest_datetime_max') or '未知'}"
                 )
+            if not poecurrency_quality.get("divine_rate_available"):
+                source_warnings.append("国服神圣/崇高汇率缺失或报价冲突，D 报价保留原币种，E/C 报价使用可用国服汇率")
             poecurrency_health = evaluate_source_health(
                 "poecurrency-cn",
                 summary_data,
@@ -3777,7 +3804,8 @@ def main(argv: list[str]) -> int:
                 item_count=source_item_count,
                 match_count=len(best),
                 item_names=price_source_health_item_names(best),
-                required_references=("Divine Orb",),
+                # A missing conversion rate does not invalidate direct E/D quotes.
+                required_references=(),
                 discovered_categories=poecurrency_quality.get("categories") or [],
                 enabled_categories=poecurrency_quality.get("categories") or [],
                 succeeded_categories=[
@@ -3811,12 +3839,11 @@ def main(argv: list[str]) -> int:
                     "poecurrency-cn health validation failed: "
                     + "; ".join(issue.message for issue in poecurrency_health.issues)
                 )
-            if poecurrency_health.state in {"partial", "stale"}:
+            if poecurrency_health.state in {"partial", "stale"} or source_warnings:
                 primary_source_status = "partial"
-                primary_source_warning = (
-                    "poecurrency-cn data is usable but health is "
-                    f"{poecurrency_health.state}"
-                )
+                primary_source_warning = "；".join(source_warnings) or (
+                    "poecurrency-cn data is usable but health is " + poecurrency_health.state)
+                progress(f"提示：{primary_source_warning}")
             progress(f"国服主数据源 poecurrency.top：获取成功 ({len(best)} 条价格)")
             source_base_currency = "崇高石"
         except Exception as exc:
@@ -3824,9 +3851,9 @@ def main(argv: list[str]) -> int:
             primary_source_status = "failed"
             primary_source_warning = (
                 "primary price source poecurrency-cn failed; "
-                f"trying fallback sources: {type(exc).__name__}: {exc}"
+                f"{type(exc).__name__}: {exc}"
             )
-            progress("国服主数据源 poecurrency.top：获取失败，准备尝试国际参考源")
+            progress("国服主数据源 poecurrency.top：获取失败，保留现有补丁")
             print(f"warning: {primary_source_warning}", file=sys.stderr)
             (args.out_dir / "poecurrency_cn_error.json").write_text(
                 json.dumps(
@@ -3849,6 +3876,7 @@ def main(argv: list[str]) -> int:
             raise ValueError(
                 "poecurrency-cn 主数据源没有返回当前所选国服赛季的可用价格；"
                 "为避免把国际服价格误当国服主价，已拒绝使用国际源替代整个价格集。"
+                f" 原因：{primary_source_warning}"
             )
 
         reference_chain = build_cn_reference_chain(
@@ -3939,7 +3967,10 @@ def main(argv: list[str]) -> int:
     if fetch_prices:
         if best:
             progress("整理展示价格并匹配本地物品")
-            divine_exalted = divine_price_exalted(best)
+            if args.price_source == "poecurrency-cn" and "divine" not in best:
+                divine_exalted = Decimal(0)
+            else:
+                divine_exalted = divine_price_exalted(best)
             apply_display_prices(best, divine_exalted)
             if args.price_source == "poecurrency-cn":
                 rows, missing = match_cn_prices_to_base_items(
