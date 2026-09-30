@@ -660,7 +660,7 @@ onUnmounted(() => {
         <p>{{ client.path }}</p>
       </div>
       <n-button
-        :disabled="app.running"
+        :disabled="app.running || app.querying"
         @click="
           attempt(async () => {
             await app.selectDirectory(client.path)
@@ -673,10 +673,10 @@ onUnmounted(() => {
     <label class="form-label">手动输入游戏根目录</label
     ><n-input v-model:value="manualPath" placeholder="例如 D:\Games\Path of Exile 2" />
     <div class="modal-actions">
-      <n-button @click="browse">浏览文件夹</n-button
+      <n-button :disabled="app.running || app.querying" @click="browse">浏览文件夹</n-button
       ><n-button
         type="primary"
-        :disabled="!manualPath.trim() || app.running"
+        :disabled="!manualPath.trim() || app.running || app.querying"
         @click="
           attempt(async () => {
             await app.selectDirectory(manualPath)

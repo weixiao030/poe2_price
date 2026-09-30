@@ -152,13 +152,15 @@ async function fixture(t: TestContext, current = '1.0.0') {
       return
     }
     if (mode === 'hang') return
+    const sourceManifest = mode === 'current' ? metadata(current) : bytes
+    const sourceSignature = mode === 'current' ? signManifest(sourceManifest, privateKey) : signature
     const content =
       mode === 'corrupt'
         ? Buffer.from('tampered')
         : kind === 'signature'
-          ? Buffer.from(signature)
+          ? Buffer.from(sourceSignature)
           : kind === 'manifest'
-            ? bytes
+            ? sourceManifest
             : payload
     res.writeHead(200, { 'Content-Length': content.length })
     res.end(content)
@@ -286,6 +288,33 @@ test('invalid primary signature uses the backup; corrupt installer retries backu
     ['primary:installer', 'backup:installer']
   )
   assert.ok(!f.requests.some((x) => x.startsWith('zos:')))
+})
+
+test('a mirror cached at the installed version does not hide a newer signed fallback', async (t) => {
+  const f = await fixture(t)
+  f.modes.primary = 'current'
+  const result = await f.updater.check()
+  assert.equal(result.status, 'available')
+  assert.equal(result.release?.version, '2.4.0')
+  assert.deepEqual(
+    f.requests.filter((item) => item.endsWith(':manifest')),
+    ['primary:manifest', 'backup:manifest']
+  )
+})
+
+test('a verified current release is retained when every fallback fails or has an invalid signature', async (t) => {
+  const f = await fixture(t)
+  f.modes.primary = 'current'
+  f.modes['backup:signature'] = 'corrupt'
+  f.modes.zos = 'offline'
+  const result = await f.updater.check()
+  assert.equal(result.status, 'current')
+  assert.equal(result.release?.version, '1.0.0')
+  assert.equal(result.totalBytes, 0)
+  assert.deepEqual(
+    f.requests.filter((item) => item.endsWith(':manifest')),
+    ['primary:manifest', 'backup:manifest', 'zos:manifest']
+  )
 })
 
 test('ZOS is used only after every mirror fails for each operation', async (t) => {

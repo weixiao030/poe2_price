@@ -34,7 +34,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.15"
+$script:PatchVersion = "v1.0.16"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -801,9 +801,9 @@ function Test-BaseItemsLookPatched {
                     return $false
                 }
                 return (
-                    $Name -match '=(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]$' -or
-                    $Name -match '^(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]$' -or
-                    ($Name.Length -le 12 -and $Name -match '(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]$')
+                    $Name -match '=(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]$' -or
+                    $Name -match '^(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]$' -or
+                    ($Name.Length -le 12 -and $Name -match '(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]$')
                 )
             } | Select-Object -First 1)
     }
@@ -2098,6 +2098,9 @@ function New-CleanPhysicalRestoreZipFromPatchedSources {
             "--report", $CleanupReport,
             "--game-path", $InstallInfo.TcBaseItemsPath,
             "--no-uniques",
+            # Tablet layers are independent of patch-scope; a restore baseline must disable both.
+            "--no-tablet-prices",
+            "--no-tablet-affixes",
             "--strict-feature-cleanup"
         )
         if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf)) {
@@ -2372,6 +2375,8 @@ function New-CleanLogicalRestoreZipFromPatchedSources {
             "--report", (Join-Path $TempRoot "cleanup.report.json"),
             "--game-path", $InstallInfo.TcBaseItemsPath,
             "--no-uniques",
+            "--no-tablet-prices",
+            "--no-tablet-affixes",
             "--strict-feature-cleanup"
         )
         if ($SupportsUniqueWords -and (Test-Path -LiteralPath $TcWords -PathType Leaf)) {
@@ -2859,6 +2864,9 @@ function Get-CoreOnlyPriceBuildArgs {
         $Result.Add($ArgumentList[$Index])
     }
     $Result.Add("--no-uniques")
+    # Omitting Words arguments alone falls back to the builder's default cache.
+    # A core retry must leave every Words resource untouched, including defaults.
+    $Result.Add("--preserve-words")
     return $Result.ToArray()
 }
 
@@ -2945,7 +2953,8 @@ catch {
 }
 $PatchUniqueWordsEnabled = ($PatchScope -in @("all", "uniques"))
 $PatchWordsEnabled = $PatchUniqueWordsEnabled -or $TabletPrices
-$PatchPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques")) -or $TabletPrices -or $TabletAffixPrices
+$PatchOrdinaryPriceFetchEnabled = ($PatchScope -in @("all", "currency", "uniques"))
+$PatchPriceFetchEnabled = $PatchOrdinaryPriceFetchEnabled -or $TabletPrices -or $TabletAffixPrices
 $PatchTabletAffixesEnabled = $TabletAffixPrices
 $PatchIslandRumourHintsEnabled = Resolve-IslandRumourHints -Requested:$IslandRumourHints
 $InstallInfo = Get-Poe2InstallInfo -Poe2Dir $Poe2Dir
@@ -3036,7 +3045,9 @@ if ($InstallInfo.LanguageDefaulted) {
     Write-Warning $InstallInfo.LanguageDefaultReason
 }
 $IsChinaClient = [bool]$InstallInfo.IsChina -or [string]$InstallInfo.InstallKind -like "CN-*"
-if ($PatchPriceFetchEnabled) {
+# Tablets resolve their own current market in the builder. Ordinary season
+# discovery must not block an update that only enables independent tablet layers.
+if ($PatchOrdinaryPriceFetchEnabled) {
     $SelectedLeague = Resolve-PoePatchLeagueSelection -GameVersion "poe2" `
         -League $League -PoeNinjaLeague $PoeNinjaLeague -PoeCurrencySeason $PoeCurrencySeason `
         -LeagueMode $LeagueMode -LeagueIsCurrent $LeagueIsCurrent -China:$IsChinaClient -TimeoutSeconds 10
@@ -3418,7 +3429,7 @@ else {
     }
     $BuildArgs += "--no-uniques"
 }
-if ($PatchPriceFetchEnabled) {
+if ($PatchOrdinaryPriceFetchEnabled) {
     $BuildArgs += @(
         "--resolved-leagues",
         "--league-is-current", $(if ($LeagueIsCurrent) { "true" } else { "false" }),

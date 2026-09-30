@@ -219,6 +219,8 @@ export const useAppStore = defineStore('app', () => {
     }
   }
   async function selectDirectory(value: string) {
+    if (running.value) throw new Error('已有任务正在执行')
+    if (querying.value) throw new Error('正在查询游戏目录，请稍候')
     querying.value = true
     try {
       const result = await window.desktop.inspectGame(

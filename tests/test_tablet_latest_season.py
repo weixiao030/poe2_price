@@ -1,5 +1,6 @@
 """Tablet markets follow the current season without changing ordinary prices."""
 import json
+import struct
 from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
@@ -10,6 +11,7 @@ from tests.test_tablet_cn import cn_page, LEAGUE as CN_LEAGUE
 from tests.test_whole_tablets import page as whole_page, row as whole_row, words_fixture
 from tests.test_cn_historical_prices import snapshot
 import build_poe2scout_price_patch as builder
+import poe2_name_price_patch as name_patch
 
 
 def directory(server):
@@ -21,8 +23,9 @@ def directory(server):
 
 
 @pytest.mark.parametrize('server', ['cn', 'international'])
+@pytest.mark.parametrize('ordinary', [False, True])
 @pytest.mark.parametrize('names,affixes', [(True, True), (True, False), (False, True), (False, False)])
-def test_builder_uses_latest_for_every_tablet_layer(tmp_path, monkeypatch, server, names, affixes):
+def test_builder_uses_latest_for_every_tablet_layer(tmp_path, monkeypatch, server, names, affixes, ordinary):
     latest = CN_LEAGUE if server == 'cn' else LEAGUE
     requests = []
 
@@ -34,8 +37,13 @@ def test_builder_uses_latest_for_every_tablet_layer(tmp_path, monkeypatch, serve
             parsed = urlparse(url)
             query = parse_qs(parsed.query)
             if 'poecurrency.top' in url:
+                assert ordinary, 'tablet-only builds must not depend on ordinary prices'
                 assert query['season'] == ['RunesofAldur']
-                return snapshot(stale=False)
+                payload = snapshot(stale=False)
+                payload[0]['items'].append(dict(
+                    item_name='行情物品', engname='Market Item', currency_unit='e', latest_buy1=7,
+                    latest_datetime=payload[0]['items'][0]['latest_datetime']))
+                return payload
             if parsed.path.endswith('/leagues'):
                 assert query['league'] == ['auto']
                 assert query['server'] == [server]
@@ -63,31 +71,54 @@ def test_builder_uses_latest_for_every_tablet_layer(tmp_path, monkeypatch, serve
         def request_metrics(self): return []
 
     def ordinary_prices(source, client, args, **kwargs):
+        assert ordinary, 'tablet-only builds must not depend on ordinary prices'
         assert args.league == 'runes' and args.poe_ninja_league == 'Runes of Aldur'
         assert args.league_is_current == 'false'
         prices = {'divine': builder.PriceObservation('divine', 'Divine Orb', 'Currency', Decimal(200), Decimal(10), 'old'),
-                  'exalted': builder.PriceObservation('exalted', 'Exalted Orb', 'Currency', Decimal(1), Decimal(10), 'old')}
+                  'exalted': builder.PriceObservation('exalted', 'Exalted Orb', 'Currency', Decimal(1), Decimal(10), 'old'),
+                  'market-item': builder.PriceObservation('market-item', 'Market Item', 'Currency', Decimal(7), Decimal(10), 'old')}
         return builder.PriceSourceResult(source, raw={}, prices=prices, status='ok', health={})
 
     monkeypatch.setattr(builder, 'RetryingRequests', Client)
     monkeypatch.setattr(builder, 'try_fetch_price_source', ordinary_prices)
-    source = tmp_path / 'source.dat'; source.write_bytes(synthetic_baseitems())
-    english = tmp_path / 'english.dat'; english.write_bytes(synthetic_baseitems(True))
+    if not ordinary:
+        def no_ordinary_discovery(*args, **kwargs):
+            raise AssertionError('tablet-only builds must use only the tablet league directory')
+        monkeypatch.setattr(builder, 'resolve_current_leagues', no_ordinary_discovery)
+    def baseitems(english):
+        raw = synthetic_baseitems(english)
+        entries = name_patch.scan_base_item_names(raw)
+        replacements, warnings = name_patch.build_replacements(entries, [dict(
+            metadata_path=entries[-1].metadata_path,
+            new_name='Market Item' if english else '行情物品')], '=', False, 'append', False)
+        assert warnings == []
+        return name_patch.apply_replacements_append(raw, replacements)
+
+    source = tmp_path / 'source.dat'; source.write_bytes(baseitems(False))
+    english = tmp_path / 'english.dat'; english.write_bytes(baseitems(True))
+    words = tmp_path / 'words.dat'; words_fixture(words)
+    gold = tmp_path / 'unique-gold.dat'
+    gold_data = bytearray(4 + builder.UNIQUE_GOLD_PRICES_ROW_SIZE)
+    struct.pack_into('<I', gold_data, 0, 1)
+    gold.write_bytes(gold_data)
     template = tmp_path / 'template.it'
     template.write_text('Mods\n{\nstat_description_list = "Data/StatDescriptions/tablet_stat_descriptions.csd"\n}\n', encoding='utf-8')
     descriptions = tmp_path / 'tablet.csd'; descriptions.write_bytes(csd().encode('utf-8'))
     arguments = [
         '--price-source', 'poecurrency-cn' if server == 'cn' else 'poe2scout',
-        '--resolved-leagues', '--league', 'runes', '--poe-ninja-league', 'Runes of Aldur',
+        '--league', 'runes', '--poe-ninja-league', 'Runes of Aldur',
         '--league-is-current', 'false', '--tablet-cn-season', 'RunesofAldur',
         '--poecurrency-summary-url', 'https://poecurrency.top/api/summary?version=2&season=RunesofAldur',
         '--cn-reference-source', 'none', '--fallback-price-sources', 'none',
-        '--patch-scope', 'none', '--no-uniques', '--out-dir', str(tmp_path / 'out'),
+        '--patch-scope', 'currency' if ordinary else 'none', '--out-dir', str(tmp_path / 'out'),
         '--en-baseitems', str(english), '--tc-baseitems', str(source),
+        '--en-words', str(words), '--tc-words', str(words), '--unique-gold-prices', str(gold),
         '--patched-dat', str(tmp_path / 'patched.dat'),
         '--game-path', 'data/balance/traditional chinese/baseitemtypes.datc64',
         '--tablet-template-it', str(template), '--tablet-template-csd', str(descriptions),
     ]
+    if ordinary:
+        arguments.extend(['--resolved-leagues', '--no-uniques'])
     for key, value in game_tables(tmp_path).items():
         arguments.extend(['--' + key.replace('_', '-'), str(value)])
     if not names: arguments.append('--no-tablet-prices')
@@ -99,14 +130,19 @@ def test_builder_uses_latest_for_every_tablet_layer(tmp_path, monkeypatch, serve
     if names or affixes:
         assert report['tablet_market']['league'] == latest
         assert report['tablet_market']['display_rates_exalted']['divine'] == '500'
-    else:
+    elif not ordinary:
         assert requests == []
     if names:
         assert report['whole_tablets']['league'] == latest
         assert report['whole_tablets']['base_names']
         assert report['whole_tablets']['unique_prices']
+    if ordinary:
         # The regular market still keeps the old season's rate.
         assert Decimal(report['display_rates_exalted']['divine']) == (300 if server == 'cn' else 200)
+    else:
+        assert report['display_rates_exalted'] == {}
+        assert report['price_items'] == 0
+        assert report['unique_words_patched'] == int(names)
     if affixes:
         assert report['tablet_affixes']['league'] == latest
         assert report['tablet_affixes']['resources']

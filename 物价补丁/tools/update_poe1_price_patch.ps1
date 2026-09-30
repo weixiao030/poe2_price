@@ -27,7 +27,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v1.0.15"
+$script:PatchVersion = "v1.0.16"
 $script:GameDirectoryMutex = $null
 
 function Resolve-Poe1UpdateDirectory {
@@ -489,7 +489,13 @@ try {
 
     Write-Poe1Step "准备独立 POE1 还原底板"
     $LogicalRestoreZip = ""
-    foreach ($Candidate in @($PersistentLogicalRestore, $LogicalRestoreOut)) {
+    # Clean names may come from a newer localization with unchanged DAT structure.
+    # Reuse the previous baseline only while our own price layer is present.
+    $LogicalRestoreCandidates = @()
+    if ($CurrentBasePatched -or $CurrentWordsPatched) {
+        $LogicalRestoreCandidates = @($PersistentLogicalRestore, $LogicalRestoreOut)
+    }
+    foreach ($Candidate in $LogicalRestoreCandidates) {
         if (Test-Poe1LogicalRestoreZip -ZipPath $Candidate -InstallInfo $InstallInfo `
             -CurrentBaseItems $Extracted.LocalizedBaseItems -RepoRoot $RepoRoot) {
             $LogicalRestoreZip = (Resolve-Path -LiteralPath $Candidate).Path

@@ -178,7 +178,10 @@ try {
   await app.evaluate(() => {
     const original = globalThis.setTimeout
     globalThis.setTimeout = (callback, delay, ...args) => {
-      if (delay <= 60_000) {
+      // Network checks also schedule short timers. Capture only the application's
+      // scheduler, otherwise __qaHourly may call an Undici timer without its arguments.
+      const caller = new Error().stack?.split('\n')[2] || ''
+      if (delay <= 60_000 && /\bat schedule \(/.test(caller)) {
         globalThis.__qaHourly = callback
       }
       return original(callback, delay, ...args)

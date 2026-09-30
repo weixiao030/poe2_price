@@ -140,6 +140,7 @@ export class SoftwareUpdater {
     })
     let lastError: unknown = new Error('更新源不可用')
     let hasOlderRelease = false
+    let currentRelease: SoftwareRelease | undefined
     try {
       for (const source of manifestSources(this.options.config, this.options.allowLocalhost)) {
         this.set({ message: `正在通过${source.name}检查新版本…` })
@@ -163,13 +164,18 @@ export class SoftwareUpdater {
             hasOlderRelease = true
             continue
           }
-          const available = newerVersion(release.version, this.options.version)
+          if (!newerVersion(release.version, this.options.version)) {
+            // Mirrors can still cache the installed release just after publication.
+            // Keep its verified result while looking for a newer signed fallback.
+            currentRelease ??= release
+            continue
+          }
           this.set({
-            status: available ? 'available' : 'current',
+            status: 'available',
             release,
             checkedAt: new Date().toISOString(),
-            totalBytes: available ? release.installer.size : 0,
-            message: available ? `发现新版本 v${release.version}` : '当前已是最新版本'
+            totalBytes: release.installer.size,
+            message: `发现新版本 v${release.version}`
           })
           return this.snapshot
         } catch (error) {
@@ -181,7 +187,15 @@ export class SoftwareUpdater {
           controller.abort()
         }
       }
-      if (hasOlderRelease)
+      if (currentRelease)
+        this.set({
+          status: 'current',
+          release: currentRelease,
+          checkedAt: new Date().toISOString(),
+          totalBytes: 0,
+          message: '当前已是最新版本'
+        })
+      else if (hasOlderRelease)
         this.set({
           status: 'current',
           checkedAt: new Date().toISOString(),

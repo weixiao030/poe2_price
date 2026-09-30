@@ -20,7 +20,7 @@ else {
     $RepoRoot = (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
 Set-Location -LiteralPath $RepoRoot
-$script:PatchVersion = "v1.0.15"
+$script:PatchVersion = "v1.0.16"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
 
@@ -91,9 +91,9 @@ function Test-BaseItemsLookPatched {
                     return $false
                 }
                 return (
-                    $Name -match '=(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]$' -or
-                    $Name -match '^(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]$' -or
-                    ($Name.Length -le 12 -and $Name -match '(?:<1|[0-9]+(?:\.[0-9]+)?)[DE]$')
+                    $Name -match '=(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]$' -or
+                    $Name -match '^(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]$' -or
+                    ($Name.Length -le 12 -and $Name -match '(?:<1|[0-9]+(?:\.[0-9]+)?)[CDE]$')
                 )
             } | Select-Object -First 1)
     }
@@ -1547,6 +1547,9 @@ function New-Poe2RestoreBaselineFromCurrentGame {
             "--report", (Join-Path $TempRoot "cleanup.report.json"),
             "--game-path", $InstallInfo.TcBaseItemsPath,
             "--no-uniques",
+            # Tablet layers are independent of patch-scope; a restore baseline must disable both.
+            "--no-tablet-prices",
+            "--no-tablet-affixes",
             "--strict-feature-cleanup"
         )
         if (Test-Path -LiteralPath $CurrentWords -PathType Leaf) {

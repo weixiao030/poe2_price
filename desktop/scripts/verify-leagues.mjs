@@ -140,6 +140,12 @@ try {
   assert.equal(request.poeNinjaLeague, 'Next League')
   await page.screenshot({ path: path.join(output, 'automatic-desktop.png'), fullPage: true })
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(860, 680))
+  // Native resizing and the select popup's closing transition settle asynchronously.
+  await page.waitForFunction(
+    () => window.innerWidth <= 860 && document.documentElement.scrollWidth <= window.innerWidth,
+    null,
+    { timeout: 5000 }
+  )
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
   await page.screenshot({ path: path.join(output, 'automatic-compact.png'), fullPage: true })
   await page.evaluate(() =>

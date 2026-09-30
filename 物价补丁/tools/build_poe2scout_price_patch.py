@@ -3487,6 +3487,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--poe2db-fallback", action="store_true")
     parser.add_argument("--no-uniques", action="store_true")
+    parser.add_argument(
+        "--preserve-words",
+        action="store_true",
+        help="Leave Words resources untouched, including cached defaults; used for core-only recovery.",
+    )
     parser.add_argument("--no-build-patch", action="store_true")
     parser.add_argument(
         "--strict-feature-cleanup",
@@ -3663,14 +3668,20 @@ def main(argv: list[str]) -> int:
     fallback_price_sources = parse_fallback_sources(args.fallback_price_sources)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     patch_base_items = args.patch_scope in {"all", "currency"}
-    patch_unique_words = args.patch_scope in {"all", "uniques"}
-    effective_patch_unique_words = (patch_unique_words or not args.no_tablet_prices) and not args.no_uniques
+    patch_unique_words = args.patch_scope in {"all", "uniques"} and not args.preserve_words
+    effective_patch_unique_words = (
+        (patch_unique_words or not args.no_tablet_prices)
+        and not args.no_uniques
+        and not args.preserve_words
+    )
     if args.patch_scope == "uniques" and args.no_uniques:
         raise SystemExit("--patch-scope=uniques cannot be combined with --no-uniques")
     if args.patch_scope == "none" and args.no_uniques:
         effective_patch_unique_words = False
 
-    fetch_prices = patch_base_items or effective_patch_unique_words or not args.no_tablet_prices
+    # Tablet prices have their own latest-season source and exchange rates.
+    # Ordinary feed outages must not block an operation that only enables tablets.
+    fetch_prices = patch_base_items or (patch_unique_words and not args.no_uniques)
     client = RetryingRequests(
         max_retries=args.retries,
         backoff=args.backoff,
@@ -3683,7 +3694,7 @@ def main(argv: list[str]) -> int:
     league_sources = {args.price_source, *fallback_price_sources}
     if args.price_source == "poecurrency-cn":
         league_sources.add(args.cn_reference_source)
-    needs_market_league = (fetch_prices or not args.no_tablet_affixes) and bool(
+    needs_market_league = fetch_prices and bool(
         league_sources.intersection({"poe2scout", "poe-ninja"})
     )
     if args.resolved_leagues:
@@ -4284,6 +4295,7 @@ def main(argv: list[str]) -> int:
         "unique_items": len(unique_items),
         "unique_words_available": len(unique_names),
         "unique_words_patched": unique_words_patched,
+        "unique_words_preserved": args.preserve_words,
         "unique_price_label_mode": args.unique_price_label_mode,
         "unique_words_clean_passthrough": False,
         "matched_items": len(rows),
@@ -4566,7 +4578,7 @@ def main(argv: list[str]) -> int:
                 raise SystemExit(
                     "--words-game-path is required when patching unique Words prices"
                 )
-        elif args.tc_words.exists() and words_game_path:
+        elif not args.preserve_words and args.tc_words.exists() and words_game_path:
             progress("清理未启用的传奇装备价格标记")
             patched_words = args.patched_words or (args.out_dir / "words.patched.datc64")
             words_cleanup_failed = False
