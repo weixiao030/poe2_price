@@ -1,5 +1,6 @@
 """Exercise the shipped writer with real, harmless Client.exe processes."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -7,6 +8,7 @@ import time
 import zipfile
 from contextlib import contextmanager
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import pytest
 
@@ -42,9 +44,9 @@ def client_exe(tmp_path_factory):
 
 
 @contextmanager
-def running_client(client_exe, directory, locked_file=None):
+def running_client(client_exe, directory, locked_file=None, executable_name="Client.exe"):
     directory.mkdir(parents=True, exist_ok=True)
-    executable = directory / "Client.exe"
+    executable = directory / executable_name
     shutil.copyfile(client_exe, executable)
     ready = directory / "ready.txt"
     args = [str(executable), str(ready)]
@@ -98,6 +100,70 @@ def test_game_client_still_blocks_writer(client_exe, tmp_path, mode, location):
     assert "Close game and launcher before writing: Client" in result.stderr
     assert "System.IO.FileNotFoundException" not in result.stderr
     assert not target.exists()
+
+
+@pytest.mark.parametrize("name", ["PathOfExile", "PathOfExile_x64", "PathOfExileSteam", "PathOfExile_x64Steam"])
+def test_live_dedicated_game_process_still_blocks_writer(client_exe, tmp_path, name):
+    with running_client(client_exe, tmp_path / "游戏目录", executable_name=name + ".exe"):
+        result, target = invoke_writer(tmp_path, "bundles")
+    assert "Close game and launcher before writing: " + name in result.stderr
+    assert "System.IO.FileNotFoundException" not in result.stderr
+    assert not target.exists()
+
+
+def test_retained_exited_process_is_ignored_and_unknown_state_stays_protected(client_exe, tmp_path):
+    dotnet = shutil.which("dotnet")
+    if dotnet is None:
+        pytest.skip(".NET SDK required for the real Process lifetime probe")
+    project = tmp_path / "LifetimeProbe.csproj"
+    project.write_text(
+        '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>'
+        '<OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework>'
+        '<ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>'
+        '</PropertyGroup><ItemGroup><ProjectReference Include="'
+        + escape(str(ROOT / "build/BundleExtractor/BundleExtractor.csproj"), {'"': '&quot;'})
+        + '" /></ItemGroup></Project>', encoding="utf-8",
+    )
+    (tmp_path / "Program.cs").write_text(r'''
+using System.Diagnostics;
+using System.Reflection;
+using System.Text.Json;
+
+var guard = Assembly.Load("BundleExtractor").GetType("ResourcePatch")!
+    .GetMethod("IsProcessRunning", BindingFlags.Static | BindingFlags.NonPublic)!;
+bool Running(Process process) => (bool)guard.Invoke(null, new object[] { process })!;
+var start = new ProcessStartInfo(args[0]) {
+    UseShellExecute = false, RedirectStandardInput = true, CreateNoWindow = true
+};
+start.ArgumentList.Add(args[1]);
+using var child = Process.Start(start)!;
+try {
+    using var enumerated = Process.GetProcessesByName("Client")
+        .Single(process => process.Id == child.Id);
+    _ = enumerated.Handle; // Keep the same OS process object alive after exit.
+    bool live = Running(enumerated);
+    child.StandardInput.WriteLine();
+    child.StandardInput.Flush();
+    if (!child.WaitForExit(10000)) throw new Exception("Fixture did not exit");
+    bool exited = Running(enumerated);
+    using var unknown = new Process(); // No associated process: HasExited throws.
+    Console.WriteLine(JsonSerializer.Serialize(new { live, exited, unknown = Running(unknown) }));
+} finally {
+    if (!child.HasExited) { child.Kill(); child.WaitForExit(); }
+}
+''', encoding="utf-8")
+    output = tmp_path / "compiled"
+    built = subprocess.run(
+        [dotnet, "build", str(project), "--configuration", "Release", "--output", str(output), "--verbosity", "quiet"],
+        capture_output=True, text=True, encoding="utf-8", timeout=120,
+    )
+    assert built.returncode == 0, built.stdout + built.stderr
+    result = subprocess.run(
+        [dotnet, str(output / "LifetimeProbe.dll"), str(client_exe), str(tmp_path / "ready.txt")],
+        capture_output=True, text=True, encoding="utf-8", timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"live": True, "exited": False, "unknown": True}
 
 
 @pytest.mark.parametrize("mode", ["ggpk", "bundles"])

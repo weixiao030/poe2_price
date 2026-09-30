@@ -2176,6 +2176,16 @@ function Copy-Poe2FileAtomically {
     return (Resolve-Path -LiteralPath $DestinationFull).Path
 }
 
+function Test-PoePatchProcessExited {
+    param([Parameter(Mandatory = $true)]$Process)
+
+    # Windows can retain an exited process in enumeration while another program
+    # holds a handle to it. Only a confirmed exit may bypass the process guard;
+    # inaccessible status, zero CPU or an empty path do not prove termination.
+    try { return ($Process.HasExited -eq $true) }
+    catch { return $false }
+}
+
 function Assert-Poe2GameFilesAvailable {
     param(
         [Parameter(Mandatory = $true)][string]$Poe2Dir,
@@ -2187,7 +2197,7 @@ function Assert-Poe2GameFilesAvailable {
     $Attempts = [Math]::Max(1, $RetryCount)
     for ($Attempt = 1; $Attempt -le $Attempts; $Attempt++) {
         $RunningGames = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-                $_.ProcessName -like "PathOfExile*"
+                $_.ProcessName -like "PathOfExile*" -and -not (Test-PoePatchProcessExited -Process $_)
             })
         if ($RunningGames.Count -gt 0) {
             if ($Attempt -ge $Attempts) {

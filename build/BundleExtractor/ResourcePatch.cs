@@ -139,13 +139,22 @@ static class ResourcePatch
         w.Write(Pack(paths.ToArray()));
         return Pack(output.ToArray());
     }
+    static bool IsProcessRunning(Process process)
+    {
+        // Windows can retain an exited process in an enumeration while another
+        // application still holds its handle. Only a confirmed exit is ignored.
+        try { return !process.HasExited; }
+        catch (System.ComponentModel.Win32Exception) { return true; }
+        catch (InvalidOperationException) { return true; }
+    }
     static bool IsGameLauncher(Process process, string gameRoot)
     {
         try
         {
             var executable = process.MainModule?.FileName;
             return !string.IsNullOrWhiteSpace(executable) &&
-                Path.GetFullPath(executable).StartsWith(gameRoot, StringComparison.OrdinalIgnoreCase);
+                Path.GetFullPath(executable).StartsWith(gameRoot, StringComparison.OrdinalIgnoreCase) &&
+                IsProcessRunning(process); // It may exit while its path is read.
         }
         catch (System.ComponentModel.Win32Exception) { return false; }
         catch (InvalidOperationException) { return false; } // Process exited during inspection.
@@ -158,7 +167,8 @@ static class ResourcePatch
         {
             var processes = Process.GetProcessesByName(name);
             bool running;
-            try { running = processes.Any(process => name != "Client" || IsGameLauncher(process, gameRoot)); }
+            try { running = processes.Any(process => IsProcessRunning(process) &&
+                (name != "Client" || IsGameLauncher(process, gameRoot))); }
             finally { foreach (var process in processes) process.Dispose(); }
             Check(!running, "Close game and launcher before writing: " + name);
         }

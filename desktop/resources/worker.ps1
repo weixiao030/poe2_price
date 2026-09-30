@@ -39,7 +39,15 @@ try {
             $Names = @('PathOfExile','PathOfExile_x64','PathOfExileSteam','PathOfExile_x64Steam','PathOfExile2','PathOfExile2Steam','PathOfExile2_x64','PathOfExile2_x64Steam')
             $GameRoot = [IO.Path]::GetFullPath($Candidate.Path).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
             $Running = @(Get-Process -Name $Names -ErrorAction SilentlyContinue | Where-Object {
-                try { return [string]::IsNullOrWhiteSpace($_.Path) -or [IO.Path]::GetFullPath($_.Path).StartsWith($GameRoot, [StringComparison]::OrdinalIgnoreCase) } catch { return $true }
+                $GameProcess = $_
+                if (Test-PoePatchProcessExited -Process $GameProcess) { return $false }
+                $MatchesRoot = $true
+                try {
+                    $ProcessPath = $GameProcess.Path
+                    $MatchesRoot = [string]::IsNullOrWhiteSpace($ProcessPath) -or [IO.Path]::GetFullPath($ProcessPath).StartsWith($GameRoot, [StringComparison]::OrdinalIgnoreCase)
+                } catch { }
+                # The process may exit while its executable path is being read.
+                return $MatchesRoot -and -not (Test-PoePatchProcessExited -Process $GameProcess)
             })
             if ($Running.Count -gt 0) {
                 if ($Request.automatic) { Write-Output '当前游戏正在运行，已跳过本轮自动更新。'; exit 2 }
