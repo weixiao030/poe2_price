@@ -25,6 +25,15 @@ USE_STATS = {
     'Irradiated_Tablet': '4041853756', 'Overseer_Tablet': '3376302538',
     'Ritual_Tablet': '3166002380', 'Temple_Tablet': '3035440454',
 }
+# Published CN whole-tablet policy (/api-docs#whole-tablets): these exact
+# identities use at least one remaining use. Do not relax other items/rarities.
+ONE_USE_TABLETS = frozenset({
+    ('Unforeseen_Consequences', 'Abyss_Tablet', 'unique'),
+    ('The_Grand_Project', 'Irradiated_Tablet', 'unique'),
+    ('Visions_of_Paradise', 'Irradiated_Tablet', 'unique'),
+    ('Mastered_Domain', 'Irradiated_Tablet', 'unique'),
+    ('Overseer_Tablet:normal', 'Overseer_Tablet', 'normal'),
+})
 
 
 def positive(value):
@@ -58,10 +67,12 @@ def validate_query(row, league):
         raise ValueError('whole-tablet trade use filter missing')
     group = groups[0]
     filters = group.get('filters', [])
+    minimum_uses = (1 if (row.get('id'), row['base_id'], row['rarity']) in ONE_USE_TABLETS
+                    else 5 if unique else 10)
     if (set(group) != {'type', 'filters'} or group.get('type') != 'and'
             or len(filters) != 1 or set(filters[0]) != {'id', 'value'}
             or filters[0].get('id') != 'implicit.stat_' + USE_STATS[row['base_id']]
-            or filters[0]['value'] != {'min': 5 if unique else 10}):
+            or filters[0]['value'] != {'min': minimum_uses}):
         raise ValueError('whole-tablet trade use/affix conditions have changed')
     return scope
 
@@ -221,7 +232,8 @@ def _fetch_snapshot(client, api_base, league, allow_stale):
             'base_prices': base_prices, 'unique_prices': uniques, 'unique_catalog': unique_catalog,
             'quotes': selected, 'skipped': skipped,
             'price_policy': 'most_sampled_native_currency_median_then_minimum',
-            'reference_note': '整件低价挂牌样本参考，非成交价；普/魔/稀至少10次，暗金至少5次；不筛词缀或腐化。'}
+            'reference_note': '整件低价挂牌样本参考，非成交价；默认普/魔/稀至少10次、暗金至少5次；'
+                              '无常因果、宏伟计划、乐园幻象、疆域主宰及普通霸主石板至少1次；不筛词缀或腐化。'}
 
 
 def fetch_cn_whole_tablets(client, api_base, league, *, cache_dir=None, allow_stale=True, on_retry=None):

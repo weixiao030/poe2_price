@@ -299,10 +299,10 @@
     {
       "path": "物价补丁/tools/poe2_whole_tablets.py",
       "upstream_blob": null,
-      "local_sha256": "1786bb7170f245fed2ed7cc5cab8f919a9aca1583fcb0776f449226f8599fe9d",
-      "normalized_sha256": "1786bb7170f245fed2ed7cc5cab8f919a9aca1583fcb0776f449226f8599fe9d",
+      "local_sha256": "899ce7b2a2aed044fd4d9c27a5e3a9252eab81e857191c4b08395ca4bf081e7c",
+      "normalized_sha256": "899ce7b2a2aed044fd4d9c27a5e3a9252eab81e857191c4b08395ca4bf081e7c",
       "equivalent": false,
-      "local_changes": "v1.0.5 新增：国服整件碑牌接口、原币种统计、市场与查询校验、分页重试及同赛季成功缓存。 v1.0.6：国服碑牌名称统一单价参考、普通优先及旧价清理；同步发行版本。 v1.0.6：所有 POE2 价签共用本服 E/C/D 阶梯和小数截断，保留隐藏规则。 v1.0.10：碑牌名称与词缀开关独立、旧价清理与配置缓存隔离。"
+      "local_changes": "v1.0.5 新增：国服整件碑牌接口、原币种统计、市场与查询校验、分页重试及同赛季成功缓存。 v1.0.6：国服碑牌名称统一单价参考、普通优先及旧价清理；同步发行版本。 v1.0.6：所有 POE2 价签共用本服 E/C/D 阶梯和小数截断，保留隐藏规则。 v1.0.10：碑牌名称与词缀开关独立、旧价清理与配置缓存隔离。 v1.0.17：按精确物品、底材和稀有度接受五项国服整件碑牌至少1次使用规则；其他条目保留10/5次校验。"
     }
   ],
   "native_tools": [

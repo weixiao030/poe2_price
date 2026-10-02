@@ -91,6 +91,50 @@ def test_missing_normal_uses_available_reference_without_fabricating_quotes():
     assert not report['unique_prices'] and len(report['skipped']) == 2
 
 
+ONE_USE_ITEMS = [
+    ('Unforeseen Consequences', 'Abyss_Tablet', 'unique'),
+    ('The Grand Project', 'Irradiated_Tablet', 'unique'),
+    ('Visions of Paradise', 'Irradiated_Tablet', 'unique'),
+    ('Mastered Domain', 'Irradiated_Tablet', 'unique'),
+    ('Overseer Tablet', 'Overseer_Tablet', 'normal'),
+]
+
+
+def scoped_row(name, base, rarity, minimum):
+    result = row(rarity, name_en=name, base_id=base,
+                 id=name.replace(' ', '_') if rarity == 'unique' else base + ':' + rarity)
+    query = json.loads(m.trade_query_scope(result['trade_url'], rarity, 'cn', LEAGUE))[1]
+    query['filters']['type_filters']['filters']['rarity'] = {'option': rarity}
+    query['stats'][0]['filters'] = [dict(id='implicit.stat_' + m.USE_STATS[base], value={'min': minimum})]
+    result['trade_url'] = trade(query)
+    return result
+
+
+@pytest.mark.parametrize('name,base,rarity', ONE_USE_ITEMS)
+def test_published_one_use_tablets_keep_their_quotes(name, base, rarity):
+    report = fetch(Client(page([scoped_row(name, base, rarity, 1)])))
+    assert report['rows'] == 1 and report['skipped'] == []
+    assert report['quotes'][0]['price'] == '100E'
+    if rarity == 'unique':
+        assert report['unique_prices'][name.casefold()]['price'] == '100E'
+    else:
+        assert report['base_prices'][base]['variant'] == 'Normal'
+
+
+@pytest.mark.parametrize('name,base,rarity,minimum', [
+    ('Freedom of Faith', 'Ritual_Tablet', 'unique', 1),
+    ('Overseer Tablet', 'Overseer_Tablet', 'magic', 1),
+    ('Overseer Tablet', 'Overseer_Tablet', 'rare', 1),
+    ('Ritual Tablet', 'Ritual_Tablet', 'normal', 1),
+    ('Mastered Domain', 'Ritual_Tablet', 'unique', 1),
+    ('Mastered Domain', 'Irradiated_Tablet', 'unique', 0),
+    ('Mastered Domain', 'Irradiated_Tablet', 'unique', 5),
+])
+def test_one_use_exceptions_do_not_relax_other_items_or_old_conditions(name, base, rarity, minimum):
+    with pytest.raises(ValueError, match='use/affix conditions'):
+        m.validate_query(scoped_row(name, base, rarity, minimum), LEAGUE)
+
+
 @pytest.mark.parametrize('key,value', [('server', 'international'), ('market', 'tablet'),
     ('league', 'Forbidden Rites'), ('stale', None), ('offset', 99), ('total', 3000)])
 def test_rejects_wrong_market_or_invalid_pagination(key, value):
