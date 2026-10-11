@@ -3,7 +3,7 @@
     return [pscustomobject]@{
         Label = $Value; Value = $Value; ScoutLeague = $Scout; PoeNinjaLeague = $Ninja
         PoeCurrencySeason = $Season; IsCurrent = $Current; UseCurrentEndpoint = $false
-        DiscoveryFallback = $false; DiscoveryMessage = ""; Order = 0
+        DiscoveryFallback = $false; DiscoveryMessage = ""; Order = 0; PriceDataStatus = "unknown"
     }
 }
 
@@ -11,11 +11,29 @@ function Invoke-PoePatchLeagueRequest {
     param([string]$Url, [int]$TimeoutSeconds)
     for ($Attempt = 0; $Attempt -lt 2; $Attempt++) {
         try {
-            return Invoke-RestMethod -Uri $Url -Headers @{ "User-Agent" = "poe-price-patch" } `
-                -TimeoutSec ([Math]::Max(2, [Math]::Min(10, $TimeoutSeconds))) -ErrorAction Stop
+            # Preserve JSON [] as an array, distinct from null or an invalid response.
+            return ,(Invoke-RestMethod -Uri $Url -Headers @{ "User-Agent" = "poe-price-patch" } `
+                -TimeoutSec ([Math]::Max(2, [Math]::Min(10, $TimeoutSeconds))) -ErrorAction Stop)
         }
         catch { if ($Attempt -eq 1) { throw } }
     }
+}
+
+function Get-PoePatchChinaPriceDataStatus {
+    param([string]$GameVersion, [object]$Option, [int]$TimeoutSeconds = 4)
+    try {
+        $Url = Get-PoePatchChinaSummaryUrl -GameVersion $GameVersion -Season $Option.PoeCurrencySeason -UseCurrentEndpoint $Option.IsCurrent
+        $Response = Invoke-PoePatchLeagueRequest -Url $Url -TimeoutSeconds $TimeoutSeconds
+        if ($Response -isnot [array]) { return "unknown" }
+        $HasItems = $false
+        foreach ($Category in $Response) {
+            if ($null -eq $Category -or $Category.category_label -isnot [string] -or $Category.items -isnot [array]) { return "unknown" }
+            if ($Category.items.Count -gt 0) { $HasItems = $true }
+        }
+        if ($HasItems) { return "available" }
+        return "empty"
+    }
+    catch { return "unknown" }
 }
 
 function Get-PoePatchOnlineLeagueOptions {
@@ -25,6 +43,7 @@ function Get-PoePatchOnlineLeagueOptions {
         $Values = @($Response)
         $Seen = @{}
         $Index = 0
+        $ProbeClock = [Diagnostics.Stopwatch]::StartNew()
         foreach ($Value in $Values) {
             if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) { continue }
             $Value = $Value.Trim()
@@ -32,6 +51,11 @@ function Get-PoePatchOnlineLeagueOptions {
             $Seen[$Value] = $true
             $Option = New-PoePatchLeagueOption -Value $Value -Season $Value -Current ($Index -eq 0)
             $Option.Order = $Index++
+            # Bound the extra work even when a provider adds many seasons or goes offline.
+            # Keep all identities internally: an empty current season must not promote history.
+            if ($ProbeClock.Elapsed.TotalSeconds -lt 20) {
+                $Option.PriceDataStatus = Get-PoePatchChinaPriceDataStatus -GameVersion $GameVersion -Option $Option -TimeoutSeconds ([Math]::Min(4, $TimeoutSeconds))
+            }
             $Option
         }
         return
@@ -116,6 +140,7 @@ function Get-PoePatchLeagueOptions {
                     if ($(if ($China) { $_.PoeCurrencySeason -ne $_.Value } else { $_.PoeNinjaLeague -ne $_.Value })) { return }
                     $Option = New-PoePatchLeagueOption -Value $_.Value -Scout $_.ScoutLeague -Ninja $_.PoeNinjaLeague -Season $_.PoeCurrencySeason -Current $_.IsCurrent
                     if ($_.Label -is [string] -and $_.Label) { $Option.Label = $_.Label }
+                    if ($_.PriceDataStatus -in @("available", "empty", "unknown")) { $Option.PriceDataStatus = $_.PriceDataStatus }
                     $Option
                 })
                 # A partially damaged list cannot identify the first/current season safely.
@@ -154,6 +179,7 @@ function Get-PoePatchLeagueOptions {
         if ($Cached.Count -eq 0) { throw }
         foreach ($Option in $Cached) {
             $Option.DiscoveryFallback = $true
+            $Option.PriceDataStatus = "unknown"
             $Option.DiscoveryMessage = "赛季列表刷新失败，已使用上次获取的赛季。"
         }
         return $Cached

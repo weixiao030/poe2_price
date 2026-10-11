@@ -67,7 +67,9 @@ export const useAppStore = defineStore('app', () => {
       label: `自动跟随最新赛季${league.value && selectedLeague.value === '__auto__' ? `（${league.value.Value}）` : ''}`,
       value: '__auto__'
     },
-    ...leagues.value.map((x) => ({ label: x.Label, value: x.Value }))
+    ...leagues.value
+      .filter((x) => x.PriceDataStatus !== 'empty')
+      .map((x) => ({ label: x.Label, value: x.Value }))
   ])
   const logText = computed(() => events.value.map((e) => e.message).join(''))
   let generation = 0,
@@ -262,6 +264,8 @@ export const useAppStore = defineStore('app', () => {
         leagues.value = [...result, previous]
       if (result.some((x) => x.DiscoveryFallback))
         leagueNotice.value = '赛季列表刷新失败，已保留上次获取的赛季。'
+      else if (league.value?.PriceDataStatus === 'empty')
+        leagueNotice.value = '所选赛季已确认暂无行情数据，请选择其他赛季或稍后刷新。'
     } catch (e) {
       if (token === leagueGeneration) {
         leagueNotice.value = leagues.value.length

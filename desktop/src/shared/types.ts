@@ -32,6 +32,7 @@ export interface GameClient {
   language: string
 }
 export interface LeagueOption {
+  PriceDataStatus?: 'available' | 'empty' | 'unknown'
   Label: string
   Value: string
   ScoutLeague: string

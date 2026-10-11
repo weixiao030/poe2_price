@@ -173,3 +173,56 @@ test('settings validate saved season identities and legacy requests keep their f
   })
   assert.equal(legacy.leagueMode, 'fixed')
 })
+
+test('only confirmed empty seasons disappear; unknown and old data remain selectable', async () => {
+  const { store } = setup({
+    getLeagues: async () => [
+      { ...current, PriceDataStatus: 'available' },
+      { ...old, PriceDataStatus: 'unknown' },
+      { ...old, Value: 'Standard', Label: 'Standard', PriceDataStatus: 'empty' }
+    ]
+  })
+  await store.refreshLeagues()
+  assert.deepEqual(
+    store.leagueOptions.map((x) => x.value),
+    ['__auto__', 'New', 'Old']
+  )
+})
+
+test('an empty pinned season stays fixed internally and cannot be reinserted into the menu', async () => {
+  let status: 'empty' | 'available' = 'empty'
+  const { store } = setup({
+    getLeagues: async () => [current, { ...old, PriceDataStatus: status }]
+  })
+  store.leagues = [old]
+  await store.selectLeague('Old')
+  await store.refreshLeagues()
+  assert.equal(store.selectedLeague, 'Old')
+  assert.equal(
+    store.leagueOptions.some((x) => x.value === 'Old'),
+    false
+  )
+  assert.match(store.leagueNotice, /暂无行情数据/)
+  status = 'available'
+  await store.refreshLeagues()
+  assert.equal(
+    store.leagueOptions.some((x) => x.value === 'Old'),
+    true
+  )
+  assert.equal(store.leagueNotice, '')
+})
+
+test('all empty seasons leave only auto without relabeling history as current', async () => {
+  const { store } = setup({
+    getLeagues: async () => [
+      { ...current, PriceDataStatus: 'empty' },
+      { ...old, PriceDataStatus: 'empty' }
+    ]
+  })
+  await store.refreshLeagues()
+  assert.deepEqual(
+    store.leagueOptions.map((x) => x.value),
+    ['__auto__']
+  )
+  assert.equal(store.league?.Value, 'New')
+})

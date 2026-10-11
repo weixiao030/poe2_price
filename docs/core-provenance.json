@@ -243,10 +243,10 @@
     {
       "path": "物价补丁/tools/poe_patch_leagues.ps1",
       "upstream_blob": null,
-      "local_sha256": "941bbe71bdd2437285284e5afeea678b7e26978ce47bf1d408a2c8c164a36a04",
+      "local_sha256": "1f1855ec0c0853e28eaea258c7799035d451116f12609991e8f67386889e8152",
       "equivalent": false,
-      "normalized_sha256": "e6365776b9193031849ec57a7ac506a84e0e5a60287cd3a5f26a266fc3bdc0b2",
-      "local_changes": "新增统一赛季目录、缓存、自动与固定选择及国服价格地址解析。"
+      "normalized_sha256": "84cb0b97ccc12cbff7b50e7b1fa2492ed1d237864b50faa562eecc362e1accf6",
+      "local_changes": "新增统一赛季目录、缓存、自动与固定选择及国服价格地址解析。 v1.0.18：国服赛季汇总数据三态探测；仅确认空数据时隐藏选项，网络及结构异常保留，缓存重查且不改变当前赛季身份。"
     },
     {
       "path": "物价补丁/tools/price_sources/poecurrency_pricing.py",

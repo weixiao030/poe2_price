@@ -43,7 +43,26 @@ try {
             ScoutLeague: '',
             PoeNinjaLeague: '',
             PoeCurrencySeason: '0.5.5',
-            IsCurrent: true
+            IsCurrent: true,
+            PriceDataStatus: 'available'
+          },
+          {
+            Label: 'standard',
+            Value: 'standard',
+            ScoutLeague: '',
+            PoeNinjaLeague: '',
+            PoeCurrencySeason: 'standard',
+            IsCurrent: false,
+            PriceDataStatus: 'empty'
+          },
+          {
+            Label: '网络检查失败赛季',
+            Value: 'network-error',
+            ScoutLeague: '',
+            PoeNinjaLeague: '',
+            PoeCurrencySeason: 'network-error',
+            IsCurrent: false,
+            PriceDataStatus: 'unknown'
           }
         ]
       return [
@@ -155,6 +174,14 @@ try {
   )
   await page.reload()
   await page.locator('#league').getByText('自动跟随最新赛季（0.5.5）', { exact: true }).waitFor()
+  await page.locator('#league').click()
+  await page.locator('.n-base-select-option').filter({ hasText: '网络检查失败赛季' }).waitFor()
+  assert.equal(
+    await page.locator('.n-base-select-option').filter({ hasText: 'standard' }).count(),
+    0
+  )
+  await page.screenshot({ path: path.join(output, 'confirmed-empty-hidden.png'), fullPage: true })
+  await page.keyboard.press('Escape')
   await run()
   request = await app.evaluate(() => globalThis.__requests.at(-1))
   assert.equal(request.leagueMode, 'auto')
@@ -162,7 +189,7 @@ try {
   assert.equal(request.league, '')
   assert.equal(request.poeNinjaLeague, '')
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ checks: 9, profile, screenshots: output, gameFilesTouched: false }))
+  console.log(JSON.stringify({ checks: 11, profile, screenshots: output, gameFilesTouched: false }))
 } catch (error) {
   if (app) {
     const page = await app.firstWindow()

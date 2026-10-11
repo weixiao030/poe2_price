@@ -10,10 +10,11 @@ def run_case(tmp_path: Path, body: str) -> str:
     )
 
 
-def test_cn_directory_does_not_probe_prices_or_replace_latest(tmp_path):
+def test_cn_directory_probes_prices_without_replacing_latest(tmp_path):
     assert run_case(tmp_path, """
         function Invoke-RestMethod {
             param($Uri, $Headers, $TimeoutSec)
+            if ($Uri -like '*summary*') { return ,@() }
             if ($Uri -ne 'https://poecurrency.top/api/season_list?version=poe2') { throw "Unexpected request $Uri" }
             return ,@('0.5.5', 'RunesofAldur', 'standard')
         }
