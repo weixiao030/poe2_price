@@ -80,6 +80,9 @@ def test_builder_uses_latest_for_every_tablet_layer(tmp_path, monkeypatch, serve
         return builder.PriceSourceResult(source, raw={}, prices=prices, status='ok', health={})
 
     monkeypatch.setattr(builder, 'RetryingRequests', Client)
+    # This test exercises season selection with an in-memory market. The real
+    # subprocess and HTTP boundary is covered by test_tablet_worker.py.
+    monkeypatch.setattr(builder, 'build_tablet_affix_resources_isolated', m.build_tablet_affix_resources)
     monkeypatch.setattr(builder, 'try_fetch_price_source', ordinary_prices)
     if not ordinary:
         def no_ordinary_discovery(*args, **kwargs):

@@ -2911,10 +2911,11 @@ def format_price(price_exalted: Decimal, divine_exalted: Decimal, chaos_exalted:
 from poe2_tablet_prices import (
     _tablet_text_key, _tablet_price_from_row, fetch_tablet_affix_prices,
     fetch_poe_ninja_precursor_tablets, _append_tablet_price_to_csd,
-    _redirect_tablet_base_items, build_tablet_affix_resources,
+    _redirect_tablet_base_items,
     resolve_latest_tablet_league, fetch_tablet_display_rates,
     fetch_poe_ninja_unique_tablets, price_tablet_names,
 )
+from poe2_tablet_worker import build_tablet_affix_resources_isolated
 from poe2_tablet_refs import clean_tablet_layer, ENGLISH_BASEITEMS
 from poe2_whole_tablets import fetch_cn_whole_tablets, apply_whole_tablet_display, UNIQUE_TABLET_NAMES
 from poe2_tablet_display import format_value
@@ -4407,7 +4408,7 @@ def main(argv: list[str]) -> int:
                     if not tablet_league:
                         raise ValueError(tablet_market['reason'])
                     progress("获取碑牌词缀价格（失败将跳过碑牌层）")
-                    summary["tablet_affixes"] = build_tablet_affix_resources(
+                    summary["tablet_affixes"] = build_tablet_affix_resources_isolated(
                         display_rates=tablet_display_rates,
                         client=client,
                         api_base=args.tablet_api_base,
@@ -4425,7 +4426,6 @@ def main(argv: list[str]) -> int:
                         tablet_mods=args.tablet_mods,
                         tablet_stats=args.tablet_stats,
                         tablet_tags=args.tablet_tags,
-                        on_retry=progress,
                         cache_dir=args.tablet_cache_dir,
                         server="cn" if args.price_source == "poecurrency-cn" else "international",
                         league_resolved=True,
@@ -4474,6 +4474,7 @@ def main(argv: list[str]) -> int:
                     else:
                         output_zip.write_bytes(output_backup)
                     args.patched_dat.write_bytes(patched_backup)
+                    tablet_report_path.unlink(missing_ok=True)
                     summary["tablet_affixes"] = {"status": "skipped", "reason": f"{type(exc).__name__}: {exc}"}
                     temporary_files = []
                     if args.tablet_template_it:

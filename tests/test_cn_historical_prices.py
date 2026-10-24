@@ -159,9 +159,10 @@ def test_missing_divine_row_still_preserves_direct_quotes(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize('existing_output', [False, True], ids=['fresh-install', 'upgrade'])
-@pytest.mark.parametrize('full_exit,core_exit', [(0, 0), (1, 0), (1, 1)],
-                         ids=['full-success', 'core-retry-success', 'both-failed'])
-def test_build_logs_survive_stage_cleanup(tmp_path, existing_output, full_exit, core_exit):
+@pytest.mark.parametrize('full_exit,core_exit', [(0, 0), (1, 0), (1, 1), (-1073740791, 0)],
+                         ids=['full-success', 'core-retry-success', 'both-failed', 'native-crash'])
+@pytest.mark.parametrize('optional_layer', ['uniques', 'tablet-prices', 'tablet-affixes'])
+def test_build_logs_survive_stage_cleanup(tmp_path, existing_output, full_exit, core_exit, optional_layer):
     from tests.test_game_directory_selection import ps_quote, run_powershell
     script = (Path(__file__).resolve().parents[1] / '物价补丁/tools/update_price_patch.ps1').read_text(encoding='utf-8-sig')
     start = script.index('    New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null', script.index('$WholeTabletLayerStatus ='))
@@ -179,7 +180,9 @@ def test_build_logs_survive_stage_cleanup(tmp_path, existing_output, full_exit, 
         $StagePriceBuildLog=Join-Path $BuildStageDir 'price_patch_build.log'
         $OutDir={ps_quote(output)}
         $PriceBuildLog=Join-Path $OutDir 'price_patch_build.log'
-        $CanPatchUniqueWords=$true
+        $CanPatchUniqueWords=${str(optional_layer == 'uniques').lower()}
+        $TabletPrices=${str(optional_layer == 'tablet-prices').lower()}
+        $PatchTabletAffixesEnabled=${str(optional_layer == 'tablet-affixes').lower()}
         $BuildArgs=@('full')
         $BuildFailed=$false
         function Get-CoreOnlyPriceBuildArgs {{ @('core') }}

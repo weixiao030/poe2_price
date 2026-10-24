@@ -2687,7 +2687,7 @@ function Invoke-Poe2Python {
     try {
         $env:__COMPAT_LAYER = "RunAsInvoker"
         $ErrorActionPreference = "Continue"
-        & $Python @ArgumentList 2>&1 | ForEach-Object {
+        & $Python -X faulthandler @ArgumentList 2>&1 | ForEach-Object {
             $Line = [string]$_
             $Lines.Add($Line)
             if (-not $Quiet) {

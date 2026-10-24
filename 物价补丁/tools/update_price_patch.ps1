@@ -2851,7 +2851,7 @@ function Get-CoreOnlyPriceBuildArgs {
             $Index += 1
             continue
         }
-        if ($Value -eq "--no-uniques") {
+        if ($Value -in @("--no-uniques", "--preserve-words", "--no-tablet-prices", "--no-tablet-affixes")) {
             continue
         }
         if ($Value -eq "--patch-scope" -and ($Index + 1) -lt $ArgumentList.Count) {
@@ -2867,6 +2867,9 @@ function Get-CoreOnlyPriceBuildArgs {
     # Omitting Words arguments alone falls back to the builder's default cache.
     # A core retry must leave every Words resource untouched, including defaults.
     $Result.Add("--preserve-words")
+    # Optional tablet requests must not repeat a native failure in the core retry.
+    $Result.Add("--no-tablet-prices")
+    $Result.Add("--no-tablet-affixes")
     return $Result.ToArray()
 }
 
@@ -3484,18 +3487,21 @@ try {
     New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null
     # First installs have no published output yet; the durable log is written before publication.
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+    $CoreBuildFailure = ""
     $BuildResult = Invoke-Poe2Python -Python $Python -ArgumentList $BuildArgs
     $BuildResult.Text | Out-File -LiteralPath $StagePriceBuildLog -Encoding UTF8
     # Keep diagnostics outside staging, which is removed in finally even on failure.
     $BuildResult.Text | Out-File -LiteralPath $PriceBuildLog -Encoding UTF8
-    if ($BuildResult.ExitCode -ne 0 -and $CanPatchUniqueWords) {
-        Write-Warning "完整补丁构建失败，正在自动降级为 BaseItemTypes 核心价格层并保留游戏中的 Words。"
+    if ($BuildResult.ExitCode -ne 0 -and ($CanPatchUniqueWords -or $TabletPrices -or $PatchTabletAffixesEnabled)) {
+        $CoreBuildFailure = "完整补丁构建失败，退出码：$($BuildResult.ExitCode)"
+        Write-Warning "$CoreBuildFailure；正在自动降级为 BaseItemTypes 核心价格层，跳过碑牌并保留游戏中的 Words。"
+        "`r`n$CoreBuildFailure" | Out-File -LiteralPath $PriceBuildLog -Encoding UTF8 -Append
         Remove-Item -LiteralPath $BuildStageDir -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force -Path $BuildStageDir | Out-Null
         $CoreBuildArgs = Get-CoreOnlyPriceBuildArgs -ArgumentList $BuildArgs
         $BuildResult = Invoke-Poe2Python -Python $Python -ArgumentList $CoreBuildArgs
-        $BuildResult.Text | Out-File -LiteralPath $StagePriceBuildLog -Encoding UTF8
-        "`r`n== BaseItemTypes 核心价格层重试 ==`r`n$($BuildResult.Text)" | Out-File -LiteralPath $PriceBuildLog -Encoding UTF8 -Append
+        "`r`n== BaseItemTypes 核心价格层重试（退出码：$($BuildResult.ExitCode)） ==`r`n$($BuildResult.Text)" | Out-File -LiteralPath $PriceBuildLog -Encoding UTF8 -Append
+        Copy-Item -LiteralPath $PriceBuildLog -Destination $StagePriceBuildLog -Force
     }
     if ($BuildResult.ExitCode -ne 0) {
         throw "Price fetch or patch build failed. Exit code: $($BuildResult.ExitCode). Log: $PriceBuildLog"
@@ -3506,6 +3512,17 @@ try {
     # Only use this invocation's staging summary, never a previous output report.
     try {
         $StageSummary = Get-Content -LiteralPath $StageSummaryJson -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($CoreBuildFailure) {
+            $StageSummary | Add-Member -NotePropertyName core_fallback -NotePropertyValue $true -Force
+            $StageSummary | Add-Member -NotePropertyName build_failure -NotePropertyValue $CoreBuildFailure -Force
+            if ($PatchTabletAffixesEnabled) {
+                $StageSummary.tablet_affixes = [pscustomobject]@{status="skipped"; reason=$CoreBuildFailure}
+            }
+            if ($WholeTabletEnabled) {
+                $StageSummary.whole_tablets = [pscustomobject]@{status="skipped"; installation_status="unavailable"; reason=$CoreBuildFailure}
+            }
+            Write-JsonAtomically -Path $StageSummaryJson -Value $StageSummary
+        }
         $TabletLayerStatus = Get-TabletLayerStatus -Enabled $PatchTabletAffixesEnabled -Summary $StageSummary
         $WholeTabletLayerStatus = Get-WholeTabletLayerStatus -Enabled $WholeTabletEnabled -Summary $StageSummary
     }
@@ -3567,6 +3584,7 @@ catch {
     try {
         if (
             $CanUseSeasonCache -and $TabletPrices -and $BuildPatchScope -eq "all" -and
+            (Test-Path -LiteralPath $CachedPatchZip -PathType Leaf) -and
             (Test-PricePatchZipCompatible -Path $CachedPatchZip -ReferenceDat $TcBaseItems)
         ) {
             $SafeFallbackZip = Join-Path $BuildStageDir "safe-core-cache.zip"
