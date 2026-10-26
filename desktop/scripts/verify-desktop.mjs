@@ -3,6 +3,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const reportDir = path.join(root, 'test-results')
@@ -17,6 +19,33 @@ const start = Date.now()
 const env = { ...process.env, POE_DESKTOP_DATA: userData }
 delete env.ELECTRON_RUN_AS_NODE
 let app
+const execFileAsync = promisify(execFile)
+async function closeApplication() {
+  const closing = app
+  if (!closing) return
+  let timer
+  try {
+    await Promise.race([
+      closing.close(),
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Electron did not quit within 15 seconds')),
+          15000
+        )
+      })
+    ])
+  } catch (error) {
+    const pid = closing.process().pid
+    if (pid && closing.process().exitCode === null)
+      await execFileAsync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+        windowsHide: true
+      }).catch(() => {})
+    throw error
+  } finally {
+    clearTimeout(timer)
+    app = null
+  }
+}
 async function waitSnapshot(page, predicate, timeout = 30000) {
   const until = Date.now() + timeout
   while (Date.now() < until) {
@@ -187,8 +216,11 @@ try {
       return original(callback, delay, ...args)
     }
   })
-  await page.evaluate(dir => window.desktop.saveSettings({ autoUpdate: true,
-    directories: { poe1: '', poe2: dir } }), game)
+  await page.evaluate(
+    (dir) =>
+      window.desktop.saveSettings({ autoUpdate: true, directories: { poe1: '', poe2: dir } }),
+    game
+  )
   await app.evaluate(() => {
     globalThis.__qaDateNow = Date.now
     const current = Date.now()
@@ -325,8 +357,7 @@ try {
   await page.screenshot({ path: path.join(reportDir, 'history.png'), fullPage: true })
   const count = (await page.evaluate(() => window.desktop.getSnapshot())).history.length
   await page.evaluate(() => window.desktop.saveSettings({ autoUpdate: true }))
-  await app.close()
-  app = null
+  await closeApplication()
   page = await launch()
   const resumed = await page.evaluate(() => window.desktop.getSnapshot())
   assert.equal(resumed.settings.autoUpdate, true)
@@ -342,8 +373,7 @@ try {
     'true'
   )
   await page.getByRole('switch', { name: '每小时自动更新' }).click()
-  await app.close()
-  app = null
+  await closeApplication()
   page = await launch()
   const disabled = await page.evaluate(() => window.desktop.getSnapshot())
   assert.equal(disabled.settings.autoUpdate, false)
@@ -352,6 +382,10 @@ try {
   assert.deepEqual(evidence.errors, [])
   evidence.checks.push('所有页面无未捕获 JavaScript 错误')
   console.log(JSON.stringify(evidence, null, 2))
+} catch (error) {
+  console.error(error)
+  evidence.failure = error instanceof Error ? error.stack : String(error)
+  throw error
 } finally {
   if (app && evidence.checks.length < 12) {
     const page = app.windows()[0]
@@ -378,6 +412,6 @@ try {
         await waitSnapshot(p, (s) => !s.active, 15000).catch(() => {})
       }
     }
-    await app.close()
+    await closeApplication()
   }
 }

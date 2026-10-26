@@ -105,8 +105,9 @@ test('all configured GitHub mirrors precede ZOS and package URLs pin the verifie
   }
   const manifests = manifestSources(config),
     sources = installerSources(config, verified())
-  assert.equal(manifests.length, 9)
-  for (let i = 0; i < 8; i++) {
+  const mirrorCount = GITHUB_MIRROR_PREFIXES.length
+  assert.equal(manifests.length, mirrorCount + 1)
+  for (let i = 0; i < mirrorCount; i++) {
     assert.ok(manifests[i].url.startsWith(GITHUB_MIRROR_PREFIXES[i] + 'https://github.com/'))
     assert.ok(
       sources[i].url.includes('/releases/download/v2.4.0/POE-Price-Patch-2.4.0-x64-Setup.exe')
@@ -118,14 +119,14 @@ test('all configured GitHub mirrors precede ZOS and package URLs pin the verifie
     )
   }
   assert.equal(
-    sources[8].url,
+    sources[mirrorCount].url,
     'https://example.zos.ctyun.cn/installer/POE-Price-Patch-2.4.0-x64-Setup.exe'
   )
-  assert.equal(sources[8].useMultipleRangeRequest, false)
+  assert.equal(sources[mirrorCount].useMultipleRangeRequest, false)
   assert.equal(sources[0].name, '国内备用源 gh-proxy.com')
   assert.equal(sources[0].useMultipleRangeRequest, true)
-  assert.ok(sources.slice(0, 4).every((source) => source.useMultipleRangeRequest))
-  assert.ok(sources.slice(4, 8).every((source) => !source.useMultipleRangeRequest))
+  assert.ok(sources.slice(0, 2).every((source) => source.useMultipleRangeRequest))
+  assert.ok(sources.slice(2, mirrorCount).every((source) => !source.useMultipleRangeRequest))
   assert.ok(!manifests.some((source) => source.url.startsWith('https://github.com/')))
   assert.throws(() => manifestSources({ ...config, github: { repository: '../other' } }))
 })
@@ -153,7 +154,8 @@ async function fixture(t: TestContext, current = '1.0.0') {
     }
     if (mode === 'hang') return
     const sourceManifest = mode === 'current' ? metadata(current) : bytes
-    const sourceSignature = mode === 'current' ? signManifest(sourceManifest, privateKey) : signature
+    const sourceSignature =
+      mode === 'current' ? signManifest(sourceManifest, privateKey) : signature
     const content =
       mode === 'corrupt'
         ? Buffer.from('tampered')
@@ -234,7 +236,7 @@ test('startup checks once, never downloads, and persists only the ignored releas
   const requests = f.requests.length
   await f.updater.checkAtStartup()
   assert.equal(f.requests.length, requests)
-  assert.ok(f.requests.every(r => !r.endsWith(':installer')))
+  assert.ok(f.requests.every((r) => !r.endsWith(':installer')))
   assert.equal(f.installs(), 0)
   await f.updater.dismissNotice('2.4.0', true)
   assert.equal(f.updater.snapshot.startupNotificationVersion, undefined)
@@ -243,7 +245,10 @@ test('startup checks once, never downloads, and persists only the ignored releas
   assert.equal(restarted.snapshot.status, 'available')
   assert.equal(restarted.snapshot.startupNotificationVersion, undefined)
   assert.equal((await restarted.check()).release?.version, '2.4.0')
-  await fs.writeFile(path.join(f.options.stateRoot, 'notice.json'), JSON.stringify({ ignoredVersion: '2.3.9' }))
+  await fs.writeFile(
+    path.join(f.options.stateRoot, 'notice.json'),
+    JSON.stringify({ ignoredVersion: '2.3.9' })
+  )
   const next = new SoftwareUpdater(f.options)
   await next.checkAtStartup()
   assert.equal(next.snapshot.startupNotificationVersion, '2.4.0')

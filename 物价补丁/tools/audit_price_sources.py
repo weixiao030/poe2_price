@@ -187,8 +187,9 @@ def _ninja_field_sets(payloads: Mapping[str, Any]) -> dict[str, list[str]]:
 
 POE_NINJA_VIEW_RE = re.compile(
     r"availableViews:\[(?P<views>[^\]]*)\]"
-    r"(?:(?!availableViews:).)*?title:(?P<title_q>[\"'`])"
-    r"(?P<title>(?:\\.|(?!(?P=title_q)).)*)(?P=title_q)"
+    r"(?:(?!availableViews:).)*?title:(?:"
+    r"(?P<title_object>\{[^{}]*\})|(?P<title_q>[\"'`])"
+    r"(?P<title>(?:\\.|(?!(?P=title_q)).)*)(?P=title_q))"
     r",type:(?P<type_q>[\"'`])"
     r"(?P<type>(?:\\.|(?!(?P=type_q)).)*)(?P=type_q)"
     r",url:(?P<url_q>[\"'`])"
@@ -232,9 +233,17 @@ def parse_poe_ninja_site_categories(source: str) -> list[dict[str, Any]]:
             _js_string(item.group("value"))
             for item in JS_STRING_RE.finditer(match.group("views"))
         ]
+        title = match.group("title")
+        if match.group("title_object"):
+            spec = match.group("title_object")
+            field = re.search(r"(?:^|[,{])\s*message\s*:\s*", spec)
+            literal = JS_STRING_RE.match(spec, field.end()) if field else None
+            if literal is None:
+                continue
+            title = literal.group("value")
         entry = {
             "available_views": views,
-            "title": _js_string(match.group("title")),
+            "title": _js_string(title),
             "type": _js_string(match.group("type")),
             "url": _js_string(match.group("url")),
         }
@@ -668,12 +677,23 @@ def audit_poe_ninja(
         builder.DEFAULT_POE_NINJA_ITEM_API_URL,
         builder.DEFAULT_POE_NINJA_UNIQUE_ARMOURS_URL,
     )
+    # Tablet names use an independent production adapter, but remain part of
+    # the site's category contract and must not look like a removed category.
+    tablet_metrics: dict[str, Any] = {}
+    try:
+        tablets = builder.fetch_poe_ninja_precursor_tablets(tolerant, league.poe_ninja)
+        tablet_metrics = {"base_types": len(tablets["base_prices"]),
+                          "usable_lines": tablets["usable_lines"]}
+    except Exception as exc:
+        tolerant.failures["item:PrecursorTablets"] = f"{type(exc).__name__}: {exc}"
+        tablet_metrics = {"error": f"{type(exc).__name__}: {exc}"}
     enabled = [
         f"exchange:{name}" for name in builder.POE_NINJA_EXCHANGE_TYPES
-    ] + [f"item:{name}" for name in builder.POE_NINJA_ITEM_TYPES]
+    ] + [f"item:{name}" for name in builder.POE_NINJA_ITEM_TYPES] + ["item:PrecursorTablets"]
     configured_views = {
         **{str(name): "exchange" for name in builder.POE_NINJA_EXCHANGE_TYPES},
         **{str(name): "stash" for name in builder.POE_NINJA_ITEM_TYPES},
+        "PrecursorTablets": "stash",
     }
     site_partial_reasons: list[str] = []
     try:
@@ -736,6 +756,7 @@ def audit_poe_ninja(
         "lines": int(raw.get("lines") or 0),
         "items": int(raw.get("items") or 0),
         "reference_price_exalted": raw.get("divine_price_exalted"),
+        "precursor_tablets": tablet_metrics,
         "categories": {
             "discovered": enabled,
             "succeeded": succeeded,

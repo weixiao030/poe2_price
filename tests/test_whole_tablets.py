@@ -232,6 +232,49 @@ def test_missing_median_can_use_valid_minimum():
     assert result['quotes'][0]['price'] == '90E' and result['quotes'][0]['statistic'] == 'min'
 
 
+@pytest.mark.parametrize('currency,amount,expected', [
+    ('annul', 1, '3.75C'), ('annul', 2, '1.18D'), ('chance', 15, '2.04C'),
+])
+def test_other_native_currencies_use_same_market_rates_without_mixing_samples(currency, amount, expected):
+    from decimal import Decimal
+    rates = {k: Decimal(str(v)) for k, v in dict(exalted=1, chaos=220, divine=1400,
+                                               annul=826, chance=30).items()}
+    samples = {currency: dict(count=8, min=amount, low_sample_median=amount, max=amount),
+               'divine': dict(count=2, min=1, low_sample_median=1, max=1)}
+    report = fetch(Client(page([row(prices=samples)])), exchange_rates=rates)
+    m.apply_whole_tablet_display(report, rates)
+    quote = report['quotes'][0]
+    assert quote['currency'] == currency and quote['amount'] == str(amount)
+    assert quote['sample_count'] == 8 and quote['display_converted'] is True
+    assert quote['native_price'] == f'{amount} {currency}'
+    assert quote['price'] == expected
+    assert report['base_prices']['Ritual_Tablet']['price'] == expected
+
+
+@pytest.mark.parametrize('rate', [None, 0, -1, 'NaN', 'Infinity', 'bad'])
+def test_other_currency_without_valid_rate_is_skipped_without_guessing(rate):
+    unsupported = row('unique', prices={'annul': dict(count=10, min=2, max=2)})
+    result = fetch(Client(page([row(), unsupported])), exchange_rates={'annul': rate})
+    assert result['rows'] == 1 and not result['unique_prices']
+    assert result['skipped'][0]['reason'] == 'no supported native currency quote'
+
+
+def test_cached_raw_whole_tablets_are_reparsed_with_current_same_market_rates(tmp_path):
+    rates = dict(exalted=1, chaos=220, divine=1400, chance=30)
+    raw = page([row(prices={'chance': dict(count=10, min=15, max=15)})])
+    assert fetch(Client(raw), cache_dir=tmp_path, exchange_rates=rates)['quotes'][0]['price'] == '2.04C'
+
+    class Offline:
+        def get_json(self, url): raise OSError('offline')
+
+    rates['chance'] = 60
+    cached = fetch(Offline(), cache_dir=tmp_path, exchange_rates=rates)
+    assert cached['source'] == 'cache' and cached['quotes'][0]['price'] == '4.09C'
+    # Old cached pages remain raw: absent conversion rates cannot revive a label.
+    with pytest.raises(ValueError, match='no usable cached'):
+        fetch(Offline(), cache_dir=tmp_path)
+
+
 def test_names_preserve_affix_inheritance_english_filters_and_other_resources(tmp_path):
     report = fetch(Client(page([row('normal'), row('rare')])))
     raw = synthetic_baseitems()

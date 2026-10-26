@@ -4166,6 +4166,7 @@ def main(argv: list[str]) -> int:
             whole_tablets = fetch_cn_whole_tablets(
                 client, args.tablet_api_base, tablet_league,
                 cache_dir=args.tablet_cache_dir, on_retry=progress,
+                exchange_rates=tablet_display_rates,
             )
             apply_whole_tablet_display(whole_tablets, tablet_display_rates)
             progress(f"国服整件碑牌：{len(whole_tablets['base_prices'])} 类底材、"

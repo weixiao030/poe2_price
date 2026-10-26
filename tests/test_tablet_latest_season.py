@@ -23,6 +23,19 @@ def directory(server):
 
 
 @pytest.mark.parametrize('server', ['cn', 'international'])
+def test_tablet_currency_loader_keeps_other_verified_currency_rates(server):
+    class Client:
+        def get_json(self, url):
+            return dict(server=server, league=LEAGUE, primary='divine', stale=False,
+                        values=dict(exalted=.002, chaos=.2, divine=1, annul=.4, chance=.01,
+                                    invalid='NaN', missing=None, zero=0))
+
+    rates, metadata = m.fetch_tablet_display_rates(Client(), 'http://market.invalid', LEAGUE, server)
+    assert rates == dict(exalted=1, chaos=100, divine=500, annul=200, chance=5)
+    assert metadata['server'] == server and metadata['league'] == LEAGUE
+
+
+@pytest.mark.parametrize('server', ['cn', 'international'])
 @pytest.mark.parametrize('ordinary', [False, True])
 @pytest.mark.parametrize('names,affixes', [(True, True), (True, False), (False, True), (False, False)])
 def test_builder_uses_latest_for_every_tablet_layer(tmp_path, monkeypatch, server, names, affixes, ordinary):

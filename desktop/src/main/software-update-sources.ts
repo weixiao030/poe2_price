@@ -6,20 +6,12 @@ export const GITHUB_MIRROR_PREFIXES = [
   'https://gh-proxy.com/',
   'https://ghproxy.it/',
   'https://gh-proxy.org/',
-  'https://ghproxy.net/',
-  'https://gh.llkk.cc/',
-  'https://ghproxy.imciel.com/',
-  'https://ghfile.geekertao.top/'
+  'https://ghproxy.net/'
 ]
 // These relays return a valid multipart/byteranges response. The remaining
 // relays and ZOS are intentionally kept on the compatibility path because
 // they either reject multipart ranges or silently return the full file.
-const MULTI_RANGE_MIRRORS = new Set([
-  'gh-proxy.com',
-  'gh-proxy.org',
-  'gh.llkk.cc',
-  'ghfile.geekertao.top'
-])
+const MULTI_RANGE_MIRRORS = new Set(['gh-proxy.com', 'gh-proxy.org'])
 export interface UpdateSource {
   name: string
   url: string
@@ -68,18 +60,20 @@ export function installerSources(
   const suffix = `download/v${release.version}/${release.installer.name}`
   const mirrors = githubSources(config, suffix, allowLocalhost)
   const installerMirrors = mirrors.map((source, index) => ({
-      ...source,
-      oldBlockmapUrl: (version: string) =>
-        githubSources(
-          config,
-          `download/v${version}/${installerName(version)}.blockmap`,
-          allowLocalhost
-        )[index].url,
-      useMultipleRangeRequest: MULTI_RANGE_MIRRORS.has(new URL(source.url).hostname.toLowerCase())
-    }))
+    ...source,
+    oldBlockmapUrl: (version: string) =>
+      githubSources(
+        config,
+        `download/v${version}/${installerName(version)}.blockmap`,
+        allowLocalhost
+      )[index].url,
+    useMultipleRangeRequest: MULTI_RANGE_MIRRORS.has(new URL(source.url).hostname.toLowerCase())
+  }))
   // Prefer relays that can carry the differential ranges in two requests;
   // unsupported relays remain available as safe fallbacks.
-  installerMirrors.sort((a, b) => Number(b.useMultipleRangeRequest) - Number(a.useMultipleRangeRequest))
+  installerMirrors.sort(
+    (a, b) => Number(b.useMultipleRangeRequest) - Number(a.useMultipleRangeRequest)
+  )
   return [
     ...installerMirrors,
     ...config.manifestUrls.map((manifest) => {
@@ -87,7 +81,8 @@ export function installerSources(
       return {
         name: 'ZOS 备用源',
         url: new URL(release.installer.name, base).href,
-        oldBlockmapUrl: (version: string) => new URL(installerName(version) + '.blockmap', base).href,
+        oldBlockmapUrl: (version: string) =>
+          new URL(installerName(version) + '.blockmap', base).href,
         useMultipleRangeRequest: false
       }
     })

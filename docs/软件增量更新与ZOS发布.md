@@ -25,7 +25,9 @@ updates:build 从本次 NSIS 构建读取 Setup、blockmap 和 latest.yml，填�
 
 ## 客户端下载配置
 
-resources/update-config.json 保存公开镜像配置、ZOS 清单 URL 和公钥。默认镜像依次为 ghfast.top、gh-proxy.com、ghproxy.it、gh-proxy.org、ghproxy.net、gh.llkk.cc、ghproxy.imciel.com、ghfile.geekertao.top。不使用 GitHub 直连回退。
+resources/update-config.json 保存公开镜像配置、ZOS 清单 URL 和公钥。默认镜像依次为 ghfast.top、gh-proxy.com、ghproxy.it、gh-proxy.org、ghproxy.net。不使用 GitHub 直连回退。2026-10-26 移除 gh.llkk.cc、ghproxy.imciel.com、ghfile.geekertao.top：实测存在连接失败、清单或完整汉化包超时、多 Range 超时。
+
+在 desktop 目录运行 `npm run audit:downloads -- --full`，可只读检查全部当前下载源、签名清单、安装包 Range/blockmap、完整 ZOS 安装包、各汉化源的官方 SHA256，以及 Python/.NET 构建运行环境的固定 SHA256。报告默认保存在 `test-results/download-source-audit.json`，也可用 `--output` 指定路径；不执行下载的程序。单个备用源失败记录在报告中，关键类型至少一个源可用才成功退出。
 
 检查时通过镜像读取 GitHub releases/latest/download/latest.yml 与 latest.yml.sig。安装包及 blockmap 使用已确认版本的 releases/download/v版本号/地址；源切换保持版本与校验值不变。ZOS 使用 poe-updates/installer/目录。各版本完整 Setup 始终可直接下载，差分失败由框架回退全量。
 

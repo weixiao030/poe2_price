@@ -77,14 +77,14 @@ def validate_query(row, league):
     return scope
 
 
-def select_quote(row):
+def select_quote(row, exchange_rates=None):
     """Use the most-sampled supported native currency; never mix currency units."""
     samples = row.get('prices')
     if not isinstance(samples, dict):
         raise ValueError('invalid whole-tablet currency samples')
     candidates = []
     for unit, sample in samples.items():
-        if unit not in UNITS:
+        if unit not in UNITS and positive((exchange_rates or {}).get(unit)) <= 0:
             continue
         if not isinstance(sample, dict):
             raise ValueError('invalid whole-tablet currency sample')
@@ -103,7 +103,9 @@ def select_quote(row):
     if not candidates:
         return None
     count, unit, amount, statistic = max(candidates, key=lambda x: (x[0], x[1]))
-    return {'price': display_number(amount) + UNITS[unit], 'amount': str(amount),
+    label = (display_number(amount) + UNITS[unit] if unit in UNITS else
+             format_value(Fraction(amount) * Fraction(exchange_rates[unit]), exchange_rates))
+    return {'price': label, 'amount': str(amount),
             'currency': unit, 'sample_count': count, 'statistic': statistic}
 
 
@@ -130,7 +132,8 @@ def select_base_reference(variants):
 def apply_whole_tablet_display(report, rates):
     """Keep selected native quotes, changing only their final display labels."""
     for quote in report.get('quotes', []):
-        quote['native_price'] = display_number(Decimal(quote['amount'])) + UNITS[quote['currency']]
+        quote['native_price'] = (display_number(Decimal(quote['amount']))
+                                 + UNITS.get(quote['currency'], ' ' + quote['currency']))
         rate = rates.get(quote['currency'], 0)
         quote['price'] = (format_value(Fraction(quote['amount']) * Fraction(rate), rates)
                           if rate > 0 else quote['native_price'])
@@ -142,7 +145,7 @@ def apply_whole_tablet_display(report, rates):
     report['display_policy'] = 'E/C/D ladder, truncate without rounding'
 
 
-def _fetch_snapshot(client, api_base, league, allow_stale):
+def _fetch_snapshot(client, api_base, league, allow_stale, exchange_rates=None):
     if not league or league == 'auto':
         raise ValueError('explicit CN whole-tablet league is required')
     offset = 0; revision = None; seen = set(); selected = []; skipped = []; pages = 0
@@ -195,7 +198,7 @@ def _fetch_snapshot(client, api_base, league, allow_stale):
                 continue
             try:
                 query = validate_query(row, league)
-                price = select_quote(row)
+                price = select_quote(row, exchange_rates)
                 if type(row.get('sample_count')) is not int or row['sample_count'] <= 0:
                     raise ValueError('whole-tablet total sample count missing')
                 if price and price['sample_count'] > row['sample_count']:
@@ -236,7 +239,8 @@ def _fetch_snapshot(client, api_base, league, allow_stale):
                               '无常因果、宏伟计划、乐园幻象、疆域主宰及普通霸主石板至少1次；不筛词缀或腐化。'}
 
 
-def fetch_cn_whole_tablets(client, api_base, league, *, cache_dir=None, allow_stale=True, on_retry=None):
+def fetch_cn_whole_tablets(client, api_base, league, *, cache_dir=None, allow_stale=True, on_retry=None,
+                          exchange_rates=None):
     identity = {'schema': 1, 'api_base': api_base.rstrip('/'), 'server': 'cn',
                 'market': 'whole-tablet', 'league': league}
     key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -252,7 +256,7 @@ def fetch_cn_whole_tablets(client, api_base, league, *, cache_dir=None, allow_st
         for attempt in range(2):
             pages.clear()
             try:
-                report = _fetch_snapshot(RecordingClient(), api_base, league, allow_stale)
+                report = _fetch_snapshot(RecordingClient(), api_base, league, allow_stale, exchange_rates)
                 break
             except ValueError:
                 if attempt:
@@ -267,7 +271,7 @@ def fetch_cn_whole_tablets(client, api_base, league, *, cache_dir=None, allow_st
             raise ValueError('cached whole-tablet market does not match selection') from live_error
         class CachedClient:
             def get_json(self, url): return saved['pages'][url]
-        report = _fetch_snapshot(CachedClient(), api_base, league, allow_stale)
+        report = _fetch_snapshot(CachedClient(), api_base, league, allow_stale, exchange_rates)
         if not report['quotes']:
             raise ValueError('no usable cached whole-tablet quotes') from live_error
         report.update(source='cache', cache_saved_at=saved['saved_at'], live_error=str(live_error))

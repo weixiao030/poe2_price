@@ -177,6 +177,18 @@ class DataSourceAuditTests(unittest.TestCase):
         )
         self.assertEqual(result["categories"][-1]["available_views"], ["stash"])
 
+    def test_site_category_parser_supports_localized_title_objects(self):
+        source = (
+            'const pages=[{availableViews:[`exchange`],hideFromSidebar:!1,'
+            'title:{id:`Q2lUR2`,message:`Currency`},type:`Currency`,url:`currency`},'
+            '{availableViews:[`stash`],title:{message:"Unique Weapons",id:"weapon"},'
+            'type:"UniqueWeapons",url:"unique-weapons"},'
+            '{availableViews:[`stash`],title:{id:`unknown`},type:`Unknown`,url:`unknown`}];'
+        )
+        entries = self.audit.parse_poe_ninja_site_categories(source)
+        self.assertEqual([entry['type'] for entry in entries], ['Currency', 'UniqueWeapons'])
+        self.assertEqual([entry['title'] for entry in entries], ['Currency', 'Unique Weapons'])
+
     def test_site_category_parser_supports_backtick_strings(self):
         source = (
             "const views=[{availableViews:[`exchange`,`stash`],"

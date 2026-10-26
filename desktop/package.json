@@ -1,6 +1,6 @@
 {
   "name": "poe-price-patch-desktop",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "POE1 / POE2 物价补丁桌面应用",
   "main": "out/main/index.js",
   "author": "POE Price Patch",
@@ -21,6 +21,7 @@
     "test:package": "node scripts/verify-package.mjs",
     "format": "prettier --write src tests scripts",
     "test:migration": "node scripts/verify-migration.mjs",
+    "audit:downloads": "tsx scripts/audit-download-sources.ts",
     "updates:configure": "node scripts/configure-software-updates.mjs",
     "updates:build": "tsx scripts/build-software-update.ts",
     "test:software-updates": "tsx scripts/verify-software-updates.ts"

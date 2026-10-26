@@ -240,6 +240,9 @@ try {
           productName: name,
           directories: { output },
           electronVersion: require('electron/package.json').version,
+          // Use the pinned npm-installed runtime for both fixtures. Re-fetching
+          // it makes a local updater test depend on GitHub's availability.
+          electronDist: path.join(path.dirname(require.resolve('electron/package.json')), 'dist'),
           artifactName: 'POE-Price-Patch-${version}-x64-Setup.${ext}',
           files: ['main.cjs', 'package.json'],
           extraResources: [{ from: configPath, to: 'qa-config.json' }],

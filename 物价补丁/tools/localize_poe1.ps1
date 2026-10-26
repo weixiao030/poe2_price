@@ -15,7 +15,7 @@ $RepoRoot = if ([string]::IsNullOrWhiteSpace($env:POE2_PATCH_ROOT)) {
 else {
     (Resolve-Path -LiteralPath $env:POE2_PATCH_ROOT).Path
 }
-$script:PatchVersion = "v1.0.19"
+$script:PatchVersion = "v1.0.20"
 $script:GameDirectoryMutex = $null
 $script:LocalizationAssetName = "PoeChinese3_win-x64.exe"
 $script:LatestReleaseApiUrl = "https://api.github.com/repos/aianlinb/LibGGPK3/releases/latest"
@@ -42,18 +42,6 @@ $script:LocalizationSourcePrefixes = @(
     [pscustomobject]@{
         Name = "备用加速源 ghproxy.net"
         Prefix = "https://ghproxy.net/"
-    },
-    [pscustomobject]@{
-        Name = "备用加速源 gh.llkk.cc"
-        Prefix = "https://gh.llkk.cc/"
-    },
-    [pscustomobject]@{
-        Name = "备用加速源 ghproxy.imciel.com"
-        Prefix = "https://ghproxy.imciel.com/"
-    },
-    [pscustomobject]@{
-        Name = "备用加速源 ghfile.geekertao.top"
-        Prefix = "https://ghfile.geekertao.top/"
     },
     [pscustomobject]@{
         Name = "GitHub 官方源"

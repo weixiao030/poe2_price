@@ -323,8 +323,10 @@ def fetch_tablet_display_rates(client, api_base, league, server):
             or payload.get('primary') not in {'divine', 'exalted'}
             or type(payload.get('stale')) is not bool):
         raise ValueError('碑牌汇率与服务器或最新赛季不一致')
-    values = {key: decimal(payload.get('values', {}).get(key)) for key in ('exalted', 'chaos', 'divine')}
-    if values['exalted'] <= 0 or values['divine'] <= 0:
+    # Whole tablets can be listed in other currencies (e.g. annul/chance).
+    # Keep this server/season's rates so those samples can also use E/C/D.
+    values = {key: decimal(value) for key, value in payload.get('values', {}).items()}
+    if values.get('exalted', 0) <= 0 or values.get('divine', 0) <= 0:
         raise ValueError('碑牌最新赛季缺少有效汇率')
     rates = {key: value / values['exalted'] for key, value in values.items() if value > 0}
     return rates, {key: payload.get(key) for key in
