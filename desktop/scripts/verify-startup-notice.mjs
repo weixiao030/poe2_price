@@ -126,6 +126,11 @@ try {
   const bounds = await page.getByRole('complementary', { name: '发现软件更新' }).boundingBox()
   assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 960)
   await page.getByRole('button', { name: '本次更新不再提醒' }).click()
+  // A click can return before the IPC handler finishes writing and renaming
+  // notice.json. The main process clears this field only after persistence.
+  await page.waitForFunction(async () =>
+    !(await window.desktop.getSoftwareUpdate()).startupNotificationVersion
+  )
   assert.equal(
     JSON.parse(await fs.readFile(path.join(profile, 'software-updates/notice.json'), 'utf8'))
       .ignoredVersion,
