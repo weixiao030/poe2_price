@@ -21,6 +21,8 @@ import { SoftwareUpdater } from '../src/main/software-update'
 import type { UpdateDriver } from '../src/main/software-update'
 import {
   GITHUB_MIRROR_PREFIXES,
+  DifferentialUnavailableError,
+  installerAttempts,
   installerSources,
   manifestSources
 } from '../src/main/software-update-sources'
@@ -346,6 +348,111 @@ test('stalled download advances to the next mirror', async (t) => {
     f.requests.filter((x) => x.endsWith(':installer')),
     ['primary:installer', 'backup:installer']
   )
+})
+
+test('differential failure tries another differential relay before a direct full download', async (t) => {
+  const f = await fixture(t)
+  const calls: string[] = []
+  const download = f.driver.download.bind(f.driver)
+  f.driver.download = async (release, source, signal, progress, mode) => {
+    calls.push(`${source.kind}:${mode}:${source.name}`)
+    if (mode === 'differential') throw new Error('broken multipart response')
+    return download(release, source, signal, progress, mode)
+  }
+  await f.updater.check()
+  assert.equal((await f.updater.download()).status, 'ready')
+  assert.equal(calls.length, 3)
+  assert.ok(calls.slice(0, 2).every((call) => call.startsWith('mirror:differential:')))
+  assert.equal(calls[2], 'direct:full:ZOS 备用源')
+})
+
+test('missing baseline skips remaining differential attempts and directly fetches the complete installer', async (t) => {
+  const f = await fixture(t)
+  const calls: string[] = []
+  const download = f.driver.download.bind(f.driver)
+  f.driver.download = async (release, source, signal, progress, mode) => {
+    calls.push(`${source.kind}:${mode}`)
+    if (mode === 'differential') throw new DifferentialUnavailableError('no old installer')
+    return download(release, source, signal, progress, mode)
+  }
+  await f.updater.check()
+  assert.equal((await f.updater.download()).status, 'ready')
+  assert.deepEqual(calls, ['mirror:differential', 'direct:full'])
+})
+
+test('production plan keeps efficient diff relays first and direct storage first for full fallback', () => {
+  const attempts = installerAttempts(
+    installerSources(
+      {
+        github: { repository: 'owner/repo' },
+        publicKey,
+        manifestUrls: ['https://example.zos.ctyun.cn/installer/latest.yml']
+      },
+      verified()
+    )
+  )
+  assert.equal(attempts.filter((a) => a.mode === 'differential').length, 2)
+  assert.ok(attempts.slice(0, 2).every((a) => a.source.useMultipleRangeRequest))
+  assert.equal(attempts[2].mode, 'full')
+  assert.equal(attempts[2].source.kind, 'direct')
+})
+
+test('a trickling full download switches source even though its progress never stalls', async (t) => {
+  const f = await fixture(t)
+  const calls: string[] = [],
+    logs: string[] = []
+  const download = f.driver.download.bind(f.driver)
+  f.driver.download = async (release, source, signal, progress, mode) => {
+    calls.push(`${source.kind}:${mode}`)
+    if (mode === 'differential') throw new DifferentialUnavailableError('no old installer')
+    if (source.kind !== 'direct') return download(release, source, signal, progress, mode)
+    return new Promise<string>((_resolve, reject) => {
+      let bytes = 0
+      const timer = setInterval(() => progress(++bytes, 5_000_000), 5)
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearInterval(timer)
+          reject(signal.reason)
+        },
+        { once: true }
+      )
+    })
+  }
+  const updater = new SoftwareUpdater({
+    ...f.options,
+    slowWindowMs: 80,
+    minimumBytesPerSecond: 10_000,
+    sourceIdleTimeoutMs: 1000,
+    log: (message) => logs.push(message)
+  })
+  await updater.check()
+  assert.equal((await updater.download()).status, 'ready')
+  assert.deepEqual(calls, ['mirror:differential', 'direct:full', 'mirror:full'])
+  assert.ok(logs.some((line) => line.includes('持续低速')))
+})
+
+test('repeated zero-byte progress cannot keep a dead source alive', async (t) => {
+  const f = await fixture(t)
+  const download = f.driver.download.bind(f.driver)
+  let attempts = 0
+  f.driver.download = async (release, source, signal, progress, mode) => {
+    if (++attempts > 1) return download(release, source, signal, progress, mode)
+    return new Promise<string>((_resolve, reject) => {
+      const timer = setInterval(() => progress(0, 5_000_000, 0), 5)
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearInterval(timer)
+          reject(signal.reason)
+        },
+        { once: true }
+      )
+    })
+  }
+  await f.updater.check()
+  assert.equal((await f.updater.download()).status, 'ready')
+  assert.equal(attempts, 2)
 })
 
 test('cancel stops all fallback attempts and permits retry; concurrent requests do not launch another download', async (t) => {

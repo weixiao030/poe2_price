@@ -17,6 +17,7 @@ export interface UpdateSource {
   url: string
 }
 export interface InstallerSource extends UpdateSource {
+  kind: 'mirror' | 'direct'
   oldBlockmapUrl(version: string): string
   useMultipleRangeRequest: boolean
 }
@@ -61,6 +62,7 @@ export function installerSources(
   const mirrors = githubSources(config, suffix, allowLocalhost)
   const installerMirrors = mirrors.map((source, index) => ({
     ...source,
+    kind: 'mirror' as const,
     oldBlockmapUrl: (version: string) =>
       githubSources(
         config,
@@ -80,11 +82,28 @@ export function installerSources(
       const base = new URL('.', updateUrl(manifest, allowLocalhost))
       return {
         name: 'ZOS 备用源',
+        kind: 'direct' as const,
         url: new URL(release.installer.name, base).href,
         oldBlockmapUrl: (version: string) =>
           new URL(installerName(version) + '.blockmap', base).href,
         useMultipleRangeRequest: false
       }
     })
+  ]
+}
+
+export type DownloadMode = 'differential' | 'full'
+export class DifferentialUnavailableError extends Error {}
+
+/** Try efficient differential relays before a full download from the direct store. */
+export function installerAttempts(sources: InstallerSource[]) {
+  const multipart = sources.filter((source) => source.useMultipleRangeRequest)
+  const differential = multipart.length ? multipart : sources.filter((s) => s.kind === 'mirror')
+  const full = [...sources].sort(
+    (a, b) => Number(b.kind === 'direct') - Number(a.kind === 'direct')
+  )
+  return [
+    ...differential.map((source) => ({ source, mode: 'differential' as DownloadMode })),
+    ...full.map((source) => ({ source, mode: 'full' as DownloadMode }))
   ]
 }

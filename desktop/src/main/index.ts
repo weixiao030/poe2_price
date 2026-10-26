@@ -577,6 +577,7 @@ else {
         config: updateConfig,
         stateRoot: path.join(app.getPath('userData'), 'software-updates'),
         driver: new NsisUpdateDriver(log),
+        log: (message) => log.info(message),
         packaged: app.isPackaged,
         canInstall: () => !active && !pendingQueries.size && !workers.size && !maintenanceRunning,
         changed: (state) => send('software:state', state)

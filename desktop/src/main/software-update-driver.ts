@@ -6,8 +6,34 @@ import type { ProviderRuntimeOptions } from 'electron-updater/out/providers/Prov
 import type { SoftwareRelease } from '../shared/software-update'
 import type { InstallerSource } from './software-update-sources'
 import type { UpdateDriver } from './software-update'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import type { DownloadUpdateOptions } from 'electron-updater/out/AppUpdater'
+import type { ResolvedUpdateFileInfo } from 'electron-updater/out/types'
+import { DifferentialUnavailableError } from './software-update-sources'
+import type { DownloadMode } from './software-update-sources'
+import type { Provider as UpdateProvider } from 'electron-updater/out/providers/Provider'
 
 const { NsisUpdater, Provider } = electronUpdater
+
+class SwitchingNsisUpdater extends NsisUpdater {
+  protected override async differentialDownloadInstaller(
+    fileInfo: ResolvedUpdateFileInfo,
+    options: DownloadUpdateOptions,
+    destination: string,
+    provider: UpdateProvider<UpdateInfo>,
+    oldName: string
+  ) {
+    const base = this.downloadedUpdateHelper?.cacheDir
+    if (!base || !(await fs.stat(path.join(base, oldName)).catch(() => null))?.isFile())
+      throw new DifferentialUnavailableError('没有可复用的旧安装包，直接下载完整更新')
+    if (
+      await super.differentialDownloadInstaller(fileInfo, options, destination, provider, oldName)
+    )
+      throw new Error('当前源差分下载失败，切换下载源')
+    return false
+  }
+}
 interface VerifiedOptions extends CustomPublishOptions {
   release: SoftwareRelease
   source: InstallerSource
@@ -19,7 +45,8 @@ export class VerifiedReleaseProvider extends Provider<UpdateInfo> {
   constructor(options: CustomPublishOptions, _updater: unknown, runtime: ProviderRuntimeOptions) {
     super({
       ...runtime,
-      isUseMultipleRangeRequest: (options as VerifiedOptions).source?.useMultipleRangeRequest ?? false
+      isUseMultipleRangeRequest:
+        (options as VerifiedOptions).source?.useMultipleRangeRequest ?? false
     })
     this.options = options as VerifiedOptions
     if (!this.options.release || !this.options.source) throw new Error('缺少已验证的更新来源')
@@ -45,7 +72,7 @@ export class NsisUpdateDriver implements UpdateDriver {
     logger: NonNullable<InstanceType<typeof NsisUpdater>['logger']>,
     adapter?: AppAdapter
   ) {
-    this.updater = new NsisUpdater(undefined, adapter)
+    this.updater = new SwitchingNsisUpdater(undefined, adapter)
     this.updater.logger = logger
     this.updater.autoDownload = false
     this.updater.autoInstallOnAppQuit = false
@@ -61,7 +88,8 @@ export class NsisUpdateDriver implements UpdateDriver {
     release: SoftwareRelease,
     source: InstallerSource,
     signal: AbortSignal,
-    progress: (transferred: number, total: number) => void
+    progress: (transferred: number, total: number, delta?: number) => void,
+    mode: DownloadMode = 'full'
   ): Promise<string> {
     signal.throwIfAborted()
     const options: VerifiedOptions = {
@@ -71,12 +99,14 @@ export class NsisUpdateDriver implements UpdateDriver {
       source
     }
     this.updater.setFeedURL(options)
+    this.updater.disableDifferentialDownload = mode === 'full'
     const result = await this.updater.checkForUpdates()
     if (!result || result.updateInfo.version !== release.version)
       throw new Error('更新器未确认目标版本')
     const token = new CancellationToken()
     const cancel = () => token.cancel()
-    const onProgress = (event: ProgressInfo) => progress(event.transferred, event.total)
+    const onProgress = (event: ProgressInfo) =>
+      progress(event.transferred, event.total, event.delta)
     signal.addEventListener('abort', cancel, { once: true })
     this.updater.on('download-progress', onProgress)
     try {

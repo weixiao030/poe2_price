@@ -35,6 +35,12 @@ async function main() {
       ])
     ) as Pick<Console, 'info' | 'warn' | 'error' | 'debug'>
     const driver = new NsisUpdateDriver(logger)
+    // The local fixture server explicitly implements multipart ranges.
+    if (config.multipart) {
+      const download = driver.download.bind(driver)
+      driver.download = (release, source, signal, progress, mode) =>
+        download(release, { ...source, useMultipleRangeRequest: true }, signal, progress, mode)
+    }
     const updater = new SoftwareUpdater({
       version: app.getVersion(),
       notes: [],

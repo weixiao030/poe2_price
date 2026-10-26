@@ -92,10 +92,20 @@ async function launch() {
   await until(() => application!.evaluate(() => !!(globalThis as any).qaReady), 'fixture startup')
 }
 async function command(method: 'check' | 'download' | 'install') {
-  return application!.evaluate(
-    async (_electron, action) => (globalThis as any).qaUpdater[action](),
-    method
-  )
+  let timer: ReturnType<typeof setTimeout>
+  try {
+    return await Promise.race([
+      application!.evaluate(
+        async (_electron, action) => (globalThis as any).qaUpdater[action](),
+        method
+      ),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Updater command timed out: ' + method)), 30000)
+      })
+    ])
+  } finally {
+    clearTimeout(timer!)
+  }
 }
 async function clearPending() {
   // The cache identity belongs to this run only; never touch production updater caches.
@@ -133,6 +143,40 @@ const server = https.createServer(
     const sourcePath = path.join(oldBlockmap ? oldOutput : published, file)
     try {
       const stat = await fs.stat(sourcePath)
+      if (req.headers.range?.includes(',')) {
+        const pairs = req.headers.range
+          .replace(/^bytes=/, '')
+          .split(',')
+          .map((range) => {
+            const match = range.trim().match(/^(\d+)-(\d+)$/)
+            assert.ok(match)
+            const start = Number(match[1]),
+              end = Number(match[2])
+            assert.ok(start <= end && end < stat.size)
+            return { start, end }
+          })
+        res.setHeader('Content-Type', 'multipart/byteranges; boundary=qa-boundary')
+        if (mode === 'broken-multipart' || mode === 'hang-multipart') {
+          res.writeHead(206)
+          res.write('--qa-boundary\r\nContent-Range: bytes 0-10/20\r\n\r\nx')
+          if (mode === 'broken-multipart') res.end()
+          return
+        }
+        const bytes = await fs.readFile(sourcePath)
+        const body = Buffer.concat([
+          ...pairs.flatMap(({ start, end }) => [
+            Buffer.from(
+              `--qa-boundary\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes ${start}-${end}/${stat.size}\r\n\r\n`
+            ),
+            bytes.subarray(start, end + 1),
+            Buffer.from('\r\n')
+          ]),
+          Buffer.from('--qa-boundary--\r\n')
+        ])
+        res.writeHead(206, { 'Content-Length': body.length })
+        res.end(body)
+        return
+      }
       const match = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/)
       const start = match ? Number(match[1]) : 0,
         end = match && match[2] ? Number(match[2]) : stat.size - 1
@@ -172,6 +216,7 @@ try {
     configPath,
     JSON.stringify({
       root: sandbox,
+      multipart: true,
       fingerprint: new crypto.X509Certificate(cert).fingerprint256,
       update: {
         publicKey,
@@ -339,6 +384,65 @@ try {
     await hashFile(path.join(published, installerName(newVersion)))
   )
   checks.push('签名异常切换备用元数据源；真实 electron-updater 差分下载结果与完整安装包一致')
+
+  async function resetBaseline() {
+    await close()
+    await clearPending()
+    await fs.copyFile(
+      path.join(oldOutput, installerName(oldVersion)),
+      path.join(cache, 'installer.exe')
+    )
+    await fs.copyFile(
+      path.join(oldOutput, installerName(oldVersion) + '.blockmap'),
+      path.join(cache, 'current.blockmap')
+    )
+  }
+  await resetBaseline()
+  modes.primary = 'hang-multipart'
+  let before = requests.length
+  await launch()
+  await command('check')
+  const downloading = command('download')
+  await until(
+    async () => requests.slice(before).some((r) => r.range?.includes(',')),
+    'multipart request before cancellation'
+  )
+  await application!.evaluate(() => (globalThis as any).qaUpdater.cancel())
+  assert.equal((await downloading).status, 'available')
+  assert.ok(!requests.slice(before).some((r) => r.source !== 'primary' && r.file.endsWith('.exe')))
+  checks.push('真实 multipart 下载取消立即结束，不继续备用源，不触发安装')
+
+  await resetBaseline()
+  modes.primary = 'broken-multipart'
+  before = requests.length
+  await launch()
+  await command('check')
+  assert.equal((await command('download')).status, 'ready')
+  assert.ok(requests.slice(before).some((r) => r.source === 'primary' && r.range?.includes(',')))
+  assert.ok(requests.slice(before).some((r) => r.source === 'backup' && r.range?.includes(',')))
+  assert.ok(!requests.slice(before).some((r) => r.file.endsWith('.exe') && !r.range))
+  checks.push('主镜像 multipart 响应截断后切换另一镜像差分，不在原慢源下载整包')
+
+  await resetBaseline()
+  modes.primary = modes.backup = 'broken-multipart'
+  before = requests.length
+  await launch()
+  await command('check')
+  assert.equal((await command('download')).status, 'ready')
+  assert.ok(
+    requests.slice(before).some((r) => r.source === 'zos' && r.file.endsWith('.exe') && !r.range)
+  )
+  assert.ok(
+    !requests.slice(before).some((r) => r.source !== 'zos' && r.file.endsWith('.exe') && !r.range)
+  )
+  const finalDownload = await application!.evaluate(
+    () => (globalThis as any).qaDriver.updater.installerPath
+  )
+  assert.equal(
+    await hashFile(finalDownload),
+    await hashFile(path.join(published, installerName(newVersion)))
+  )
+  checks.push('所有差分镜像失败后直接存储下载完整安装包，哈希与发布文件一致')
 
   const exit = application!.waitForEvent('close')
   await command('install').catch(() => {})

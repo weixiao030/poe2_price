@@ -8,15 +8,21 @@ import {
   verifyInstaller,
   verifyRelease
 } from './software-update-protocol'
-import { installerSources, manifestSources } from './software-update-sources'
-import type { InstallerSource } from './software-update-sources'
+import {
+  DifferentialUnavailableError,
+  installerAttempts,
+  installerSources,
+  manifestSources
+} from './software-update-sources'
+import type { DownloadMode, InstallerSource } from './software-update-sources'
 
 export interface UpdateDriver {
   download(
     release: SoftwareRelease,
     source: InstallerSource,
     signal: AbortSignal,
-    progress: (transferred: number, total: number) => void
+    progress: (transferred: number, total: number, delta?: number) => void,
+    mode?: DownloadMode
   ): Promise<string>
   install(onError: (error: Error) => void): void
 }
@@ -33,6 +39,9 @@ export interface UpdateOptions {
   manifestTimeoutMs?: number
   sourceIdleTimeoutMs?: number
   sourceTimeoutMs?: number
+  slowWindowMs?: number
+  minimumBytesPerSecond?: number
+  log?: (message: string) => void
 }
 
 export class SoftwareUpdater {
@@ -223,43 +232,73 @@ export class SoftwareUpdater {
       message: '正在下载安装包…'
     })
     try {
-      let lastError: unknown = new Error('所有更新下载源均不可用')
-      for (const source of installerSources(
-        this.options.config,
-        release,
-        this.options.allowLocalhost
+      let lastError = new Error('所有更新下载源均不可用')
+      let noDifferentialBase = false
+      for (const { source, mode } of installerAttempts(
+        installerSources(this.options.config, release, this.options.allowLocalhost)
       )) {
+        if (mode === 'differential' && noDifferentialBase) continue
         controller.signal.throwIfAborted()
+        const sourceMessage = `正在通过${source.name}${mode === 'differential' ? '下载增量更新' : '下载完整更新'}…`
+        this.options.log?.(`软件更新 ${release.version}: ${source.name}, ${mode}`)
         this.set({
           downloadedBytes: 0,
           totalBytes: release.installer.size,
-          message: `正在通过${source.name}下载更新…`
+          message: sourceMessage
         })
         const attempt = new AbortController()
         const signal = AbortSignal.any([controller.signal, attempt.signal])
         const deadline = setTimeout(
           () => attempt.abort(new Error('当前下载源超时')),
-          this.options.sourceTimeoutMs ?? 30 * 60_000
+          this.options.sourceTimeoutMs ?? (mode === 'differential' ? 45_000 : 15 * 60_000)
         )
         let idle: ReturnType<typeof setTimeout>
         const touch = () => {
           clearTimeout(idle)
           idle = setTimeout(
             () => attempt.abort(new Error('当前下载源长时间无响应')),
-            this.options.sourceIdleTimeoutMs ?? 60_000
+            this.options.sourceIdleTimeoutMs ?? 20_000
           )
         }
         touch()
+        const windowMs = this.options.slowWindowMs ?? 15_000
+        const minimumRate = this.options.minimumBytesPerSecond ?? 64 * 1024
+        let windowStart = performance.now(),
+          windowBytes = 0,
+          previousBytes = 0
+        let transferring = false
+        const speedTimer = setInterval(
+          () => {
+            if (!transferring) return
+            const elapsed = performance.now() - windowStart
+            if (elapsed < windowMs) return
+            if ((windowBytes * 1000) / elapsed < minimumRate)
+              attempt.abort(new Error('当前下载源持续低速，切换备用源'))
+            windowStart = performance.now()
+            windowBytes = 0
+          },
+          Math.min(1000, windowMs)
+        )
         try {
           const file = await this.options.driver.download(
             release,
             source,
             signal,
-            (transferred, total) => {
+            (transferred, total, delta) => {
               if (signal.aborted) return
-              touch()
+              const received = delta ?? Math.max(0, transferred - previousBytes)
+              previousBytes = transferred
+              if (received > 0) {
+                touch()
+                if (!transferring) {
+                  transferring = true
+                  windowStart = performance.now()
+                }
+                windowBytes += received
+              }
               this.set({ downloadedBytes: transferred, totalBytes: total })
-            }
+            },
+            mode
           )
           signal.throwIfAborted()
           try {
@@ -279,12 +318,16 @@ export class SoftwareUpdater {
           return this.snapshot
         } catch (error) {
           controller.signal.throwIfAborted()
+          if (error instanceof DifferentialUnavailableError) noDifferentialBase = true
           lastError = new Error(
             `${source.name}：${attempt.signal.reason?.message || (error instanceof Error ? error.message : String(error))}`
           )
+          this.options.log?.(`软件更新切源: ${mode}, ${lastError.message}`)
+          this.set({ message: `${lastError.message}，正在尝试备用源…` })
         } finally {
           clearTimeout(deadline)
           clearTimeout(idle!)
+          clearInterval(speedTimer)
           attempt.abort()
         }
       }
