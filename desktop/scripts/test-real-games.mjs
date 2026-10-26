@@ -1,6 +1,7 @@
 import { _electron as electron } from 'playwright'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import assert from 'node:assert/strict'
@@ -11,7 +12,14 @@ const args = process.argv.slice(2)
 const reportIndex = args.indexOf('--report-dir')
 const evidence = reportIndex < 0 ? path.resolve(root, '../verification/desktop-v' + version)
   : path.resolve(args.splice(reportIndex, 2)[1])
-const profile = path.join(evidence, 'real-profile')
+// Keep the engine's cache paths within the Windows PowerShell path limit even
+// when the repository and evidence directory have long names.
+const profileIndex = args.indexOf('--profile-dir')
+const profile = profileIndex < 0
+  ? await fs.mkdtemp(path.join(os.tmpdir(), 'poe-real-profile-'))
+  : path.resolve(args.splice(profileIndex, 2)[1])
+await fs.mkdir(evidence, { recursive: true })
+await fs.writeFile(path.join(evidence, 'profile-path.txt'), profile + '\n')
 const appIndex = args.indexOf('--app-dir')
 const appDirectory =
   appIndex < 0 ? path.join(root, 'dist/win-unpacked') : path.resolve(args.splice(appIndex, 2)[1])

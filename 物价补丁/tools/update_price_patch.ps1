@@ -34,7 +34,7 @@ else {
 $PublicToolsRoot = Join-Path $RepoRoot "tools"
 Set-Location -LiteralPath $RepoRoot
 $script:PatchScopeDialogSelection = $null
-$script:PatchVersion = "v1.0.20"
+$script:PatchVersion = "v1.0.21"
 $script:PatchWindowTitle = "POE2 Price Patch $script:PatchVersion"
 $Poe2DirWasExplicit = -not [string]::IsNullOrWhiteSpace($Poe2Dir)
 $PreferredPoe2Dir = Split-Path -Parent $RepoRoot
@@ -3346,8 +3346,12 @@ $PriceCacheKey = [string]::Concat(
     "_league-",
     $LeagueCacheToken
 )
-$CachedPatchZip = Join-Path $PriceCacheDir ($PriceCacheKey + ".zip")
-$CachedSummaryJson = Join-Path $PriceCacheDir ($PriceCacheKey + ".summary.json")
+# Hash the complete identity to leave room for atomic-copy/replace suffixes on
+# Windows PowerShell 5.1. Keep the old identity for diagnostics and legacy reads.
+$PriceCacheFileKey = "v2-" + (Get-Poe2TextSha256Hex -Text $PriceCacheKey)
+$CachedPatchZip = Join-Path $PriceCacheDir ($PriceCacheFileKey + ".zip")
+$CachedSummaryJson = Join-Path $PriceCacheDir ($PriceCacheFileKey + ".summary.json")
+$LegacyCachedPatchZip = Join-Path $PriceCacheDir ($PriceCacheKey + ".zip")
 Compact-LatestBaseItems $LatestDir @($EnBaseItems, $TcBaseItems, $EnWords, $TcWords, $TcEndgameMaps, $UniqueGoldPrices, $TabletTemplateIt, $TabletTemplateCsd, $TabletMapCsd, $TabletGlobalCsd, $TabletMods, $TabletStats, $TabletTags)
 $LogicalRestoreReady = $false
 $InstallSuppressedReason = ""
@@ -3581,16 +3585,24 @@ try {
 catch {
     $BuildFailure = $_.Exception.Message
     $CompatibleFallbackPatch = ""
+    $FallbackCacheZip = ""
     try {
-        if (
-            $CanUseSeasonCache -and $TabletPrices -and $BuildPatchScope -eq "all" -and
-            (Test-Path -LiteralPath $CachedPatchZip -PathType Leaf) -and
-            (Test-PricePatchZipCompatible -Path $CachedPatchZip -ReferenceDat $TcBaseItems)
-        ) {
-            $SafeFallbackZip = Join-Path $BuildStageDir "safe-core-cache.zip"
-            $CompatibleFallbackPatch = New-CorePricePatchFromCache `
-                -CacheZip $CachedPatchZip `
-                -OutputZip $SafeFallbackZip
+        if ($CanUseSeasonCache -and $TabletPrices -and $BuildPatchScope -eq "all") {
+            # Older versions used the full identity as the filename. Read it only
+            # for this exact identity; retain the same base-DAT compatibility check.
+            foreach ($CacheCandidate in @($CachedPatchZip, $LegacyCachedPatchZip)) {
+                if (
+                    (Test-Path -LiteralPath $CacheCandidate -PathType Leaf -ErrorAction SilentlyContinue) -and
+                    (Test-PricePatchZipCompatible -Path $CacheCandidate -ReferenceDat $TcBaseItems)
+                ) {
+                    $SafeFallbackZip = Join-Path $BuildStageDir "safe-core-cache.zip"
+                    $CompatibleFallbackPatch = New-CorePricePatchFromCache `
+                        -CacheZip $CacheCandidate `
+                        -OutputZip $SafeFallbackZip
+                    $FallbackCacheZip = $CacheCandidate
+                    break
+                }
+            }
         }
     }
     catch {
@@ -3602,7 +3614,7 @@ catch {
         # The safe core cache removes tablet redirects and does not install affix resources.
         $TabletLayerStatus = if ($PatchTabletAffixesEnabled) { "unavailable" } else { "disabled" }
         $WholeTabletLayerStatus = if ($WholeTabletEnabled) { "unavailable" } else { "disabled" }
-        $CacheTime = (Get-Item -LiteralPath $CachedPatchZip).LastWriteTime
+        $CacheTime = (Get-Item -LiteralPath $FallbackCacheZip).LastWriteTime
         Write-Warning "实时构建失败，已自动使用当前范围和模式的兼容核心缓存（$CacheTime）；Words 与 EndgameMaps 保持游戏当前内容。原因：$BuildFailure"
         try {
             Copy-Poe2FileAtomically -Source $CompatibleFallbackPatch -Destination $PatchZip | Out-Null
