@@ -202,11 +202,11 @@ JS_STRING_RE = re.compile(
 )
 
 
-def poe_ninja_economy_page_url(league_name: str) -> str:
+def poe_ninja_economy_page_url(league_name: str, game_version: str = "poe2") -> str:
     slug = re.sub(r"[^a-z0-9]+", "", str(league_name).casefold())
     if not slug:
         return builder.DEFAULT_POE_NINJA_CURRENCY_URL
-    return f"https://poe.ninja/poe2/economy/{slug}/currency"
+    return f"https://poe.ninja/{game_version}/economy/{slug}/currency"
 
 
 def _html_attributes(tag: str) -> dict[str, str]:
@@ -264,12 +264,18 @@ def discover_poe_ninja_site_categories(
     league_name: str,
     *,
     max_workers: int = 8,
+    game_version: str = "poe2",
 ) -> dict[str, Any]:
     """Discover the site's current categories without pinning Astro hashes."""
 
-    requested_page_url = poe_ninja_economy_page_url(league_name)
+    if game_version not in {"poe1", "poe2"}:
+        raise ValueError("unsupported game version")
+    requested_page_url = poe_ninja_economy_page_url(league_name, game_version)
+    default_page_url = (builder.DEFAULT_POE_NINJA_CURRENCY_URL if game_version == "poe2"
+                        else poe_ninja_economy_page_url("Standard", "poe1"))
+    component_export = "Poe1CurrencyOverviewPage" if game_version == "poe1" else "Poe2CurrencyOverviewPage"
     page_urls = list(
-        dict.fromkeys((requested_page_url, builder.DEFAULT_POE_NINJA_CURRENCY_URL))
+        dict.fromkeys((requested_page_url, default_page_url))
     )
     page_url = ""
     component_url = ""
@@ -284,7 +290,7 @@ def discover_poe_ninja_site_categories(
                 r"<astro-island\b[^>]*>", response.text, flags=re.I | re.S
             ):
                 attributes = _html_attributes(match.group(0))
-                if attributes.get("component-export") != "Poe2CurrencyOverviewPage":
+                if attributes.get("component-export") != component_export:
                     continue
                 page_url = candidate_url
                 component_url = urljoin(
@@ -293,7 +299,7 @@ def discover_poe_ninja_site_categories(
                 break
             if component_url:
                 break
-            raise ValueError("Poe2CurrencyOverviewPage Astro component was not found")
+            raise ValueError(f"{component_export} Astro component was not found")
         except Exception as exc:
             page_errors.append(f"{candidate_url}: {type(exc).__name__}: {exc}")
     if not component_url:
@@ -532,16 +538,18 @@ def audit_poe2scout(
     max_workers: int,
 ) -> dict[str, Any]:
     api_base = builder.DEFAULT_SCOUT_API.rstrip("/")
-    raw = builder.fetch_scout_data(client, api_base, league.scout)
+    raw = builder.fetch_scout_data(client, api_base, league.scout or league.poe_ninja)
+    scout_path = str(raw.get("api_league") or league.scout)
     observations = builder.collect_price_observations(raw["snapshot_pairs"])
     prices = builder.choose_best_prices(observations, raw["reference_currencies"])
+    observed_currency_categories = {item.category for item in prices.values() if item.category}
 
     categories: list[dict[str, Any]] = []
     unique_items: list[dict[str, Any]] = []
     succeeded_unique: list[str] = []
     failed_unique: dict[str, str] = {}
     try:
-        discovered = builder.fetch_unique_categories(client, api_base, league.scout)
+        discovered = builder.fetch_unique_categories(client, api_base, scout_path)
         categories = [
             category
             for category in discovered
@@ -553,7 +561,7 @@ def audit_poe2scout(
                     builder.fetch_unique_category_items,
                     client,
                     api_base,
-                    league.scout,
+                    scout_path,
                     str(category["ApiId"]),
                 ): str(category["ApiId"])
                 for category in categories
@@ -583,7 +591,7 @@ def audit_poe2scout(
     currency_categories: list[str] = []
     category_health: dict[str, Any] = {}
     try:
-        listed = builder.fetch_item_categories(client, api_base, league.scout)
+        listed = builder.fetch_item_categories(client, api_base, scout_path)
         currency_categories = builder.category_api_ids(listed.get("currency") or [])
         category_health = builder.build_scout_category_health(
             listed.get("unique") or categories,
@@ -599,7 +607,10 @@ def audit_poe2scout(
     discovered_categories = core_categories + currency_labels + (
         unique_categories or (["unique-category-discovery"] if failed_unique else [])
     )
-    succeeded_categories = core_categories + succeeded_unique
+    succeeded_categories = core_categories + succeeded_unique + [
+        f"currency:{category}" for category in currency_categories
+        if category in observed_currency_categories
+    ]
     failed_categories = sorted(failed_unique)
     audit_payload = {
         "core": raw,
@@ -928,17 +939,49 @@ def audit_poe1_ninja(
         poe1_builder.DEFAULT_POE_NINJA_EXCHANGE_API,
         poe1_builder.DEFAULT_POE_NINJA_ITEM_API,
         ninja_league,
-        include_uniques=False,
+        include_uniques=True,
     )
-    discovered = [str(item) for item in poe1_builder.POE_NINJA_EXCHANGE_TYPES]
+    discovered = sorted(
+        f"{item['kind']}:{item['type']}" for item in raw.get("category_stats", [])
+    )
     failed = [str(item) for item in raw.get("failed_categories") or []]
-    succeeded = [item for item in discovered if f"exchange:{item}" not in failed]
+    succeeded = [item for item in discovered if item not in failed]
     field_sets = {
         "exchange": _array_item_fields(
             ((raw.get("exchange_payloads") or {}).get("Currency") or {}).get("lines")
         ),
         "root": _object_fields((raw.get("exchange_payloads") or {}).get("Currency")),
+        "unique": sorted({field for value in (raw.get("unique_payloads") or {}).values()
+                          for field in _array_item_fields(value.get("lines"))}),
     }
+    configured_views = {
+        **dict.fromkeys(poe1_builder.POE_NINJA_EXCHANGE_TYPES, "exchange"),
+        **dict.fromkeys(poe1_builder.POE_NINJA_BASE_ITEM_TYPES, "stash"),
+        **dict.fromkeys(poe1_builder.POE_NINJA_UNIQUE_TYPES, "stash"),
+    }
+    # These site views price variants or duplicate a parent unique view. A
+    # single BaseItemTypes/Words name cannot encode their distinguishing stats.
+    excluded = {
+        "Wombgift", "Corpse", "ForbiddenJewel", "ShrineBelt", "SkillGem",
+        "ImbuedGem", "ClusterJewel", "Map", "BlightedMap", "BlightRavagedMap",
+        "ValdoMap", "IncursionTemple", "ScryingOrb", "BaseType", "Flask", "Beast",
+    }
+    partial_reasons = []
+    try:
+        site = discover_poe_ninja_site_categories(
+            client, ninja_league, max_workers=_max_workers, game_version="poe1"
+        )
+        site_contract = compare_poe_ninja_site_categories(
+            site, {**dict.fromkeys(excluded, "stash"), **configured_views}
+        )
+        site_contract["excluded_variant_views"] = sorted(excluded)
+        if site_contract["has_drift"]:
+            partial_reasons.append("site_category_drift")
+        if site_contract.get("used_default_page_fallback"):
+            partial_reasons.append("site_page_default_fallback")
+    except Exception as exc:
+        site_contract = {"status": "failed", "discovery_error": str(exc)}
+        partial_reasons.append("site_category_discovery_failed")
     health = evaluate_source_health(
         "poe.ninja-poe1",
         raw,
@@ -965,6 +1008,7 @@ def audit_poe1_ninja(
             "failed": failed,
         },
         "field_sets": field_sets,
+        "site_contract": site_contract,
     }
     contract_drift = compare_contract(
         _baseline_contract(baseline, "poe.ninja-poe1"),
@@ -972,7 +1016,7 @@ def audit_poe1_ninja(
         field_sets,
         baseline_expected=baseline is not None,
     )
-    return _entry(health, metrics, contract_drift=contract_drift)
+    return _entry(health, metrics, contract_drift=contract_drift, partial_reasons=tuple(partial_reasons))
 
 
 def audit_poe1_poecurrency(
@@ -1038,10 +1082,13 @@ def audit_poe1_scout(
     baseline: Mapping[str, Any] | None,
     _max_workers: int,
 ) -> dict[str, Any]:
+    current_league, _source, _warnings = poe1_builder.discover_poe_ninja_league(
+        client, poe1_builder.DEFAULT_POE_NINJA_INDEX_URL, None
+    )
     raw, prices, divine_chaos = poe1_builder.fetch_poe2scout_poe1_prices(
         client,
         poe1_builder.DEFAULT_POE2SCOUT_API,
-        "",
+        current_league,
         poe1_builder.DEFAULT_POE2SCOUT_REALM,
     )
     categories = sorted(
@@ -1124,6 +1171,7 @@ def audit_poe1_poedb(
         failed_categories=failed,
         key_fields=("page", "us_rows", "cn_rows"),
         baseline_schema=_baseline_schema(baseline, "poedb-poe1"),
+        accepted_content_types=("text/html",),
     )
     metrics = {
         "price_items": len(prices),

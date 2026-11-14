@@ -5,8 +5,7 @@ export const GITHUB_MIRROR_PREFIXES = [
   'https://ghfast.top/',
   'https://gh-proxy.com/',
   'https://ghproxy.it/',
-  'https://gh-proxy.org/',
-  'https://ghproxy.net/'
+  'https://gh-proxy.org/'
 ]
 // These relays return a valid multipart/byteranges response. The remaining
 // relays and ZOS are intentionally kept on the compatibility path because

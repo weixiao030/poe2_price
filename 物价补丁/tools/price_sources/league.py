@@ -100,6 +100,25 @@ def discover_realm_league_options(client: Any, api_base: str, realm: str) -> tup
     return discover_league_options(client, api_base, realm=realm)
 
 
+def resolve_scout_league_value(client: Any, api_base: str, identity: str) -> str:
+    """Resolve a saved Scout short name to the API's actual league Value.
+
+    Current Scout routes query GetLeagueByValue, while the directory and saved
+    settings still expose ShortName. Never construct or guess a season name.
+    """
+    selected = str(identity or "").strip().casefold()
+    if not selected:
+        raise ValueError("所选赛季没有可用的 Scout 标识，已跳过该来源")
+    matches = {
+        option.poe_ninja
+        for option in discover_league_options(client, api_base)
+        if selected in {option.scout.casefold(), option.poe_ninja.casefold()}
+    }
+    if len(matches) != 1:
+        raise ValueError(f"Scout 尚未列出所选赛季或赛季标识不唯一：{identity}")
+    return matches.pop()
+
+
 def resolve_current_leagues(
     client: Any,
     api_base: str,

@@ -266,7 +266,7 @@ def test_noinstall_and_physical_restore_follow_high_availability_order():
     assert 'preserved_layers = @("Words", "EndgameMaps")' in update
 
     common = COMMON.read_text(encoding="utf-8-sig")
-    assert '$PythonVersion = "3.13.14"' in common
+    assert '$PythonVersion = "3.13.17"' in common
     assert "-ExpectedSha256 $PythonZipSha256" in common
     assert '"python313.zip"' in common
 

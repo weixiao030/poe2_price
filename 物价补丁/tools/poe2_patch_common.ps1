@@ -2468,10 +2468,10 @@ function Install-Poe2DotNetRuntimeArchive {
 function Install-LocalDotNet8Runtime {
     param([string]$RepoRoot)
 
-    $RuntimeVersions = @("8.0.28", "8.0.27")
+    $RuntimeVersions = @("8.0.34", "8.0.33")
     $RuntimeSha512 = @{
-        "8.0.28" = "cc7c5006285e95340a7bc4321acb76b143ee8ca6fc7e7925758624381d61ffeaf65d5a7dad389404677666f8f936df17a136716a773912e4c42b0eae637c5797"
-        "8.0.27" = "e31528b5452afdec4cdf78fb073e8693ed0c24a14f5b69065e7018f89eefc38e52fcfd4eed8255b5d58867aa850f66790fead5b66f0fab13a72bebf098e98937"
+        "8.0.34" = "d86d165a29dcdb71df23dd150a3fc5db6386fa55da5cb18c0c22889a0dab5071a3a2d852572e6cebfecf12b489870ac76243ae35665a746ed5b1011e7c68979d"
+        "8.0.33" = "ceb56fa91c15aa7c465db8cd42ee4e978589c58885cd1f164f8fcde7231ea15c3cfc0bcddb2e6b452238b3687a3e2bcb3683349b8b92a7172e03154ed280be67"
     }
     $DownloadDir = Join-Path $RepoRoot "tools\downloads"
     $RuntimeDir = Join-Path $RepoRoot "tools\dotnet-runtime"
@@ -2484,7 +2484,7 @@ function Install-LocalDotNet8Runtime {
         $Sources = @(
             @{
                 Name = "Microsoft CDN（国内网络可直连时使用）"
-                Url = "https://dotnetcli.azureedge.net/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
+                Url = "https://dotnetcli.blob.core.windows.net/dotnet/Runtime/$RuntimeVersion/$RuntimeFile"
                 TimeoutSeconds = 180
             },
             @{
@@ -2749,9 +2749,9 @@ import zipfile
 function Install-LocalPythonRuntime {
     param([string]$RepoRoot)
 
-    $PythonVersion = "3.13.14"
+    $PythonVersion = "3.13.17"
     $PythonZipName = "python-$PythonVersion-embed-amd64.zip"
-    $PythonZipSha256 = "90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907"
+    $PythonZipSha256 = "9e35319bffedab8b36ad44d8f377cb4f1733bcec257a0b6d04d94f01486ddb38"
     $DownloadDir = Join-Path $RepoRoot "tools\downloads"
     $PythonDir = Join-Path $RepoRoot "tools\python"
     $ZipPath = Join-Path $DownloadDir $PythonZipName

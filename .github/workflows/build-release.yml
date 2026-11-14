@@ -28,7 +28,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: build/downloads
-          key: runtimes-python31314-dotnet8028
+          key: runtimes-python31317-dotnet8034
       - name: Install dependencies
         run: |
           npm ci --prefix desktop

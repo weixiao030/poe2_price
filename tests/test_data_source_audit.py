@@ -3,6 +3,8 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -62,6 +64,34 @@ class DataSourceAuditTests(unittest.TestCase):
             source=source,
             discovery_url="https://example.invalid/leagues",
         )
+
+    def test_poe1_scout_audit_does_not_accept_an_older_current_flag(self):
+        with patch.object(self.audit.poe1_builder, 'discover_poe_ninja_league',
+                          return_value=('Covens', 'index', [])):
+            with patch.object(self.audit.poe1_builder, 'fetch_poe2scout_poe1_prices',
+                              side_effect=ValueError('selected league not listed')) as fetch:
+                with self.assertRaisesRegex(ValueError, 'selected league not listed'):
+                    self.audit.audit_poe1_scout(object(), self.league(), None, 1)
+        self.assertEqual(fetch.call_args.args[2], 'Covens')
+
+    def test_scout_currency_coverage_requires_actual_snapshot_prices(self):
+        builder = self.audit.builder
+        raw = {'snapshot_pairs': [], 'reference_currencies': [], 'exchange_snapshot': {},
+               'api_league': 'Future%20League'}
+        prices = {'exalted': SimpleNamespace(category='currency', en_name='Exalted Orb')}
+        listed = {'currency': [{'ApiId': 'currency'}, {'ApiId': 'new-empty-category'}], 'unique': []}
+        with patch.object(builder, 'fetch_scout_data', return_value=raw), \
+             patch.object(builder, 'collect_price_observations', return_value={}), \
+             patch.object(builder, 'choose_best_prices', return_value=prices), \
+             patch.object(builder, 'fetch_unique_categories', return_value=[]), \
+             patch.object(builder, 'fetch_item_categories', return_value=listed):
+            entry = self.audit.audit_poe2scout(
+                self.audit.RecordingClient(FakeDelegate({})), self.league(), None, 1)
+        names = entry['health']['counts']['categories']['names']
+        self.assertIn('currency:currency', names['succeeded'])
+        self.assertNotIn('currency:new-empty-category', names['succeeded'])
+        self.assertTrue(any('currency:new-empty-category' in issue['message']
+                            for issue in entry['health']['issues']))
 
     def source_entry(self, name, *, failed=(), state_error=None):
         if state_error is not None:
@@ -188,6 +218,23 @@ class DataSourceAuditTests(unittest.TestCase):
         entries = self.audit.parse_poe_ninja_site_categories(source)
         self.assertEqual([entry['type'] for entry in entries], ['Currency', 'UniqueWeapons'])
         self.assertEqual([entry['title'] for entry in entries], ['Currency', 'Unique Weapons'])
+
+    def test_poe1_site_discovery_uses_its_own_component_and_routes(self):
+        page_url = 'https://poe.ninja/poe1/economy/covens/currency'
+        component_url = 'https://assets.poe.ninja/_astro/a.PageAnyHash.mjs'
+        views_url = 'https://assets.poe.ninja/_astro/a.ViewsAnyHash.mjs'
+        responses = {
+            page_url: (FIXTURE_DIR / 'poe_ninja_currency_page.html').read_text(encoding='utf-8').replace(
+                'Poe2CurrencyOverviewPage', 'Poe1CurrencyOverviewPage'),
+            component_url: (FIXTURE_DIR / 'poe_ninja_overview_component.mjs').read_text(encoding='utf-8'),
+            views_url: (FIXTURE_DIR / 'poe_ninja_views_module.mjs').read_text(encoding='utf-8'),
+        }
+        result = self.audit.discover_poe_ninja_site_categories(
+            self.audit.RecordingClient(FakeDelegate(responses)), 'Covens', game_version='poe1'
+        )
+        self.assertEqual(result['page_url'], page_url)
+        self.assertFalse(result['used_default_page_fallback'])
+        self.assertEqual(len(result['categories']), 3)
 
     def test_site_category_parser_supports_backtick_strings(self):
         source = (

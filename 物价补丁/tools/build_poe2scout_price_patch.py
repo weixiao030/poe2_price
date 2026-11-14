@@ -40,7 +40,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from poe2_price_labels import PRICE_TEXT_RE, UNIQUE_SUFFIX_PRICE_RE, strip_existing_price, format_unique_price_name
-from price_sources.league import resolve_current_leagues
+from price_sources.league import resolve_current_leagues, resolve_scout_league_value
 from price_sources.health import (
     evaluate_source_health,
     failed_source_health,
@@ -1538,6 +1538,8 @@ def validate_poe_ninja_category_payload(
 
 
 def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> dict[str, Any]:
+    league_value = resolve_scout_league_value(client, api_base, league)
+    league = urllib.parse.quote(league_value, safe="")
     endpoints = {
         "exchange_snapshot": f"{api_base}/poe2/Leagues/{league}/ExchangeSnapshot",
         "reference_currencies": f"{api_base}/poe2/Leagues/{league}/ReferenceCurrencies",
@@ -1564,6 +1566,8 @@ def fetch_scout_data(client: RetryingRequests, api_base: str, league: str) -> di
             results[name] = future.result()
             completed += 1
             progress(f"poe2scout：{completed}/{len(endpoints)} {labels.get(name, name)} 完成")
+    results["api_league"] = league
+    results["league_value"] = league_value
     return results
 
 
@@ -1580,6 +1584,7 @@ def build_scout_prices(
     list[dict[str, Any]],
 ]:
     scout = fetch_scout_data(client, api_base, league)
+    league = str(scout.get("api_league") or league)
     progress("poe2scout：整理价格对")
     observations = collect_price_observations(scout["snapshot_pairs"])
     best = choose_best_prices(observations, scout["reference_currencies"])

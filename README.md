@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚗️ POE1/2 物价补丁 v1.0.22</h1>
+  <h1 align="center">⚗️ POE1/2 物价补丁 v1.0.23</h1>
   <p align="center">为《Path of Exile 1/2》官服、Steam 服和国服自动抓取物价、标注物品名的补丁工具</p>
 </p>
 
@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/平台-Windows%2010%2F11-blue?logo=windows" />
   <img src="https://img.shields.io/badge/Electron-Vue%203-47848f?logo=electron" />
   <img src="https://img.shields.io/badge/.NET-8.x-purple?logo=dotnet" />
-  <img src="https://img.shields.io/badge/Python-3.13.14-yellow?logo=python" />
+  <img src="https://img.shields.io/badge/Python-3.13.17-yellow?logo=python" />
   <img src="https://img.shields.io/badge/许可-禁止商业使用-red" />
 </p>
 
@@ -23,7 +23,7 @@
 
 当前版本还是实验阶段，有 bug 请见谅。
 
-`v1.0.0` 统一为安装版，使用 NSIS / electron-updater 完成在线更新。从 1.0.0 起支持跳过中间版本直升最新版，无需逐版升级；优先使用 5 个 GitHub 国内镜像，全部失败后回退 ZOS。
+`v1.0.0` 统一为安装版，使用 NSIS / electron-updater 完成在线更新。从 1.0.0 起支持跳过中间版本直升最新版，无需逐版升级；优先使用 4 个 GitHub 国内镜像，全部失败后回退 ZOS。
 
 碑牌词缀分别使用魔法、稀有样本中位价：接近时合并，其余按从低到高显示，E/C/D 按同服汇率逐级切换，区间按低端选币种，小数截断不进位；合并标准随当前市场动态变化。提供“检查更新”、当前版本说明、赞赏码及聊天/bug反馈群:168887742；支持签名验证、差分或完整安装包下载、自动重启安装和下载失败重试。客户端通过公开 HTTPS 地址检查签名更新；上传配置和密钥不随软件分发。保留通货、传奇、岛屿传言、每小时物价更新及还原功能。
 
@@ -45,7 +45,7 @@
 - POE1 国服：当前赛季主源 `poecurrency.top/api/summary?version=1`，历史赛季追加 `&season=<所选赛季>`，再用可用的国际参考源补缺。
 - 国服 OCR 校验在本地完成：按同一物品分侧检查历史报价，校验 D/E、D/C 汇率与小数点修正依据；不依赖 Token 或额外历史接口。汇总中的当前价与全部历史价同时错误时仍可能漏判，真实行情突变也可能暂时采用历史估值。
 - 构建时会对照 poe2scout `Items/Categories` 做分类健康检查：新分类只报警并继续抓取，不会默默丢掉。
-- 只读契约审计见 `物价补丁/tools/audit_price_sources.py`，覆盖 POE1/POE2。
+- 只读契约审计见 `物价补丁/tools/audit_price_sources.py`，覆盖 POE1/POE2 及 Ninja 网页分类；`desktop/scripts/audit-tablet-sources.py` 检查两服碑牌各价格层。定时巡检保留原始失败和缺价原因。
 - 默认“自动跟随最新赛季”，更新时重新解析当前赛季；也可在下拉框固定选择历史赛季。选择按 POE1 / POE2、国服 / 国际服分别保存，重启后保留。旧版已确认任务保留原赛季；修改赛季选择后，下一次自动更新使用新选择。
 - 国际服目录使用 Scout 与 Ninja 独立接口：POE2 优先 `https://api.poe2scout.com/poe2/Leagues`，POE1 优先 `https://poe.ninja/poe1/api/data/index-state`，目录故障时尝试另一来源。国服使用 `https://poecurrency.top/api/season_list?version=poe1|poe2`；价格接口的 `version` 则是数字 `1` / `2`，当前赛季省略 `season`，历史赛季才传该参数。
 - 打开工具或手动刷新时联网获取目录，执行任务可复用 5 分钟内的目录缓存；联网失败可回退到 7 天内的记录。固定选择不会因刷新失败切换赛季，历史赛季补丁缓存独立。国服自动模式无法确认赛季名称时仍尝试当前价格接口，但不读写赛季补丁缓存、不附带猜测的国际参考赛季。价格不可用时保留已有补丁。
@@ -61,6 +61,8 @@
 
 每小时自动更新仅在“引用设置”中提供入口，默认关闭；开启后使用当前保存的范围、碑牌开关、岛屿提示、语言及对应服区赛季。切换到未完成手动更新的客户端时暂停，手动更新成功后恢复。软件版本更新与每小时物价更新是两项独立功能。
 
+本次游戏更新与全源复核见 [1.0.23 维护验证](docs/1.0.23游戏与数据源维护验证.md)。
+
 本次实现链路及验证范围见 [1.0.11 独立碑牌与自动更新验证](docs/1.0.11独立碑牌与自动更新验证.md)，配置保存与迁移背景见 [1.0.10 配置与碑牌开关验证](docs/1.0.10配置与碑牌开关验证.md)。
 
 ## 启动更新提醒
@@ -70,6 +72,13 @@
 ---
 
 ## 更新日志
+
+### 26/11/14 更新（v1.0.23）
+
+- 适配 Scout 按完整赛季名查询的接口，行情请求启用 gzip，减少大响应超时。
+- 复核 POE1/POE2 游戏资源及全部行情分类；补齐 POE1 传奇与网页分类、两服碑牌巡检。新赛季缺价时不使用旧赛季价格。
+- 淘汰失效下载镜像，更新 Python 3.13.17、.NET 8.0.34 及官方运行环境下载源，保留摘要与签名校验。
+
 
 ### 26/10/26 更新（v1.0.22）
 

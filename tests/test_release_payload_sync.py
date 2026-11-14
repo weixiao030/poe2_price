@@ -43,8 +43,8 @@ def test_one_current_desktop_version_and_entrypoint():
 
 def test_runtime_build_has_pinned_integrity_and_no_old_release_dependency():
     script = (ROOT / 'build/prepare_runtime.ps1').read_text(encoding='utf-8-sig')
-    assert '90b4e5b9898b72d744650524bff92377c367f44bd5fbd09e3148656c080ad907' in script
-    assert 'd525978009270857c7a3ff0ce7f5d1244ae547dd34482e09738fea49814f76cf' in script
+    assert '9e35319bffedab8b36ad44d8f377cb4f1733bcec257a0b6d04d94f01486ddb38' in script
+    assert '7c605e2a187cb315d90b6b595358260443df863040d6c95597f8d8a2f2061786' in script
     prepare = (DESKTOP / 'scripts/prepare-runtime.mjs').read_text(encoding='utf-8')
     assert '发布版/' not in prepare
     assert 'prepare_runtime.ps1' in prepare

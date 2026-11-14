@@ -25,7 +25,7 @@ updates:build 从本次 NSIS 构建读取 Setup、blockmap 和 latest.yml，填�
 
 ## 客户端下载配置
 
-resources/update-config.json 保存公开镜像配置、ZOS 清单 URL 和公钥。默认镜像依次为 ghfast.top、gh-proxy.com、ghproxy.it、gh-proxy.org、ghproxy.net。不使用 GitHub 直连回退。2026-10-26 移除 gh.llkk.cc、ghproxy.imciel.com、ghfile.geekertao.top：实测存在连接失败、清单或完整汉化包超时、多 Range 超时。
+resources/update-config.json 保存公开镜像配置、ZOS 清单 URL 和公钥。默认镜像依次为 ghfast.top、gh-proxy.com、ghproxy.it、gh-proxy.org。不使用 GitHub 直连回退。2026-10-26 移除 gh.llkk.cc、ghproxy.imciel.com、ghfile.geekertao.top：实测存在连接失败、清单或完整汉化包超时、多 Range 超时。
 
 在 desktop 目录运行 `npm run audit:downloads -- --full`，可只读检查全部当前下载源、签名清单、安装包 Range/blockmap、完整 ZOS 安装包、各汉化源的官方 SHA256，以及 Python/.NET 构建运行环境的固定 SHA256。报告默认保存在 `test-results/download-source-audit.json`，也可用 `--output` 指定路径；不执行下载的程序。单个备用源失败记录在报告中，关键类型至少一个源可用才成功退出。
 
@@ -68,3 +68,9 @@ GitHub Actions 标签发布流程自动执行以上顺序。必须配置 UPDATE_
 下载错误不会替换程序文件，可以重新检查更新。安装前重新校验完整 Setup；后台写入、查询或清理未结束时拒绝安装。安装回执位于用户数据目录 software-updates/installer-result.json；目标界面启动后记为 completed。
 
 NSIS 不提供新版业务启动失败后的通用自动回滚。安装中断或软件无法启动时使用完整 Setup 修复，用户设置及游戏备份保存在程序目录以外。线上发现异常应暂停推广并发布更高版本的修复，避免依赖自动降级。历史 0.x 的事务恢复说明以对应版本文档为准。
+
+## 2026-11-14 运行环境与来源维护
+
+内置 Python 3.13.17 Windows x64 embeddable 与 .NET Runtime 8.0.34。Python 官网与南京镜像、.NET 官方 Blob 与 builds 下载地址均按固定摘要校验；移除旧 Azure Edge 地址。Python 3.13.18 尚无 Windows embeddable 载荷，不使用不存在的下载包。
+
+移除完整汉化包实测超时的 ghproxy.net，保留四个通过完整载荷 SHA256 核对的镜像；软件更新继续使用签名清单和 ZOS 完整包回退。候选域名未通过实测时不加入默认下载链。可用 `npm --prefix desktop run audit:downloads -- --full` 重检。

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import gzip
+import io
 import json
 import math
 import queue
@@ -65,11 +67,7 @@ class RetryingRequests:
         backoff: float = 0.8,
         timeout: float = 25.0,
         total_timeout: float = DEFAULT_REQUEST_TIME_BUDGET,
-        user_agent: str = (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36 poe2-price-patch/1.0"
-        ),
+        user_agent: str = "poe-price-patch/1.0",
     ) -> None:
         self.max_retries = max(0, int(max_retries))
         self.backoff = max(0.0, float(backoff))
@@ -84,6 +82,7 @@ class RetryingRequests:
         return {
             "User-Agent": self.user_agent,
             "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip",
         }
 
     def _decode_response(
@@ -104,6 +103,18 @@ class RetryingRequests:
         if callable(get_header):
             content_type = str(get_header("Content-Type", "") or "")
             retry_after_seconds = self._parse_retry_after(get_header("Retry-After"))
+            content_encoding = str(get_header("Content-Encoding", "") or "").strip().lower()
+            if content_encoding == "gzip":
+                # Bound the expanded body too; reading through EOF validates CRC
+                # and rejects truncated streams before JSON/HTML parsing.
+                with gzip.GzipFile(fileobj=io.BytesIO(content)) as compressed:
+                    content = compressed.read(MAX_HTTP_RESPONSE_BYTES + 1)
+                if len(content) > MAX_HTTP_RESPONSE_BYTES:
+                    raise RuntimeError(
+                        f"decoded response exceeded {MAX_HTTP_RESPONSE_BYTES} byte safety limit: {url}"
+                    )
+            elif content_encoding not in {"", "identity"}:
+                raise ValueError(f"unsupported Content-Encoding: {content_encoding}")
         return HttpResponse(
             url=url,
             status_code=status_code,
